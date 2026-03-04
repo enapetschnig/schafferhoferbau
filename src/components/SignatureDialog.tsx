@@ -9,7 +9,6 @@ import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
 import { Send, User, Clock, Package, FileText, Loader2 } from "lucide-react";
-import { generateDisturbancePDF, generateEmailHtml } from "@/lib/generateDisturbancePDF";
 
 type Material = {
   id: string;
@@ -163,27 +162,16 @@ export const SignatureDialog = ({
         technicianNames = ["Techniker"];
       }
 
-      // Generate PDF in the browser (jsPDF works in browser, not in Deno)
-      const disturbanceWithSig = { ...disturbance, unterschrift_kunde: signature as string };
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
-      const { pdfBase64, pdfFilename } = await generateDisturbancePDF(
-        disturbanceWithSig,
-        materials,
-        technicianNames,
-        photos,
-        supabaseUrl
-      );
-      const emailHtml = generateEmailHtml(disturbanceWithSig, technicianNames);
-      const subject = `Regiebericht - ${disturbance.kunde_name} - ${new Date(disturbance.datum).toLocaleDateString("de-AT")}`;
-
-      // Send only the pre-generated PDF + email data to the edge function
+      // Send disturbance data to edge function — PDF is generated server-side
       const { error: sendError } = await supabase.functions.invoke("send-disturbance-report", {
         body: {
-          pdfBase64,
-          pdfFilename,
-          emailHtml,
-          subject,
-          kundeEmail: disturbance.kunde_email,
+          disturbance: {
+            ...disturbance,
+            unterschrift_kunde: signature,
+          },
+          materials,
+          technicianNames,
+          photos,
         },
       });
 
