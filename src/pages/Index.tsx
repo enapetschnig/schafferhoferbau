@@ -99,9 +99,13 @@ export default function Index() {
 
     const [{ data: profileData }, { data: roleData }] = await Promise.all([profileReq, roleReq]);
 
-    // Falls Profil noch nicht existiert (Trigger hat noch nicht ausgeführt), trotzdem weitermachen
-    setIsActivated(true);
-    
+    // Prüfe ob Benutzer aktiviert ist
+    if (profileData) {
+      setIsActivated(profileData.is_active !== false);
+    } else {
+      setIsActivated(true); // Fallback: neues Profil noch nicht angelegt
+    }
+
     if (profileData) {
       setUserName(`${profileData.vorname} ${profileData.nachname}`.trim());
     } else {
@@ -224,6 +228,19 @@ export default function Index() {
     return null;
   }
 
+  if (isActivated === false) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <div className="text-center space-y-4 max-w-md">
+          <img src="/holzknecht-logo.jpg" alt="Holzknecht Natursteine" className="h-20 mx-auto" />
+          <h1 className="text-xl font-bold">Konto deaktiviert</h1>
+          <p className="text-muted-foreground">Ihr Konto wurde deaktiviert. Bitte wenden Sie sich an den Administrator.</p>
+          <Button variant="outline" onClick={() => supabase.auth.signOut()}>Abmelden</Button>
+        </div>
+      </div>
+    );
+  }
+
   const isAdmin = userRole === "administrator";
 
   return (
@@ -233,7 +250,7 @@ export default function Index() {
         <div className="container mx-auto px-3 sm:px-4 lg:px-6 py-3 sm:py-4">
           <div className="flex justify-between items-center gap-3">
             <div className="flex items-center gap-2 sm:gap-3">
-              <img src="/holzknecht-logo.jpg" alt="Holzknecht Natursteine" className="h-8 sm:h-10 w-auto" />
+              <img src="/holzknecht-logo.jpg" alt="Holzknecht Natursteine" className="h-10 sm:h-14 w-auto" />
               <div className="hidden sm:block h-8 w-px bg-border" />
               <div className="flex flex-col">
                 <span className="text-xs sm:text-sm text-muted-foreground">Hallo</span>

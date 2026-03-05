@@ -162,9 +162,19 @@ export const SignatureDialog = ({
         technicianNames = ["Techniker"];
       }
 
-      // Send disturbance data to edge function — PDF is generated server-side
-      const { error: sendError } = await supabase.functions.invoke("send-disturbance-report", {
-        body: {
+      // Send disturbance data to edge function via direct fetch (bypasses supabase client issues)
+      const { data: { session } } = await supabase.auth.getSession();
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+
+      const response = await fetch(`${supabaseUrl}/functions/v1/send-disturbance-report`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session?.access_token || supabaseKey}`,
+          "apikey": supabaseKey,
+        },
+        body: JSON.stringify({
           disturbance: {
             ...disturbance,
             unterschrift_kunde: signature,
@@ -172,17 +182,20 @@ export const SignatureDialog = ({
           materials,
           technicianNames,
           photos,
-        },
+        }),
       });
 
-      if (sendError) {
-        console.error("Email send error (Unterschrift gespeichert):", sendError);
-        // Signature was already saved – email may still have been sent despite the client-side error
+      const result = await response.json();
+
+      if (!response.ok) {
+        console.error("Edge Function error:", response.status, result);
         toast({
-          title: "Unterschrift gespeichert",
-          description: "E-Mail wurde möglicherweise trotzdem gesendet – bitte Postfach prüfen.",
+          variant: "destructive",
+          title: "E-Mail-Fehler",
+          description: result?.error || `Fehler ${response.status}: ${response.statusText}`,
         });
       } else {
+        console.log("Email sent successfully:", result);
         toast({
           title: "Regiebericht gesendet",
           description: "Der Bericht wurde erfolgreich per E-Mail versendet.",

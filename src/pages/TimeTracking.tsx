@@ -15,13 +15,14 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { toast as sonnerToast } from "sonner";
-import { 
-  getNormalWorkingHours, 
-  getDefaultWorkTimes, 
+import {
+  getNormalWorkingHours,
+  getDefaultWorkTimes,
   isNonWorkingDay,
   getWeeklyTargetHours,
   getTotalWorkingHours
 } from "@/lib/workingHours";
+import { FillRemainingHoursDialog } from "@/components/FillRemainingHoursDialog";
 
 type Project = {
   id: string;
@@ -82,6 +83,7 @@ const TimeTracking = () => {
   const [loadingDayEntries, setLoadingDayEntries] = useState(false);
   
   const [showAbsenceDialog, setShowAbsenceDialog] = useState(false);
+  const [showFillDialog, setShowFillDialog] = useState(false);
   
   const [absenceData, setAbsenceData] = useState({
     date: new Date().toISOString().split('T')[0],
@@ -218,7 +220,10 @@ const TimeTracking = () => {
     }
 
     sonnerToast.success("Projekt erfolgreich erstellt");
-    
+
+    // Refresh project list so new project is immediately visible
+    await fetchProjects();
+
     // Set the project in the pending block
     if (pendingBlockIdForNewProject) {
       updateBlock(pendingBlockIdForNewProject, { projectId: data.id });
@@ -636,7 +641,7 @@ const TimeTracking = () => {
               </div>
               <Button 
                 variant="outline" 
-                onClick={() => setShowAbsenceDialog(true)} 
+                onClick={() => { setAbsenceData(prev => ({ ...prev, date: selectedDate })); setShowAbsenceDialog(true); }}
                 className="gap-2"
               >
                 <Calendar className="h-4 w-4" />
@@ -734,6 +739,28 @@ const TimeTracking = () => {
                   </p>
                 </div>
               )}
+
+              {/* Remaining hours banner */}
+              {!isDayBlocked && existingDayEntries.length > 0 && (() => {
+                const dateObj = new Date(selectedDate);
+                const target = getNormalWorkingHours(dateObj);
+                const booked = existingDayEntries.reduce((sum, e) => sum + Number(e.stunden), 0);
+                const remaining = target - booked;
+                if (remaining <= 0 || target === 0) return null;
+                return (
+                  <div className="bg-primary/5 border border-primary/20 rounded-lg p-4 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-primary" />
+                      <span className="text-sm font-medium">
+                        Noch <strong>{remaining.toFixed(2)} h</strong> offen (Soll: {target}h)
+                      </span>
+                    </div>
+                    <Button size="sm" onClick={() => setShowFillDialog(true)}>
+                      Restzeit auffüllen
+                    </Button>
+                  </div>
+                );
+              })()}
 
               {/* Only show form if day is not blocked */}
               {!isDayBlocked && (
@@ -1171,6 +1198,54 @@ const TimeTracking = () => {
             </div>
           </DialogContent>
         </Dialog>
+
+        {/* Fill Remaining Hours Dialog */}
+        <FillRemainingHoursDialog
+          open={showFillDialog}
+          onOpenChange={setShowFillDialog}
+          remainingHours={(() => {
+            const target = getNormalWorkingHours(new Date(selectedDate));
+            const booked = existingDayEntries.reduce((sum, e) => sum + Number(e.stunden), 0);
+            return Math.max(0, target - booked);
+          })()}
+          bookedHours={existingDayEntries.reduce((sum, e) => sum + Number(e.stunden), 0)}
+          targetHours={getNormalWorkingHours(new Date(selectedDate))}
+          projects={projects}
+          existingEntries={existingDayEntries}
+          onSubmit={async (projectId, locationType, description, startTime, endTime, pauseMinutes, pauseStart, pauseEnd) => {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) return;
+
+            const [sh, sm] = startTime.split(":").map(Number);
+            const [eh, em] = endTime.split(":").map(Number);
+            const totalMinutes = (eh * 60 + em) - (sh * 60 + sm) - pauseMinutes;
+            const hours = Math.max(0, totalMinutes / 60);
+
+            const { error } = await supabase.from("time_entries").insert({
+              user_id: user.id,
+              datum: selectedDate,
+              project_id: projectId,
+              taetigkeit: description || "",
+              stunden: hours,
+              start_time: startTime,
+              end_time: endTime,
+              pause_minutes: pauseMinutes,
+              pause_start: pauseStart,
+              pause_end: pauseEnd,
+              location_type: locationType,
+              notizen: null,
+              week_type: null,
+            });
+
+            if (error) {
+              toast({ variant: "destructive", title: "Fehler", description: "Konnte nicht gespeichert werden" });
+              throw error;
+            }
+
+            toast({ title: "Erfolg", description: "Reststunden gebucht" });
+            await fetchExistingDayEntries(selectedDate);
+          }}
+        />
 
       </div>
     </div>

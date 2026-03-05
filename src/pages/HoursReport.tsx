@@ -116,7 +116,7 @@ export default function HoursReport() {
   };
 
   const fetchProfiles = async () => {
-    const { data } = await supabase.from("profiles").select("id, vorname, nachname");
+    const { data } = await supabase.from("profiles").select("id, vorname, nachname, is_active").eq("is_active", true);
     if (data) {
       const profileMap: Record<string, Profile> = {};
       data.forEach((p) => {
@@ -422,29 +422,47 @@ export default function HoursReport() {
 
           if (includeOvertime) {
             // Export MIT Überstunden: Tatsächliche Zeiten verwenden
-            const actualMorningEnd = lunchBreak?.start || "";
-            const actualAfternoonStart = lunchBreak?.end || "";
-            const actualPauseText = entry.pause_minutes && entry.pause_minutes > 0 && lunchBreak 
-              ? `${lunchBreak.start} - ${lunchBreak.end}` 
-              : "";
-            
-            const overtime = calculateOvertime(dayDate, entry.stunden);
-            const overtimeText = overtime > 0 ? overtime.toFixed(2) : "";
+            // Bei Abwesenheit (Urlaub, Krankenstand etc.) → Standard 8h-Tag anzeigen
+            if (isAbsence) {
+              worksheetData.push([
+                displayDay,
+                "08:00",
+                "12:00",
+                "12:00 - 13:00",
+                "13:00",
+                "17:00",
+                "8.00",
+                "",
+                ortText,
+                projektName,
+                entry.taetigkeit,
+                plz,
+              ]);
+            } else {
+              const actualMorningEnd = lunchBreak?.start || "";
+              const actualAfternoonStart = lunchBreak?.end || "";
+              const actualPauseText = entry.pause_minutes && entry.pause_minutes > 0 && lunchBreak
+                ? `${lunchBreak.start} - ${lunchBreak.end}`
+                : "";
 
-            worksheetData.push([
-              displayDay,
-              entry.start_time?.substring(0, 5) || "",
-              actualMorningEnd,
-              actualPauseText,
-              actualAfternoonStart,
-              entry.end_time?.substring(0, 5) || "",
-              entry.stunden.toFixed(2),
-              overtimeText,
-              ortText,
-              projektName,
-              entry.taetigkeit,
-              plz,
-            ]);
+              const overtime = calculateOvertime(dayDate, entry.stunden);
+              const overtimeText = overtime > 0 ? overtime.toFixed(2) : "";
+
+              worksheetData.push([
+                displayDay,
+                entry.start_time?.substring(0, 5) || "",
+                actualMorningEnd,
+                actualPauseText,
+                actualAfternoonStart,
+                entry.end_time?.substring(0, 5) || "",
+                entry.stunden.toFixed(2),
+                overtimeText,
+                ortText,
+                projektName,
+                entry.taetigkeit,
+                plz,
+              ]);
+            }
           } else {
             // Export OHNE Überstunden: Regelarbeitszeiten Mo-Fr 08:00-17:00 verwenden
             const dayOfWeek = dayDate.getDay();
@@ -513,44 +531,42 @@ export default function HoursReport() {
       worksheetData.push(["", "", "", "", "", "SUMME", regelarbeitszeitSumme.toFixed(2), "", "", "", "", ""]);
     }
     
-    // Footer-Zeilen
-    worksheetData.push(["", "", "", "", "", "", "", "", "", "", "", ""]); // Leer
-    worksheetData.push(["", "", "", "", "", "", "", "", "", "", "", ""]); // Leer
-    worksheetData.push(["", "", "", "", "", "", "", "", "", "", "", ""]); // Leer
-    if (includeOvertime) {
-      worksheetData.push(["", "Hiermit bestätige ich die Richtigkeit der von mir angegebenen Überstunden.", "", "", "", "", "", "", "", "", "", ""]);
-      worksheetData.push(["", "", "", "", "", "", "", "", "", "", "", ""]); // Leer
-      worksheetData.push(["", `Derzeitiger offener Überstundenstand: ${totalOvertime.toFixed(2)}`, "", "", "", "", "", "", "", "", "", ""]);
-      worksheetData.push(["", "Restliche Überstunden wurden zur Gänze abgegolten.", "", "", "", "", "", "", "", "", "", ""]);
-    } else {
-      worksheetData.push(["", "", "", "", "", "", "", "", "", "", "", ""]); // Leer statt Überstunden-Text
-      worksheetData.push(["", "", "", "", "", "", "", "", "", "", "", ""]); // Leer
-      worksheetData.push(["", "", "", "", "", "", "", "", "", "", "", ""]); // Leer
-      worksheetData.push(["", "", "", "", "", "", "", "", "", "", "", ""]); // Leer
-    }
-    worksheetData.push(["", "", "", "", "", "", "", "", "", "", "", ""]); // Leer
+    // Footer: 1 Leerzeile + Datum/Unterschrift
+    worksheetData.push(["", "", "", "", "", "", "", "", "", "", "", ""]);
     worksheetData.push(["", "Datum:", "", "", "", "Unterschrift:", "", "", "", "", "", ""]);
 
     const ws = XLSX.utils.aoa_to_sheet(worksheetData);
     
-    // Spaltenbreiten für 12 Spalten
+    // Spaltenbreiten optimiert für A4-Querformat
     ws["!cols"] = [
-      { wch: 12 },  // A: Datum
-      { wch: 24 },  // B: breiter für Footer-Text
-      { wch: 24 },  // C
-      { wch: 26 },  // D
-      { wch: 12 },  // E
-      { wch: 12 },  // F
-      { wch: 10 },  // G: Stunden
-      { wch: 12 },  // H: Überstunden oder Ort
-      { wch: 12 },  // I: Ort oder Projekt
-      { wch: 22 },  // J: Projekt
-      { wch: 20 },  // K: Tätigkeit
+      { wch: 10 },  // A: Datum
+      { wch: 8 },   // B: Beginn VM
+      { wch: 8 },   // C: Ende VM
+      { wch: 14 },  // D: Unterbrechung
+      { wch: 8 },   // E: Beginn NM
+      { wch: 8 },   // F: Ende NM
+      { wch: 8 },   // G: Stunden
+      { wch: 10 },  // H: Überstunden/Ort
+      { wch: 10 },  // I: Ort/Projekt
+      { wch: 18 },  // J: Projekt
+      { wch: 16 },  // K: Tätigkeit
       { wch: 6 },   // L: PLZ
     ];
 
+    // Druckeinstellungen: A4 Querformat, auf eine Seite skaliert
+    ws["!pageSetup"] = {
+      paperSize: 9, // A4
+      orientation: "landscape",
+      fitToWidth: 1,
+      fitToHeight: 1,
+      scale: 75,
+    };
+    ws["!margins"] = {
+      left: 0.4, right: 0.4, top: 0.4, bottom: 0.4,
+      header: 0.2, footer: 0.2,
+    };
+
     // Merged Cells
-    const sumRowIndex = worksheetData.length - 9; // Footer hat immer 9 Zeilen
     ws["!merges"] = [
       // Firmendaten Header
       { s: { r: 0, c: 0 }, e: { r: 0, c: 5 } },
@@ -563,10 +579,6 @@ export default function HoursReport() {
       { s: { r: 5, c: 9 }, e: { r: 5, c: 11 } },
       { s: { r: 7, c: 1 }, e: { r: 7, c: 2 } },
       { s: { r: 7, c: 4 }, e: { r: 7, c: 5 } },
-      // Footer Merges - immer aktiv
-      { s: { r: sumRowIndex + 4, c: 1 }, e: { r: sumRowIndex + 4, c: 10 } },
-      { s: { r: sumRowIndex + 6, c: 1 }, e: { r: sumRowIndex + 6, c: 10 } },
-      { s: { r: sumRowIndex + 7, c: 1 }, e: { r: sumRowIndex + 7, c: 10 } }
     ];
 
     // Zeilenhöhe für Header
@@ -574,12 +586,9 @@ export default function HoursReport() {
     [0, 1, 2, 3].forEach((r) => {
       ws["!rows"][r] = { hpt: 18 };
     });
-    
-    // Footer-Texte: erhöhte Zeilenhöhe für Lesbarkeit - immer aktiv
-    ws["!rows"][sumRowIndex + 4] = { hpt: 30 }; // "Hiermit bestätige ich..."
-    ws["!rows"][sumRowIndex + 6] = { hpt: 25 }; // "Derzeitiger offener Überstundenstand..."
 
     // Formatierung anwenden
+    const sumRowIndex = worksheetData.length - 3; // SUMME ist 3 Zeilen vor Ende (SUMME + 2 Leerzeilen)
     const range = XLSX.utils.decode_range(ws["!ref"] || "A1");
     for (let R = range.s.r; R <= range.e.r; ++R) {
       for (let C = range.s.c; C <= range.e.c; ++C) {
@@ -587,12 +596,11 @@ export default function HoursReport() {
         if (!ws[cellAddress]) {
           ws[cellAddress] = { t: "s", v: "" };
         }
-        
+
         const isFirmenHeader = R >= 0 && R <= 3;
         const isHeaderRow = R === 7 || R === 8;
-        const footerBaseRow = worksheetData.length - 9; // Footer hat immer 9 Zeilen
-        const isSumRow = R === footerBaseRow;
-        const isFooterRow = R >= footerBaseRow + 1;
+        const isSumRow = R === sumRowIndex;
+        const isFooterRow = R > sumRowIndex;
         
         const borderStyle = isHeaderRow ? "medium" : "thin";
         

@@ -98,7 +98,7 @@ async function generatePDF(data: ReportRequest & { technicians: string[] }, phot
   const D2     = { r: 46,  g: 46,  b: 46  }; // #2e2e2e – lower diamond
   const LGRAY  = { r: 240, g: 240, b: 240 };
   const WHITE  = { r: 255, g: 255, b: 255 };
-  const GREEN  = { r: 35,  g: 105, b: 35  };
+  const ACCENT = { r: 74,  g: 74,  b: 74  }; // #4a4a4a – matches logo text
 
   let y = 0;
 
@@ -122,7 +122,7 @@ async function generatePDF(data: ReportRequest & { technicians: string[] }, phot
     doc.setFontSize(10);
     setTxt(BLACK);
     doc.text(title, margin, y);
-    setDraw(GREEN);
+    setDraw(ACCENT);
     doc.setLineWidth(0.5);
     doc.line(margin, y + 1.5, margin + cW, y + 1.5);
     setDraw({ r: 180, g: 180, b: 180 });
@@ -152,7 +152,7 @@ async function generatePDF(data: ReportRequest & { technicians: string[] }, phot
 
   // ── Header ──────────────────────────────────────────────────────────────
   // Green accent bar at top
-  setFill(GREEN);
+  setFill(D2);
   doc.rect(0, 0, pageW, 2, "F");
 
   // Logo: two overlapping diamonds + company name
@@ -233,13 +233,13 @@ async function generatePDF(data: ReportRequest & { technicians: string[] }, phot
 
   // Row 3: Gesamtstunden – prominently below, full width
   y += 2;
-  setFill({ r: 235, g: 245, b: 235 }); // light green tint
-  setDraw(GREEN);
-  doc.setLineWidth(0.6);
+  setFill(LGRAY);
+  setDraw(DGRAY);
+  doc.setLineWidth(0.4);
   doc.rect(margin, y - 3, cW, 16, "FD");
-  doc.setFont("helvetica", "bold"); doc.setFontSize(7); setTxt(GREEN);
+  doc.setFont("helvetica", "bold"); doc.setFontSize(7); setTxt(DGRAY);
   doc.text("GESAMTSTUNDEN", margin + 4, y + 1);
-  doc.setFontSize(15); setTxt({ r: 25, g: 90, b: 25 });
+  doc.setFontSize(15); setTxt(BLACK);
   doc.text(`${disturbance.stunden.toFixed(2)} h`, margin + 4, y + 10);
   y += 20;
 
@@ -359,7 +359,7 @@ function generateEmailHtml(data: ReportRequest & { technicians: string[] }): str
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
     <style>
       body { font-family: Arial, sans-serif; color: #333; line-height: 1.5; }
-      .header { color: #237023; font-size: 24px; font-weight: bold; margin-bottom: 10px; }
+      .header { color: #4a4a4a; font-size: 24px; font-weight: bold; margin-bottom: 10px; }
       .container { max-width: 600px; margin: 0 auto; padding: 20px; }
       .info-box { background: #f5f5f5; padding: 15px; border-radius: 8px; margin: 15px 0; }
     </style></head>

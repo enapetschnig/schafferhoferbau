@@ -159,7 +159,7 @@ const ProjectOverview = () => {
             <img 
               src="/holzknecht-logo.jpg"
               alt="Holzknecht Natursteine"
-              className="h-8 w-8 sm:h-10 sm:w-10 cursor-pointer hover:opacity-80 transition-opacity object-contain" 
+              className="h-10 w-10 sm:h-14 sm:w-14 cursor-pointer hover:opacity-80 transition-opacity object-contain"
               onClick={() => navigate("/projects")}
             />
           </div>

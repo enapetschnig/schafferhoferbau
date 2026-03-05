@@ -52,7 +52,7 @@ export default function ProjectHoursReport() {
   }, []);
 
   const fetchProfiles = async () => {
-    const { data } = await supabase.from("profiles").select("id, vorname, nachname");
+    const { data } = await supabase.from("profiles").select("id, vorname, nachname, is_active").eq("is_active", true);
     if (data) {
       const profileMap: Record<string, { vorname: string; nachname: string }> = {};
       data.forEach((profile) => {
