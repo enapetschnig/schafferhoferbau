@@ -37,6 +37,13 @@ export default function ProjectChatPage() {
 
       if (role) {
         setHasAccess(true);
+        // Mark chat notifications as read
+        await supabase
+          .from("notifications")
+          .update({ is_read: true })
+          .eq("user_id", user.id)
+          .eq("type", "chat_message")
+          .contains("metadata", { project_id: projectId });
         return;
       }
 
@@ -49,6 +56,15 @@ export default function ProjectChatPage() {
         .maybeSingle();
 
       setHasAccess(!!access);
+      if (access) {
+        // Mark chat notifications as read
+        await supabase
+          .from("notifications")
+          .update({ is_read: true })
+          .eq("user_id", user.id)
+          .eq("type", "chat_message")
+          .contains("metadata", { project_id: projectId });
+      }
     };
 
     init();

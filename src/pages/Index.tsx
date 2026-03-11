@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Session, User } from "@supabase/supabase-js";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Clock, FolderKanban, Users, BarChart3, LogOut, FileText, Camera, ArrowRight, Info, User as UserIcon, UserPlus, Zap, Receipt, Bell, X, CloudRain, ClipboardList, Scale, Wrench, CalendarDays, BookOpen, Star, MapPin, Megaphone, MessageCircle, ChevronLeft, Package, ShieldCheck } from "lucide-react";
+import { Clock, FolderKanban, Users, BarChart3, LogOut, FileText, Camera, ArrowRight, Info, User as UserIcon, UserPlus, Zap, Receipt, Bell, X, CloudRain, ClipboardList, Scale, Wrench, CalendarDays, BookOpen, Star, MapPin, Megaphone, MessageCircle, ChevronLeft, Package, ShieldCheck, Plus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useOnboarding } from "@/contexts/OnboardingContext";
 import {
@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import ChangePasswordDialog from "@/components/ChangePasswordDialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
 import { WeeklyAssignmentWidget } from "@/components/dashboard/WeeklyAssignmentWidget";
 
 type Project = {
@@ -48,6 +49,27 @@ type RecentTimeEntry = {
   } | null;
 };
 
+const formatChatTime = (timestamp: string) => {
+  const date = new Date(timestamp);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  if (diffDays === 0) return date.toLocaleTimeString("de-AT", { hour: "2-digit", minute: "2-digit" });
+  if (diffDays === 1) return "Gestern";
+  if (diffDays < 7) return date.toLocaleDateString("de-AT", { weekday: "short" });
+  return date.toLocaleDateString("de-AT", { day: "2-digit", month: "2-digit" });
+};
+
+type ChatPreview = {
+  type: "project" | "company";
+  projectId?: string;
+  projectName?: string;
+  lastMessage: string;
+  senderName: string;
+  timestamp: string;
+  unreadCount: number;
+};
+
 export default function Index() {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -67,6 +89,7 @@ export default function Index() {
   const [showChatDialog, setShowChatDialog] = useState(false);
   const [chatDialogMode, setChatDialogMode] = useState<"select" | "project">("select");
   const [allProjects, setAllProjects] = useState<Project[]>([]);
+  const [chatPreviews, setChatPreviews] = useState<ChatPreview[]>([]);
   const { handleRestartInstallGuide } = useOnboarding();
 
   // Role-based visibility helper
@@ -146,6 +169,137 @@ export default function Index() {
       .order("created_at", { ascending: false })
       .limit(10);
     if (data) setNotifications(data);
+  };
+
+  const fetchChatPreviews = async (userId: string, isAdminUser: boolean) => {
+    const previews: ChatPreview[] = [];
+
+    // 1. Get accessible project IDs
+    let projectIds: string[] = [];
+    let projectNameMap = new Map<string, string>();
+    if (isAdminUser) {
+      const { data: allProjs } = await supabase
+        .from("projects")
+        .select("id, name")
+        .eq("status", "aktiv");
+      projectIds = (allProjs || []).map(p => p.id);
+      projectNameMap = new Map((allProjs || []).map(p => [p.id, p.name]));
+    } else {
+      const { data: accessData } = await supabase
+        .from("project_access")
+        .select("project_id")
+        .eq("user_id", userId);
+      projectIds = (accessData || []).map(a => a.project_id);
+      if (projectIds.length > 0) {
+        const { data: projData } = await supabase
+          .from("projects")
+          .select("id, name")
+          .in("id", projectIds)
+          .eq("status", "aktiv");
+        projectNameMap = new Map((projData || []).map(p => [p.id, p.name]));
+        projectIds = (projData || []).map(p => p.id);
+      }
+    }
+
+    // 2. Get latest message per project
+    if (projectIds.length > 0) {
+      const { data: messages } = await supabase
+        .from("project_messages")
+        .select("project_id, message, user_id, created_at")
+        .in("project_id", projectIds)
+        .order("created_at", { ascending: false });
+
+      const latestPerProject = new Map<string, { project_id: string; message: string | null; user_id: string; created_at: string }>();
+      for (const msg of messages || []) {
+        if (!latestPerProject.has(msg.project_id)) {
+          latestPerProject.set(msg.project_id, msg);
+        }
+      }
+
+      // 3. Get sender names
+      const senderIds = [...new Set([...latestPerProject.values()].map(m => m.user_id))];
+      const senderNameMap = new Map<string, string>();
+      if (senderIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from("profiles")
+          .select("id, vorname, nachname")
+          .in("id", senderIds);
+        for (const p of profiles || []) {
+          senderNameMap.set(p.id, `${p.vorname || ""} ${p.nachname || ""}`.trim());
+        }
+      }
+
+      // 4. Get unread counts from notifications
+      const { data: unreadNotifs } = await supabase
+        .from("notifications")
+        .select("metadata")
+        .eq("user_id", userId)
+        .eq("type", "chat_message")
+        .eq("is_read", false);
+
+      const unreadPerProject = new Map<string, number>();
+      for (const n of unreadNotifs || []) {
+        const pid = (n.metadata as any)?.project_id;
+        if (pid) unreadPerProject.set(pid, (unreadPerProject.get(pid) || 0) + 1);
+      }
+
+      // 5. Build project chat previews
+      for (const [pid, msg] of latestPerProject) {
+        previews.push({
+          type: "project",
+          projectId: pid,
+          projectName: projectNameMap.get(pid) || "Projekt",
+          lastMessage: msg.message || "",
+          senderName: senderNameMap.get(msg.user_id) || "Unbekannt",
+          timestamp: msg.created_at,
+          unreadCount: unreadPerProject.get(pid) || 0,
+        });
+      }
+    }
+
+    // 6. Company chat (broadcast_messages) — latest message
+    const { data: latestBroadcast } = await supabase
+      .from("broadcast_messages")
+      .select("message, user_id, created_at")
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    if (latestBroadcast && latestBroadcast.length > 0) {
+      const bc = latestBroadcast[0];
+      let senderName = "Admin";
+      const { data: senderProfile } = await supabase
+        .from("profiles")
+        .select("vorname, nachname")
+        .eq("id", bc.user_id)
+        .single();
+      if (senderProfile) senderName = `${senderProfile.vorname || ""} ${senderProfile.nachname || ""}`.trim();
+
+      // Unread count for broadcast
+      const { data: bcUnread } = await supabase
+        .from("notifications")
+        .select("id")
+        .eq("user_id", userId)
+        .eq("type", "broadcast_message")
+        .eq("is_read", false);
+
+      previews.push({
+        type: "company",
+        projectName: "Firmen-Chat",
+        lastMessage: bc.message || "",
+        senderName,
+        timestamp: bc.created_at,
+        unreadCount: bcUnread?.length || 0,
+      });
+    }
+
+    // Sort: unread first, then by timestamp
+    previews.sort((a, b) => {
+      if (a.unreadCount > 0 && b.unreadCount === 0) return -1;
+      if (a.unreadCount === 0 && b.unreadCount > 0) return 1;
+      return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+    });
+
+    setChatPreviews(previews);
   };
 
   const fetchRecentEntries = async (userId: string, role: string | null) => {
@@ -241,6 +395,7 @@ export default function Index() {
       fetchFavoriteProjects(userId),
       fetchPendingUsers(),
       fetchAllProjectsForAdmin(),
+      fetchChatPreviews(userId, role === "administrator"),
     ]);
 
     setLoading(false);
@@ -539,29 +694,79 @@ export default function Index() {
           </div>
         )}
 
-        {/* Chat-Button — prominent über dem Grid */}
-        <div
-          className="mb-6 flex items-center gap-4 rounded-xl border-2 border-green-400 bg-green-50 dark:bg-green-950/20 p-4 cursor-pointer hover:bg-green-100 dark:hover:bg-green-950/30 transition-colors shadow-sm"
-          onClick={() => {
-            if (isAdmin) {
-              setChatDialogMode("select");
-              setShowChatDialog(true);
-            } else {
-              navigate("/company-chat");
-            }
-          }}
-        >
-          <div className="h-12 w-12 rounded-lg bg-green-500/20 flex items-center justify-center shrink-0">
-            {isAdmin ? <MessageCircle className="h-6 w-6 text-green-600" /> : <Megaphone className="h-6 w-6 text-green-600" />}
+        {/* Chat-Übersicht (WhatsApp-Style) */}
+        {chatPreviews.length > 0 ? (
+          <Card className="mb-6">
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <MessageCircle className="h-5 w-5 text-green-600" /> Chats
+                </CardTitle>
+                {isAdmin && (
+                  <Button variant="outline" size="sm" onClick={() => { setChatDialogMode("select"); setShowChatDialog(true); }}>
+                    <Plus className="h-4 w-4 mr-1" /> Neuer Chat
+                  </Button>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              {chatPreviews.map(chat => (
+                <div
+                  key={chat.projectId || "company"}
+                  className="flex items-center gap-3 px-4 py-3 border-b last:border-b-0 cursor-pointer hover:bg-muted/50 transition-colors"
+                  onClick={() => navigate(chat.type === "company" ? "/company-chat" : `/projects/${chat.projectId}/chat`)}
+                >
+                  <div className="h-10 w-10 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: chat.type === "company" ? "rgb(34 197 94 / 0.15)" : "rgb(59 130 246 / 0.15)" }}>
+                    {chat.type === "company"
+                      ? <Megaphone className="h-5 w-5 text-green-600" />
+                      : <FolderKanban className="h-5 w-5 text-blue-600" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex justify-between items-center">
+                      <span className={`font-medium truncate ${chat.unreadCount > 0 ? "text-foreground" : "text-foreground/80"}`}>
+                        {chat.type === "company" ? "Firmen-Chat" : chat.projectName}
+                      </span>
+                      <span className="text-xs text-muted-foreground whitespace-nowrap ml-2">
+                        {formatChatTime(chat.timestamp)}
+                      </span>
+                    </div>
+                    <p className={`text-sm truncate ${chat.unreadCount > 0 ? "text-foreground/80 font-medium" : "text-muted-foreground"}`}>
+                      {chat.senderName}: {chat.lastMessage || "Bild"}
+                    </p>
+                  </div>
+                  {chat.unreadCount > 0 && (
+                    <Badge className="bg-green-500 text-white rounded-full min-w-[24px] h-6 flex items-center justify-center shrink-0">
+                      {chat.unreadCount}
+                    </Badge>
+                  )}
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        ) : (
+          <div
+            className="mb-6 flex items-center gap-4 rounded-xl border-2 border-green-400 bg-green-50 dark:bg-green-950/20 p-4 cursor-pointer hover:bg-green-100 dark:hover:bg-green-950/30 transition-colors shadow-sm"
+            onClick={() => {
+              if (isAdmin) {
+                setChatDialogMode("select");
+                setShowChatDialog(true);
+              } else {
+                navigate("/company-chat");
+              }
+            }}
+          >
+            <div className="h-12 w-12 rounded-lg bg-green-500/20 flex items-center justify-center shrink-0">
+              {isAdmin ? <MessageCircle className="h-6 w-6 text-green-600" /> : <Megaphone className="h-6 w-6 text-green-600" />}
+            </div>
+            <div className="flex-1">
+              <p className="font-semibold text-green-900 dark:text-green-100">{isAdmin ? "Chat starten" : "Firmen-Chat"}</p>
+              <p className="text-sm text-green-700 dark:text-green-300">
+                {isAdmin ? "Firmen-Chat oder Projekt-Chat starten" : "Nachrichten & Infos vom Chef"}
+              </p>
+            </div>
+            <ArrowRight className="h-5 w-5 text-green-600 shrink-0" />
           </div>
-          <div className="flex-1">
-            <p className="font-semibold text-green-900 dark:text-green-100">{isAdmin ? "Chat starten" : "Firmen-Chat"}</p>
-            <p className="text-sm text-green-700 dark:text-green-300">
-              {isAdmin ? "Firmen-Chat oder Projekt-Chat starten" : "Nachrichten & Infos vom Chef"}
-            </p>
-          </div>
-          <ArrowRight className="h-5 w-5 text-green-600 shrink-0" />
-        </div>
+        )}
 
         {/* Chat starten Dialog (Admin) */}
         <Dialog open={showChatDialog} onOpenChange={(open) => { setShowChatDialog(open); if (!open) setChatDialogMode("select"); }}>

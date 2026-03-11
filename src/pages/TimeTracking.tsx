@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { Clock, Plus, AlertTriangle, CheckCircle2, Calendar, Sun, Trash2, Pencil, Package, ChevronDown, ChevronUp, CloudRain } from "lucide-react";
+import { Clock, Plus, AlertTriangle, CheckCircle2, Calendar, Sun, Trash2, Pencil, ChevronDown, CloudRain } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { PageHeader } from "@/components/PageHeader";
 import { format, startOfWeek } from "date-fns";
@@ -146,13 +146,6 @@ const TimeTracking = () => {
   const [timeBlocks, setTimeBlocks] = useState<TimeBlock[]>([createDefaultBlock()]);
   const entryMode = "zeitraum" as const;
 
-  // Material catalog
-  type MaterialCatalogItem = { id: string; name: string; einheit: string };
-  type BlockMaterial = { material: string; menge: string };
-  const [materialCatalog, setMaterialCatalog] = useState<MaterialCatalogItem[]>([]);
-  const [blockMaterials, setBlockMaterials] = useState<Record<string, BlockMaterial[]>>({});
-  const [expandedMaterialBlocks, setExpandedMaterialBlocks] = useState<Record<string, boolean>>({});
-
   // Employee schedule for individual working hours
   const [employeeSchedule, setEmployeeSchedule] = useState<WeekSchedule | null>(null);
   const [isExternalUser, setIsExternalUser] = useState(false);
@@ -173,37 +166,6 @@ const TimeTracking = () => {
   }, [targetUserId]);
 
   useEffect(() => { fetchEmployeeSchedule(); }, [fetchEmployeeSchedule]);
-
-  const fetchMaterialCatalog = useCallback(async () => {
-    const { data } = await supabase.from("materials").select("id, name, einheit").order("name");
-    if (data) setMaterialCatalog(data);
-  }, []);
-
-  useEffect(() => { fetchMaterialCatalog(); }, [fetchMaterialCatalog]);
-
-  const updateBlockMaterial = (blockId: string, index: number, field: keyof BlockMaterial, value: string) => {
-    setBlockMaterials(prev => {
-      const items = [...(prev[blockId] || [])];
-      items[index] = { ...items[index], [field]: value };
-      return { ...prev, [blockId]: items };
-    });
-  };
-
-  const addBlockMaterial = (blockId: string) => {
-    setBlockMaterials(prev => ({
-      ...prev,
-      [blockId]: [...(prev[blockId] || []), { material: "", menge: "" }],
-    }));
-    setExpandedMaterialBlocks(prev => ({ ...prev, [blockId]: true }));
-  };
-
-  const removeBlockMaterial = (blockId: string, index: number) => {
-    setBlockMaterials(prev => {
-      const items = [...(prev[blockId] || [])];
-      items.splice(index, 1);
-      return { ...prev, [blockId]: items };
-    });
-  };
 
   // Fetch existing entries for selected date
   const fetchExistingDayEntries = async (date: string) => {
@@ -274,8 +236,14 @@ const TimeTracking = () => {
       }
     } else {
       setExistingDayEntries([]);
-      // Reset to empty default for new day
-      setTimeBlocks([createDefaultBlock()]);
+      // Auto-fill default work times from employee schedule
+      const dateObj = new Date(date);
+      const defaults = getDefaultWorkTimes(dateObj, employeeSchedule);
+      if (defaults) {
+        setTimeBlocks([createDefaultBlock(defaults.startTime, defaults.endTime)]);
+      } else {
+        setTimeBlocks([createDefaultBlock()]);
+      }
     }
     setLoadingDayEntries(false);
   };
@@ -838,19 +806,6 @@ const TimeTracking = () => {
       }
 
       totalEntriesCreated += 1;
-
-      // Save material entries for this block
-      const mats = blockMaterials[block.id]?.filter(m => m.material.trim());
-      if (mats && mats.length > 0 && block.projectId) {
-        const materialRows = mats.map(m => ({
-          user_id: targetUserId || user.id,
-          project_id: block.projectId,
-          material: m.material.trim(),
-          menge: m.menge || null,
-        }));
-        const { error: matError } = await supabase.from("material_entries").insert(materialRows);
-        if (matError) console.error("Error saving materials:", matError);
-      }
     }
 
     if (!hasError) {
@@ -877,10 +832,6 @@ const TimeTracking = () => {
         setEditMode(false);
         setEditingEntryIds([]);
       }
-
-      // Reset material state
-      setBlockMaterials({});
-      setExpandedMaterialBlocks({});
 
       // Refresh existing entries
       await fetchExistingDayEntries(selectedDate);
@@ -1335,77 +1286,6 @@ const TimeTracking = () => {
                           </p>
                         )}
 
-                        {/* Material section - only for Baustelle with project */}
-                        {block.locationType === "baustelle" && block.projectId && (
-                          <div className="border rounded-lg p-3 space-y-2">
-                            <button
-                              type="button"
-                              className="flex items-center gap-2 text-sm font-medium w-full"
-                              onClick={() => setExpandedMaterialBlocks(prev => ({ ...prev, [block.id]: !prev[block.id] }))}
-                            >
-                              <Package className="w-4 h-4" />
-                              Material
-                              {(blockMaterials[block.id]?.length || 0) > 0 && (
-                                <Badge variant="secondary" className="ml-auto mr-2">{blockMaterials[block.id].length}</Badge>
-                              )}
-                              {expandedMaterialBlocks[block.id] ? <ChevronUp className="w-4 h-4 ml-auto" /> : <ChevronDown className="w-4 h-4 ml-auto" />}
-                            </button>
-                            {expandedMaterialBlocks[block.id] && (
-                              <div className="space-y-2 pt-1">
-                                {(blockMaterials[block.id] || []).map((mat, matIdx) => {
-                                  const isFromCatalog = materialCatalog.some(c => c.name === mat.material);
-                                  return (
-                                  <div key={matIdx} className="space-y-1">
-                                    <div className="flex gap-2 items-end">
-                                      <div className="flex-1">
-                                        <Select
-                                          value={isFromCatalog ? mat.material : (mat.material !== "" ? "__custom__" : "")}
-                                          onValueChange={(val) => {
-                                            updateBlockMaterial(block.id, matIdx, "material", val === "__custom__" ? "" : val);
-                                          }}
-                                        >
-                                          <SelectTrigger className="h-9">
-                                            <SelectValue placeholder="Material" />
-                                          </SelectTrigger>
-                                          <SelectContent>
-                                            {materialCatalog.map(c => (
-                                              <SelectItem key={c.id} value={c.name}>{c.name} ({c.einheit})</SelectItem>
-                                            ))}
-                                            <SelectItem value="__custom__" className="font-medium">Anderes...</SelectItem>
-                                          </SelectContent>
-                                        </Select>
-                                      </div>
-                                      <div className="w-20">
-                                        <Input
-                                          placeholder="Menge"
-                                          value={mat.menge}
-                                          onChange={(e) => updateBlockMaterial(block.id, matIdx, "menge", e.target.value)}
-                                          className="h-9"
-                                        />
-                                      </div>
-                                      <Button type="button" variant="ghost" size="sm" onClick={() => removeBlockMaterial(block.id, matIdx)} className="h-9 px-2">
-                                        <Trash2 className="w-3 h-3" />
-                                      </Button>
-                                    </div>
-                                    {!isFromCatalog && (
-                                      <Input
-                                        placeholder="Material eingeben"
-                                        value={mat.material}
-                                        onChange={(e) => updateBlockMaterial(block.id, matIdx, "material", e.target.value)}
-                                        className="h-9"
-                                        autoFocus
-                                      />
-                                    )}
-                                  </div>
-                                  );
-                                })}
-                                <Button type="button" variant="outline" size="sm" onClick={() => addBlockMaterial(block.id)} className="w-full text-xs">
-                                  <Plus className="w-3 h-3 mr-1" /> Material hinzufügen
-                                </Button>
-                              </div>
-                            )}
-                          </div>
-                        )}
 
                         {/* Regelarbeitszeit button - not for external */}
                         {!isExternalUser && (
