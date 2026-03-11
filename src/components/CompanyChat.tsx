@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Camera, Send, ChevronUp } from "lucide-react";
+import { Camera, Send, ChevronUp, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
@@ -11,24 +11,31 @@ type BroadcastMessage = {
   message: string | null;
   image_url: string | null;
   target_roles: string[];
+  channel_id: string | null;
   created_at: string;
   sender_name?: string;
 };
 
-const PAGE_SIZE = 50;
-
-const ROLE_LABELS: Record<string, string> = {
-  alle: "Alle",
-  lehrling: "Lehrlinge",
-  facharbeiter: "Facharbeiter",
-  vorarbeiter: "Vorarbeiter",
-  extern: "Extern",
+type ChatChannel = {
+  id: string;
+  name: string;
+  channel_type: string;
+  target_roles: string[];
+  target_user_id: string | null;
+  created_by: string;
 };
 
-const ROLE_OPTIONS = ["alle", "lehrling", "facharbeiter", "vorarbeiter", "extern"];
+const PAGE_SIZE = 50;
 
-export function CompanyChat({ isAdmin, userKategorie }: { isAdmin: boolean; userKategorie: string | null }) {
+export function CompanyChat({
+  channelId,
+  isAdmin,
+}: {
+  channelId: string;
+  isAdmin: boolean;
+}) {
   const { toast } = useToast();
+  const [channel, setChannel] = useState<ChatChannel | null>(null);
   const [messages, setMessages] = useState<BroadcastMessage[]>([]);
   const [newMessage, setNewMessage] = useState("");
   const [sending, setSending] = useState(false);
@@ -37,7 +44,6 @@ export function CompanyChat({ isAdmin, userKategorie }: { isAdmin: boolean; user
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [initialLoad, setInitialLoad] = useState(true);
-  const [selectedRoles, setSelectedRoles] = useState<string[]>(["alle"]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -49,7 +55,20 @@ export function CompanyChat({ isAdmin, userKategorie }: { isAdmin: boolean; user
     });
   }, []);
 
-  // Fetch profile name
+  // Load channel details
+  useEffect(() => {
+    if (!channelId) return;
+    supabase
+      .from("chat_channels")
+      .select("id, name, channel_type, target_roles, target_user_id, created_by")
+      .eq("id", channelId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data) setChannel(data as ChatChannel);
+      });
+  }, [channelId]);
+
+  // Fetch profile name (with cache)
   const getProfileName = async (userId: string): Promise<string> => {
     if (profileCache[userId]) return profileCache[userId];
     const { data } = await supabase
@@ -71,20 +90,17 @@ export function CompanyChat({ isAdmin, userKategorie }: { isAdmin: boolean; user
     );
   };
 
-  // Filter messages for non-admin users
-  const filterForUser = (msgs: BroadcastMessage[]): BroadcastMessage[] => {
-    if (isAdmin) return msgs;
-    return msgs.filter(
-      (msg) => msg.target_roles.includes("alle") || (userKategorie && msg.target_roles.includes(userKategorie))
-    );
-  };
-
-  // Initial load
+  // Initial load — filter by channel_id
   useEffect(() => {
+    if (!channelId) return;
+    setInitialLoad(true);
+    setMessages([]);
+
     const loadMessages = async () => {
       const { data, error } = await supabase
         .from("broadcast_messages")
         .select("*")
+        .eq("channel_id", channelId)
         .order("created_at", { ascending: false })
         .limit(PAGE_SIZE);
 
@@ -102,18 +118,21 @@ export function CompanyChat({ isAdmin, userKategorie }: { isAdmin: boolean; user
     };
 
     loadMessages();
-  }, []);
+  }, [channelId]);
 
-  // Realtime subscription
+  // Realtime subscription — filter by channel_id
   useEffect(() => {
-    const channel = supabase
-      .channel("broadcast-chat")
+    if (!channelId) return;
+
+    const ch = supabase
+      .channel(`broadcast-chat-${channelId}`)
       .on(
         "postgres_changes",
         {
           event: "INSERT",
           schema: "public",
           table: "broadcast_messages",
+          filter: `channel_id=eq.${channelId}`,
         },
         async (payload) => {
           const newMsg = payload.new as BroadcastMessage;
@@ -124,12 +143,24 @@ export function CompanyChat({ isAdmin, userKategorie }: { isAdmin: boolean; user
           });
         }
       )
+      .on(
+        "postgres_changes",
+        {
+          event: "DELETE",
+          schema: "public",
+          table: "broadcast_messages",
+        },
+        (payload) => {
+          const deletedId = (payload.old as any)?.id;
+          if (deletedId) setMessages((prev) => prev.filter((m) => m.id !== deletedId));
+        }
+      )
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(ch);
     };
-  }, []);
+  }, [channelId]);
 
   // Auto-scroll on new messages
   useEffect(() => {
@@ -140,13 +171,14 @@ export function CompanyChat({ isAdmin, userKategorie }: { isAdmin: boolean; user
 
   // Load older messages
   const loadMore = async () => {
-    if (loadingMore || !hasMore || messages.length === 0) return;
+    if (loadingMore || !hasMore || messages.length === 0 || !channelId) return;
     setLoadingMore(true);
 
     const oldestMessage = messages[0];
     const { data, error } = await supabase
       .from("broadcast_messages")
       .select("*")
+      .eq("channel_id", channelId)
       .lt("created_at", oldestMessage.created_at)
       .order("created_at", { ascending: false })
       .limit(PAGE_SIZE);
@@ -164,49 +196,46 @@ export function CompanyChat({ isAdmin, userKategorie }: { isAdmin: boolean; user
     setLoadingMore(false);
   };
 
-  // Toggle role selection
-  const toggleRole = (role: string) => {
-    if (role === "alle") {
-      setSelectedRoles(["alle"]);
-      return;
-    }
-    setSelectedRoles((prev) => {
-      const without = prev.filter((r) => r !== "alle" && r !== role);
-      if (prev.includes(role)) {
-        return without.length === 0 ? ["alle"] : without;
-      }
-      return [...without, role];
-    });
-  };
-
   // Send text message
   const handleSend = async () => {
     const text = newMessage.trim();
-    if (!text || !currentUserId || sending) return;
+    if (!text || !currentUserId || sending || !channelId || !channel) return;
 
     setSending(true);
     setNewMessage("");
 
+    const roles = channel.target_roles.length > 0 ? channel.target_roles : ["alle"];
     const { error } = await supabase.from("broadcast_messages").insert({
       user_id: currentUserId,
       message: text,
-      target_roles: selectedRoles,
+      target_roles: roles,
+      channel_id: channelId,
     });
 
     if (error) {
       toast({ variant: "destructive", title: "Fehler", description: "Nachricht konnte nicht gesendet werden" });
       setNewMessage(text);
     } else {
-      sendNotifications(text.substring(0, 100));
-      sendPush(text.substring(0, 100));
+      sendNotifications(text.substring(0, 100), roles, channel);
+      sendPush(text.substring(0, 100), roles, channel);
     }
     setSending(false);
+  };
+
+  // Delete message (admin only)
+  const handleDeleteMessage = async (msgId: string) => {
+    const { error } = await supabase.from("broadcast_messages").delete().eq("id", msgId);
+    if (error) {
+      toast({ variant: "destructive", title: "Fehler", description: error.message });
+    } else {
+      setMessages((prev) => prev.filter((m) => m.id !== msgId));
+    }
   };
 
   // Send photo
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !currentUserId) return;
+    if (!file || !currentUserId || !channelId || !channel) return;
 
     setSending(true);
     const filePath = `${Date.now()}_${file.name}`;
@@ -223,17 +252,19 @@ export function CompanyChat({ isAdmin, userKategorie }: { isAdmin: boolean; user
 
     const { data: urlData } = supabase.storage.from("broadcast-chat").getPublicUrl(filePath);
 
+    const roles = channel.target_roles.length > 0 ? channel.target_roles : ["alle"];
     const { error } = await supabase.from("broadcast_messages").insert({
       user_id: currentUserId,
       image_url: urlData.publicUrl,
-      target_roles: selectedRoles,
+      target_roles: roles,
+      channel_id: channelId,
     });
 
     if (error) {
       toast({ variant: "destructive", title: "Fehler", description: "Foto konnte nicht gesendet werden" });
     } else {
-      sendNotifications("📷 Foto gesendet");
-      sendPush("📷 Foto gesendet");
+      sendNotifications("📷 Foto gesendet", roles, channel);
+      sendPush("📷 Foto gesendet", roles, channel);
     }
 
     setSending(false);
@@ -241,16 +272,26 @@ export function CompanyChat({ isAdmin, userKategorie }: { isAdmin: boolean; user
   };
 
   // Send in-app notifications
-  const sendNotifications = async (messagePreview: string) => {
+  const sendNotifications = async (messagePreview: string, roles: string[], ch: ChatChannel) => {
     if (!currentUserId) return;
 
-    const { data: employees } = await supabase
-      .from("employees")
-      .select("user_id, kategorie");
+    let recipients: { user_id: string }[] = [];
 
-    const recipients = (employees || [])
-      .filter((e) => e.user_id !== currentUserId)
-      .filter((e) => selectedRoles.includes("alle") || selectedRoles.includes(e.kategorie));
+    if (ch.channel_type === "direct" && ch.target_user_id) {
+      // Direct message: notify only the target user
+      if (ch.target_user_id !== currentUserId) {
+        recipients = [{ user_id: ch.target_user_id }];
+      }
+    } else {
+      // Broadcast: notify by roles
+      const { data: employees } = await supabase
+        .from("employees")
+        .select("user_id, kategorie");
+
+      recipients = (employees || [])
+        .filter((e) => e.user_id !== currentUserId)
+        .filter((e) => roles.includes("alle") || roles.includes(e.kategorie));
+    }
 
     if (recipients.length > 0) {
       await supabase.from("notifications").insert(
@@ -258,34 +299,42 @@ export function CompanyChat({ isAdmin, userKategorie }: { isAdmin: boolean; user
           user_id: e.user_id,
           created_by: currentUserId,
           type: "broadcast_message",
-          title: "Neue Firmen-Nachricht",
+          title: `Neue Nachricht — ${ch.name}`,
           message: messagePreview,
-          metadata: {},
+          metadata: { channel_id: channelId },
         }))
       );
     }
   };
 
-  // Send push notifications via Edge Function
-  const sendPush = async (messagePreview: string) => {
+  // Send push notifications
+  const sendPush = async (messagePreview: string, roles: string[], ch: ChatChannel) => {
     if (!currentUserId) return;
 
-    const { data: employees } = await supabase
-      .from("employees")
-      .select("user_id, kategorie");
+    let recipientIds: string[] = [];
 
-    const recipientIds = (employees || [])
-      .filter((e) => e.user_id !== currentUserId)
-      .filter((e) => selectedRoles.includes("alle") || selectedRoles.includes(e.kategorie))
-      .map((e) => e.user_id);
+    if (ch.channel_type === "direct" && ch.target_user_id) {
+      if (ch.target_user_id !== currentUserId) {
+        recipientIds = [ch.target_user_id];
+      }
+    } else {
+      const { data: employees } = await supabase
+        .from("employees")
+        .select("user_id, kategorie");
+
+      recipientIds = (employees || [])
+        .filter((e) => e.user_id !== currentUserId)
+        .filter((e) => roles.includes("alle") || roles.includes(e.kategorie))
+        .map((e) => e.user_id);
+    }
 
     if (recipientIds.length > 0) {
       supabase.functions.invoke("send-push", {
         body: {
           user_ids: recipientIds,
-          title: "Firmen-Chat",
+          title: ch.name,
           body: messagePreview,
-          url: "/company-chat",
+          url: `/company-chat?tab=${channelId}`,
         },
       });
     }
@@ -315,16 +364,11 @@ export function CompanyChat({ isAdmin, userKategorie }: { isAdmin: boolean; user
     return d.toLocaleDateString("de-AT", { weekday: "long", day: "2-digit", month: "long" });
   };
 
-  const shouldShowDate = (index: number, filtered: BroadcastMessage[]) => {
+  const shouldShowDate = (index: number, msgs: BroadcastMessage[]) => {
     if (index === 0) return true;
-    const curr = new Date(filtered[index].created_at).toDateString();
-    const prev = new Date(filtered[index - 1].created_at).toDateString();
+    const curr = new Date(msgs[index].created_at).toDateString();
+    const prev = new Date(msgs[index - 1].created_at).toDateString();
     return curr !== prev;
-  };
-
-  const getRoleBadge = (roles: string[]) => {
-    if (roles.includes("alle")) return "Alle";
-    return roles.map((r) => ROLE_LABELS[r] || r).join(", ");
   };
 
   if (initialLoad) {
@@ -335,32 +379,8 @@ export function CompanyChat({ isAdmin, userKategorie }: { isAdmin: boolean; user
     );
   }
 
-  const visibleMessages = filterForUser(messages);
-
   return (
-    <div className="flex flex-col h-[calc(100vh-8rem)]">
-      {/* Role selection for admin */}
-      {isAdmin && (
-        <div className="border-b bg-card px-3 py-2">
-          <p className="text-xs text-muted-foreground mb-1.5">Empfänger:</p>
-          <div className="flex flex-wrap gap-1.5">
-            {ROLE_OPTIONS.map((role) => (
-              <button
-                key={role}
-                onClick={() => toggleRole(role)}
-                className={`text-xs px-3 py-1 rounded-full border transition-colors ${
-                  selectedRoles.includes(role)
-                    ? "bg-primary text-primary-foreground border-primary"
-                    : "bg-muted border-border hover:border-primary/50"
-                }`}
-              >
-                {ROLE_LABELS[role]}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
+    <div className="flex flex-col h-full">
       {/* Messages area */}
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
         {hasMore && (
@@ -378,16 +398,16 @@ export function CompanyChat({ isAdmin, userKategorie }: { isAdmin: boolean; user
           </div>
         )}
 
-        {visibleMessages.length === 0 && (
+        {messages.length === 0 && (
           <div className="text-center py-12">
             <p className="text-muted-foreground text-sm">Noch keine Nachrichten</p>
-            {isAdmin && <p className="text-muted-foreground text-xs mt-1">Schreibe die erste Nachricht an dein Team!</p>}
+            <p className="text-muted-foreground text-xs mt-1">Schreibe die erste Nachricht!</p>
           </div>
         )}
 
-        {visibleMessages.map((msg, index) => {
+        {messages.map((msg, index) => {
           const isOwn = msg.user_id === currentUserId;
-          const showDate = shouldShowDate(index, visibleMessages);
+          const showDate = shouldShowDate(index, messages);
 
           return (
             <div key={msg.id}>
@@ -399,9 +419,9 @@ export function CompanyChat({ isAdmin, userKategorie }: { isAdmin: boolean; user
                 </div>
               )}
 
-              <div className={`flex ${isOwn ? "justify-end" : "justify-start"} mt-2`}>
+              <div className={`flex ${isOwn ? "justify-end" : "justify-start"} mt-2 group`}>
                 <div
-                  className={`max-w-[80%] sm:max-w-[70%] rounded-2xl px-3 py-2 ${
+                  className={`max-w-[80%] sm:max-w-[70%] rounded-2xl px-3 py-2 relative ${
                     isOwn ? "bg-primary text-primary-foreground rounded-br-md" : "bg-muted rounded-bl-md"
                   }`}
                 >
@@ -409,15 +429,6 @@ export function CompanyChat({ isAdmin, userKategorie }: { isAdmin: boolean; user
                   {!isOwn && (
                     <p className="text-xs font-semibold mb-0.5 opacity-80">{msg.sender_name}</p>
                   )}
-
-                  {/* Target role badge */}
-                  <span
-                    className={`inline-block text-[10px] px-1.5 py-0.5 rounded mb-1 ${
-                      isOwn ? "bg-primary-foreground/20" : "bg-background/60"
-                    }`}
-                  >
-                    An: {getRoleBadge(msg.target_roles)}
-                  </span>
 
                   {/* Image */}
                   {msg.image_url && (
@@ -437,6 +448,16 @@ export function CompanyChat({ isAdmin, userKategorie }: { isAdmin: boolean; user
                   <p className={`text-[10px] mt-0.5 text-right ${isOwn ? "opacity-70" : "text-muted-foreground"}`}>
                     {formatTime(msg.created_at)}
                   </p>
+
+                  {/* Admin delete */}
+                  {isAdmin && (
+                    <button
+                      className="absolute -top-2 -right-2 h-6 w-6 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                      onClick={() => handleDeleteMessage(msg.id)}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -446,50 +467,48 @@ export function CompanyChat({ isAdmin, userKategorie }: { isAdmin: boolean; user
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input area - only for admin */}
-      {isAdmin && (
-        <div className="border-t bg-card p-3">
-          <div className="flex items-center gap-2">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={handlePhotoUpload}
-            />
-            <Button
-              variant="ghost"
-              size="icon"
-              className="shrink-0"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={sending}
-            >
-              <Camera className="h-5 w-5" />
-            </Button>
-            <Input
-              value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
-              placeholder="Nachricht an Team..."
-              className="flex-1"
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSend();
-                }
-              }}
-              disabled={sending}
-            />
-            <Button
-              size="icon"
-              className="shrink-0"
-              onClick={handleSend}
-              disabled={!newMessage.trim() || sending}
-            >
-              <Send className="h-5 w-5" />
-            </Button>
-          </div>
+      {/* Input area */}
+      <div className="border-t bg-card p-3">
+        <div className="flex items-center gap-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handlePhotoUpload}
+          />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="shrink-0"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={sending}
+          >
+            <Camera className="h-5 w-5" />
+          </Button>
+          <Input
+            value={newMessage}
+            onChange={(e) => setNewMessage(e.target.value)}
+            placeholder="Nachricht schreiben..."
+            className="flex-1"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                handleSend();
+              }
+            }}
+            disabled={sending}
+          />
+          <Button
+            size="icon"
+            className="shrink-0"
+            onClick={handleSend}
+            disabled={!newMessage.trim() || sending}
+          >
+            <Send className="h-5 w-5" />
+          </Button>
         </div>
-      )}
+      </div>
     </div>
   );
 }

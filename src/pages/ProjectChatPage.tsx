@@ -10,6 +10,7 @@ export default function ProjectChatPage() {
   const navigate = useNavigate();
   const [projectName, setProjectName] = useState("");
   const [hasAccess, setHasAccess] = useState<boolean | null>(null); // null = loading
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     if (!projectId) return;
@@ -36,6 +37,7 @@ export default function ProjectChatPage() {
         .maybeSingle();
 
       if (role) {
+        setIsAdmin(true);
         setHasAccess(true);
         // Mark chat notifications as read
         await supabase
@@ -100,7 +102,7 @@ export default function ProjectChatPage() {
       <header className="border-b bg-card sticky top-0 z-50 shadow-sm">
         <div className="container mx-auto px-3 sm:px-4 lg:px-6 py-3 sm:py-4">
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={() => navigate(`/projects/${projectId}`)}>
+            <Button variant="ghost" size="sm" onClick={() => navigate("/")}>
               <ArrowLeft className="h-4 w-4 mr-2" />
               <span className="hidden sm:inline">Zurück</span>
             </Button>
@@ -114,7 +116,7 @@ export default function ProjectChatPage() {
         </div>
       </header>
 
-      <ProjectChat projectId={projectId} projectName={projectName} />
+      <ProjectChat projectId={projectId} projectName={projectName} isAdmin={isAdmin} />
     </div>
   );
 }

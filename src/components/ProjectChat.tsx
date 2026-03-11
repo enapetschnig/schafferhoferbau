@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Camera, Send, ChevronUp } from "lucide-react";
+import { Camera, Send, ChevronUp, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
@@ -17,7 +17,7 @@ type ChatMessage = {
 
 const PAGE_SIZE = 50;
 
-export function ProjectChat({ projectId, projectName }: { projectId: string; projectName?: string }) {
+export function ProjectChat({ projectId, projectName, isAdmin }: { projectId: string; projectName?: string; isAdmin?: boolean }) {
   const { toast } = useToast();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState("");
@@ -117,6 +117,19 @@ export function ProjectChat({ projectId, projectName }: { projectId: string; pro
           });
         }
       )
+      .on(
+        "postgres_changes",
+        {
+          event: "DELETE",
+          schema: "public",
+          table: "project_messages",
+          filter: `project_id=eq.${projectId}`,
+        },
+        (payload) => {
+          const deletedId = (payload.old as any)?.id;
+          if (deletedId) setMessages(prev => prev.filter(m => m.id !== deletedId));
+        }
+      )
       .subscribe();
 
     return () => {
@@ -191,6 +204,16 @@ export function ProjectChat({ projectId, projectName }: { projectId: string; pro
           url: `/projects/${projectId}/chat`,
         },
       });
+    }
+  };
+
+  // Delete message (admin only)
+  const handleDeleteMessage = async (msgId: string) => {
+    const { error } = await supabase.from("project_messages").delete().eq("id", msgId);
+    if (error) {
+      toast({ variant: "destructive", title: "Fehler", description: error.message });
+    } else {
+      setMessages(prev => prev.filter(m => m.id !== msgId));
     }
   };
 
@@ -363,9 +386,9 @@ export function ProjectChat({ projectId, projectName }: { projectId: string; pro
               )}
 
               {/* Message bubble */}
-              <div className={`flex ${isOwn ? "justify-end" : "justify-start"} ${showSender ? "mt-2" : "mt-0.5"}`}>
+              <div className={`flex ${isOwn ? "justify-end" : "justify-start"} ${showSender ? "mt-2" : "mt-0.5"} group`}>
                 <div
-                  className={`max-w-[80%] sm:max-w-[70%] rounded-2xl px-3 py-2 ${
+                  className={`max-w-[80%] sm:max-w-[70%] rounded-2xl px-3 py-2 relative ${
                     isOwn
                       ? "bg-primary text-primary-foreground rounded-br-md"
                       : "bg-muted rounded-bl-md"
@@ -398,6 +421,16 @@ export function ProjectChat({ projectId, projectName }: { projectId: string; pro
                   <p className={`text-[10px] mt-0.5 text-right ${isOwn ? "opacity-70" : "text-muted-foreground"}`}>
                     {formatTime(msg.created_at)}
                   </p>
+
+                  {/* Admin delete */}
+                  {isAdmin && (
+                    <button
+                      className="absolute -top-2 -right-2 h-6 w-6 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                      onClick={() => handleDeleteMessage(msg.id)}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  )}
                 </div>
               </div>
             </div>

@@ -21,6 +21,7 @@ export function WarehouseProductFormDialog({ open, onOpenChange, product, onSave
   const [category, setCategory] = useState<WarehouseProductCategory>("kleinteile");
   const [einheit, setEinheit] = useState("Stück");
   const [ekPreis, setEkPreis] = useState("");
+  const [currentStock, setCurrentStock] = useState("");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -29,11 +30,13 @@ export function WarehouseProductFormDialog({ open, onOpenChange, product, onSave
       setCategory(product.category);
       setEinheit(product.einheit);
       setEkPreis(product.ek_preis?.toString() || "");
+      setCurrentStock(product.current_stock?.toString() || "");
     } else {
       setName("");
       setCategory("kleinteile");
       setEinheit("Stück");
       setEkPreis("");
+      setCurrentStock("");
     }
   }, [product, open]);
 
@@ -49,6 +52,7 @@ export function WarehouseProductFormDialog({ open, onOpenChange, product, onSave
         category,
         einheit: einheit.trim() || "Stück",
         ek_preis: ekPreis ? parseFloat(ekPreis.replace(",", ".")) : null,
+        current_stock: currentStock ? parseFloat(currentStock.replace(",", ".")) : 0,
         updated_at: new Date().toISOString(),
       };
 
@@ -102,6 +106,16 @@ export function WarehouseProductFormDialog({ open, onOpenChange, product, onSave
               value={ekPreis}
               onChange={(e) => setEkPreis(e.target.value)}
               placeholder="0,00"
+              type="text"
+              inputMode="decimal"
+            />
+          </div>
+          <div>
+            <Label>Aktueller Bestand</Label>
+            <Input
+              value={currentStock}
+              onChange={(e) => setCurrentStock(e.target.value)}
+              placeholder="0"
               type="text"
               inputMode="decimal"
             />

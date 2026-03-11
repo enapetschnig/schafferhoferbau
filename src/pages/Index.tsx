@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Session, User } from "@supabase/supabase-js";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Clock, FolderKanban, Users, BarChart3, LogOut, FileText, Camera, ArrowRight, Info, User as UserIcon, UserPlus, Zap, Receipt, Bell, X, CloudRain, ClipboardList, Wrench, CalendarDays, BookOpen, Star, MapPin, Megaphone, MessageCircle, ChevronLeft, Package, ShieldCheck, Plus } from "lucide-react";
+import { Clock, FolderKanban, Users, BarChart3, LogOut, FileText, Camera, ArrowRight, Info, User as UserIcon, UserPlus, Zap, Receipt, CloudRain, ClipboardList, Wrench, CalendarDays, BookOpen, Star, MapPin, Megaphone, MessageCircle, ChevronLeft, Package, ShieldCheck, Plus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useOnboarding } from "@/contexts/OnboardingContext";
 import {
@@ -25,16 +25,6 @@ type Project = {
   name: string;
   status: string;
   updated_at: string;
-};
-
-type Notification = {
-  id: string;
-  type: string;
-  title: string;
-  message: string;
-  is_read: boolean;
-  created_at: string;
-  metadata: Record<string, any> | null;
 };
 
 type RecentTimeEntry = {
@@ -65,6 +55,7 @@ type ChatPreview = {
   type: "project" | "company";
   projectId?: string;
   projectName?: string;
+  channelId?: string;
   lastMessage: string;
   senderName: string;
   timestamp: string;
@@ -82,7 +73,6 @@ export default function Index() {
   const [recentEntries, setRecentEntries] = useState<RecentTimeEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [isActivated, setIsActivated] = useState<boolean | null>(null);
-  const [notifications, setNotifications] = useState<Notification[]>([]);
   const [missingHoursDate, setMissingHoursDate] = useState<string | null>(null);
   const [kategorie, setKategorie] = useState<string | null>(null);
   const [favoriteProjects, setFavoriteProjects] = useState<{ id: string; name: string; adresse: string | null }[]>([]);
@@ -159,17 +149,6 @@ export default function Index() {
       .in("id", ids)
       .eq("status", "aktiv");
     setFavoriteProjects(projData || []);
-  };
-
-  const fetchNotifications = async (userId: string) => {
-    const { data } = await supabase
-      .from("notifications")
-      .select("id, type, title, message, is_read, created_at, metadata")
-      .eq("user_id", userId)
-      .eq("is_read", false)
-      .order("created_at", { ascending: false })
-      .limit(10);
-    if (data) setNotifications(data);
   };
 
   const fetchChatPreviews = async (userId: string, isAdminUser: boolean) => {
@@ -258,38 +237,48 @@ export default function Index() {
       }
     }
 
-    // 6. Company chat (broadcast_messages) — latest message
-    const { data: latestBroadcast } = await supabase
-      .from("broadcast_messages")
-      .select("message, user_id, created_at")
-      .order("created_at", { ascending: false })
-      .limit(1);
+    // 6. Company chat channels — one preview per channel
+    const { data: channels } = await supabase
+      .from("chat_channels")
+      .select("id, name")
+      .order("created_at", { ascending: true });
 
-    if (latestBroadcast && latestBroadcast.length > 0) {
-      const bc = latestBroadcast[0];
-      let senderName = "Admin";
+    for (const channel of channels || []) {
+      const { data: latestMsg } = await supabase
+        .from("broadcast_messages")
+        .select("message, user_id, created_at")
+        .eq("channel_id", channel.id)
+        .order("created_at", { ascending: false })
+        .limit(1);
+
+      if (!latestMsg || latestMsg.length === 0) continue;
+
+      const bc = latestMsg[0];
+      let senderName = "";
       const { data: senderProfile } = await supabase
         .from("profiles")
         .select("vorname, nachname")
         .eq("id", bc.user_id)
-        .single();
+        .maybeSingle();
       if (senderProfile) senderName = `${senderProfile.vorname || ""} ${senderProfile.nachname || ""}`.trim();
 
-      // Unread count for broadcast
-      const { data: bcUnread } = await supabase
+      // Unread count for this channel
+      const { data: chUnread } = await supabase
         .from("notifications")
         .select("id")
         .eq("user_id", userId)
         .eq("type", "broadcast_message")
-        .eq("is_read", false);
+        .eq("is_read", false)
+        .contains("metadata", { channel_id: channel.id });
 
       previews.push({
         type: "company",
-        projectName: "Firmen-Chat",
+        channelId: channel.id,
+        projectName: channel.name,
         lastMessage: bc.message || "",
         senderName,
         timestamp: bc.created_at,
-        unreadCount: bcUnread?.length || 0,
+        unreadCount: chUnread?.length || 0,
       });
     }
 
@@ -377,7 +366,7 @@ export default function Index() {
       }
     };
 
-    const fetchAllProjectsForAdmin = async () => {
+    const fetchAllProjectsForChat = async () => {
       if (role === "administrator") {
         const { data } = await supabase
           .from("projects")
@@ -385,17 +374,32 @@ export default function Index() {
           .eq("status", "aktiv")
           .order("name");
         if (data) setAllProjects(data);
+      } else {
+        // Non-admin: fetch projects user has access to
+        const { data: accessData } = await supabase
+          .from("project_access")
+          .select("project_id")
+          .eq("user_id", userId);
+        const pids = (accessData || []).map(a => a.project_id);
+        if (pids.length > 0) {
+          const { data } = await supabase
+            .from("projects")
+            .select("id, name, status, updated_at")
+            .in("id", pids)
+            .eq("status", "aktiv")
+            .order("name");
+          if (data) setAllProjects(data);
+        }
       }
     };
 
     await Promise.all([
       fetchProjects(),
       fetchRecentEntries(userId, role),
-      fetchNotifications(userId),
       checkMissingHours(userId),
       fetchFavoriteProjects(userId),
       fetchPendingUsers(),
-      fetchAllProjectsForAdmin(),
+      fetchAllProjectsForChat(),
       fetchChatPreviews(userId, role === "administrator"),
     ]);
 
@@ -480,6 +484,9 @@ export default function Index() {
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "broadcast_messages" }, () => {
         if (user) fetchChatPreviews(user.id, userRole === "administrator");
       })
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "chat_channels" }, () => {
+        if (user) fetchChatPreviews(user.id, userRole === "administrator");
+      })
       .subscribe();
 
     return () => {
@@ -491,14 +498,6 @@ export default function Index() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigate]);
-
-  const handleDismissNotification = async (notificationId: string) => {
-    await supabase
-      .from("notifications")
-      .update({ is_read: true })
-      .eq("id", notificationId);
-    setNotifications(prev => prev.filter(n => n.id !== notificationId));
-  };
 
   const handleLogout = async () => {
     await supabase.auth.signOut({ scope: "local" });
@@ -619,46 +618,6 @@ export default function Index() {
           </div>
         )}
 
-        {/* Notifications Banner */}
-        {notifications.length > 0 && (
-          <div className="mb-4 space-y-2">
-            {notifications.map((notif) => (
-              <div
-                key={notif.id}
-                className="flex items-center gap-3 rounded-lg border border-primary/30 bg-primary/5 p-3 cursor-pointer"
-                onClick={() => {
-                  handleDismissNotification(notif.id);
-                  if (notif.type === "krankmeldung_upload") navigate("/admin");
-                  if (notif.type === "lohnzettel_upload") navigate("/my-documents");
-                  if (notif.type === "broadcast_message") navigate("/company-chat");
-                  if (notif.type === "chat_message") {
-                    const pid = (notif.metadata as any)?.project_id;
-                    navigate(pid ? `/projects/${pid}/chat` : "/company-chat");
-                  }
-                  if (notif.type === "account_activated") window.location.reload();
-                }}
-              >
-                <Bell className="h-5 w-5 text-primary shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-sm">{notif.title}</p>
-                  <p className="text-xs text-muted-foreground truncate">{notif.message}</p>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="shrink-0 h-8 w-8 p-0"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDismissNotification(notif.id);
-                  }}
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
-            ))}
-          </div>
-        )}
-
         {/* Missing Hours Reminder — nicht für Externe */}
         {!isExternal && missingHoursDate && (
           <div
@@ -718,19 +677,21 @@ export default function Index() {
                 <CardTitle className="text-lg flex items-center gap-2">
                   <MessageCircle className="h-5 w-5 text-green-600" /> Chats
                 </CardTitle>
-                {isAdmin && (
-                  <Button variant="outline" size="sm" onClick={() => { setChatDialogMode("select"); setShowChatDialog(true); }}>
-                    <Plus className="h-4 w-4 mr-1" /> Neuer Chat
-                  </Button>
-                )}
+                <Button variant="outline" size="sm" onClick={() => { setChatDialogMode("select"); setShowChatDialog(true); }}>
+                  <Plus className="h-4 w-4 mr-1" /> Chat öffnen
+                </Button>
               </div>
             </CardHeader>
             <CardContent className="p-0">
               {chatPreviews.map(chat => (
                 <div
-                  key={chat.projectId || "company"}
+                  key={chat.channelId || chat.projectId || "company"}
                   className="flex items-center gap-3 px-4 py-3 border-b last:border-b-0 cursor-pointer hover:bg-muted/50 transition-colors"
-                  onClick={() => navigate(chat.type === "company" ? "/company-chat" : `/projects/${chat.projectId}/chat`)}
+                  onClick={() => navigate(
+                    chat.type === "company"
+                      ? `/company-chat${chat.channelId ? `?tab=${chat.channelId}` : ""}`
+                      : `/projects/${chat.projectId}/chat`
+                  )}
                 >
                   <div className="h-10 w-10 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: chat.type === "company" ? "rgb(34 197 94 / 0.15)" : "rgb(59 130 246 / 0.15)" }}>
                     {chat.type === "company"
@@ -740,7 +701,7 @@ export default function Index() {
                   <div className="flex-1 min-w-0">
                     <div className="flex justify-between items-center">
                       <span className={`font-medium truncate ${chat.unreadCount > 0 ? "text-foreground" : "text-foreground/80"}`}>
-                        {chat.type === "company" ? "Firmen-Chat" : chat.projectName}
+                        {chat.projectName || (chat.type === "company" ? "Firmen-Chat" : "Projekt")}
                       </span>
                       <span className="text-xs text-muted-foreground whitespace-nowrap ml-2">
                         {formatChatTime(chat.timestamp)}
@@ -763,21 +724,17 @@ export default function Index() {
           <div
             className="mb-6 flex items-center gap-4 rounded-xl border-2 border-green-400 bg-green-50 dark:bg-green-950/20 p-4 cursor-pointer hover:bg-green-100 dark:hover:bg-green-950/30 transition-colors shadow-sm"
             onClick={() => {
-              if (isAdmin) {
-                setChatDialogMode("select");
-                setShowChatDialog(true);
-              } else {
-                navigate("/company-chat");
-              }
+              setChatDialogMode("select");
+              setShowChatDialog(true);
             }}
           >
             <div className="h-12 w-12 rounded-lg bg-green-500/20 flex items-center justify-center shrink-0">
-              {isAdmin ? <MessageCircle className="h-6 w-6 text-green-600" /> : <Megaphone className="h-6 w-6 text-green-600" />}
+              <MessageCircle className="h-6 w-6 text-green-600" />
             </div>
             <div className="flex-1">
-              <p className="font-semibold text-green-900 dark:text-green-100">{isAdmin ? "Chat starten" : "Firmen-Chat"}</p>
+              <p className="font-semibold text-green-900 dark:text-green-100">Chat starten</p>
               <p className="text-sm text-green-700 dark:text-green-300">
-                {isAdmin ? "Firmen-Chat oder Projekt-Chat starten" : "Nachrichten & Infos vom Chef"}
+                Firmen-Chat oder Projekt-Chat öffnen
               </p>
             </div>
             <ArrowRight className="h-5 w-5 text-green-600 shrink-0" />

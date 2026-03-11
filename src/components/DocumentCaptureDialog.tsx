@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { SignaturePad } from "@/components/SignaturePad";
-import { Camera, Loader2, AlertTriangle, CheckCircle2, Trash2 } from "lucide-react";
+import { Upload, Loader2, AlertTriangle, CheckCircle2, Trash2, FileText } from "lucide-react";
 
 type DocType = "lieferschein" | "lagerlieferschein" | "rechnung";
 
@@ -85,14 +85,21 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess }: Documen
     setSaving(false);
   };
 
+  const handleFileSelected = (file: File) => {
+    setImageFile(file);
+    if (file.type.startsWith("image/")) {
+      const reader = new FileReader();
+      reader.onload = (ev) => setImagePreview(ev.target?.result as string);
+      reader.readAsDataURL(file);
+    } else {
+      setImagePreview(null);
+    }
+  };
+
   const handlePhotoCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
-    setImageFile(file);
-    const reader = new FileReader();
-    reader.onload = (ev) => setImagePreview(ev.target?.result as string);
-    reader.readAsDataURL(file);
+    handleFileSelected(file);
   };
 
   const handleUploadAndExtract = async () => {
@@ -274,9 +281,16 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess }: Documen
               {/* Photo */}
               <div className="space-y-2">
                 <Label>Foto des Dokuments *</Label>
-                {imagePreview ? (
+                {imageFile ? (
                   <div className="relative">
-                    <img src={imagePreview} alt="Vorschau" className="w-full rounded-lg border max-h-48 object-contain bg-muted" />
+                    {imagePreview ? (
+                      <img src={imagePreview} alt="Vorschau" className="w-full rounded-lg border max-h-48 object-contain bg-muted" />
+                    ) : (
+                      <div className="w-full rounded-lg border bg-muted p-4 flex items-center gap-3">
+                        <FileText className="h-8 w-8 text-muted-foreground shrink-0" />
+                        <span className="text-sm font-medium truncate">{imageFile.name}</span>
+                      </div>
+                    )}
                     <Button
                       variant="destructive"
                       size="sm"
@@ -290,17 +304,23 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess }: Documen
                   <div
                     className="border-2 border-dashed rounded-lg p-6 text-center hover:border-primary transition-colors cursor-pointer"
                     onClick={() => fileInputRef.current?.click()}
+                    onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const file = e.dataTransfer.files?.[0];
+                      if (file) handleFileSelected(file);
+                    }}
                   >
-                    <Camera className="mx-auto h-10 w-10 text-muted-foreground mb-2" />
-                    <p className="text-sm font-medium">Foto aufnehmen oder Datei auswählen</p>
-                    <p className="text-xs text-muted-foreground mt-1">Tipp: Dokument gut beleuchtet und gerade fotografieren</p>
+                    <Upload className="mx-auto h-10 w-10 text-muted-foreground mb-2" />
+                    <p className="text-sm font-medium">Datei auswählen, fotografieren oder hierher ziehen</p>
+                    <p className="text-xs text-muted-foreground mt-1">Bilder, PDFs und Dokumente werden unterstützt</p>
                   </div>
                 )}
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept="image/*"
-                  capture="environment"
+                  accept="image/*,.pdf,.doc,.docx,.jpg,.jpeg,.png,.heic"
                   className="hidden"
                   onChange={handlePhotoCapture}
                 />

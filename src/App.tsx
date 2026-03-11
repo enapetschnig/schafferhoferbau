@@ -131,7 +131,7 @@ function AppContent() {
         {/* Ab Facharbeiter */}
         <Route path="/projects" element={<ProtectedRoute minRole="facharbeiter"><Projects /></ProtectedRoute>} />
         <Route path="/projects/:projectId" element={<ProtectedRoute minRole="facharbeiter"><ProjectOverview /></ProtectedRoute>} />
-        <Route path="/projects/:projectId/chat" element={<ProtectedRoute minRole="facharbeiter"><ProjectChatPage /></ProtectedRoute>} />
+        <Route path="/projects/:projectId/chat" element={<ProtectedRoute minRole="extern"><ProjectChatPage /></ProtectedRoute>} />
         <Route path="/projects/:projectId/:type" element={<ProtectedRoute minRole="facharbeiter"><ProjectDetail /></ProtectedRoute>} />
         <Route path="/projects/:projectId/orders" element={<ProtectedRoute minRole="facharbeiter"><OrderManagement /></ProtectedRoute>} />
         {/* Alle eingeloggten */}
