@@ -102,6 +102,18 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess }: Documen
     handleFileSelected(file);
   };
 
+  const toBase64 = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        // readAsDataURL returns "data:image/jpeg;base64,XXXX" — extract only the base64 part
+        resolve(result.split(",")[1] || "");
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+
   const handleUploadAndExtract = async () => {
     if (!imageFile || !projectId) {
       toast({ variant: "destructive", title: "Fehler", description: "Bitte Foto und Projekt auswählen" });
@@ -111,7 +123,7 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess }: Documen
     setExtracting(true);
 
     try {
-      // Upload to storage
+      // 1. Upload to storage (for archiving)
       const ext = imageFile.name.split(".").pop() || "jpg";
       const filePath = `${projectId}/${Date.now()}.${ext}`;
 
@@ -125,12 +137,21 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess }: Documen
         .from("incoming-documents")
         .getPublicUrl(filePath);
 
-      const publicUrl = urlData.publicUrl;
-      setUploadedUrl(publicUrl);
+      setUploadedUrl(urlData.publicUrl);
 
-      // Call AI extraction
+      // 2. For non-image files (PDF, DOC, etc.): skip AI, go straight to manual review
+      const isImage = imageFile.type.startsWith("image/");
+      if (!isImage) {
+        setStep("review");
+        return;
+      }
+
+      // 3. Convert image to base64 in browser
+      const imageBase64 = await toBase64(imageFile);
+
+      // 4. Call AI extraction with base64 (no URL fetch needed in edge function)
       const { data, error } = await supabase.functions.invoke("extract-document", {
-        body: { imageUrl: publicUrl },
+        body: { imageBase64, mediaType: imageFile.type },
       });
 
       if (error) throw error;

@@ -19,33 +19,31 @@ serve(async (req) => {
       );
     }
 
-    const { imageUrl } = await req.json();
-    if (!imageUrl) {
+    const { imageBase64, mediaType } = await req.json();
+    if (!imageBase64) {
       return new Response(
-        JSON.stringify({ error: "imageUrl required" }),
+        JSON.stringify({ error: "imageBase64 required" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Fetch image and convert to base64
-    const imageResponse = await fetch(imageUrl);
-    if (!imageResponse.ok) {
+    // For non-image files (PDF, DOC, etc.): skip AI extraction
+    const isImage = typeof mediaType === "string" && mediaType.startsWith("image/");
+    if (!isImage) {
       return new Response(
-        JSON.stringify({ error: "Could not fetch image" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        JSON.stringify({
+          lieferant: null,
+          datum: null,
+          belegnummer: null,
+          betrag: null,
+          positionen: [],
+          qualitaet: "nicht_bild",
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    const imageBuffer = await imageResponse.arrayBuffer();
-    const uint8Array = new Uint8Array(imageBuffer);
-    let binary = "";
-    for (let i = 0; i < uint8Array.length; i++) {
-      binary += String.fromCharCode(uint8Array[i]);
-    }
-    const base64Image = btoa(binary);
-    const mediaType = imageResponse.headers.get("content-type") || "image/png";
-
-    // Call OpenAI GPT-4o Vision API
+    // Call OpenAI GPT-4o Vision API with base64 image
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -62,7 +60,7 @@ serve(async (req) => {
               {
                 type: "image_url",
                 image_url: {
-                  url: `data:${mediaType};base64,${base64Image}`,
+                  url: `data:${mediaType};base64,${imageBase64}`,
                 },
               },
               {
