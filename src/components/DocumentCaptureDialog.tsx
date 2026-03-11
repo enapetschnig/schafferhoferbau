@@ -210,32 +210,20 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess }: Documen
       // 2. Prepare image for AI: compress images, render PDFs to JPEG via PDF.js
       const { base64, mimeType } = await prepareImageForAI(imageFile);
 
-      // 3. Call AI extraction with compressed JPEG base64
-      // Use direct fetch (not supabase.functions.invoke) to access error response body
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-      const fnUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/extract-document`;
-      const fnResponse = await fetch(fnUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`,
-          "apikey": import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-        },
-        body: JSON.stringify({ imageBase64: base64, mediaType: mimeType }),
+      // 3. Call AI extraction (SDK handles auth automatically)
+      const { data, error: fnError } = await supabase.functions.invoke("extract-document", {
+        body: { imageBase64: base64, mediaType: mimeType },
       });
 
-      if (!fnResponse.ok) {
-        let errMsg = `Edge Function Fehler ${fnResponse.status}`;
+      if (fnError) {
+        let errMsg = fnError.message;
         try {
-          const body = await fnResponse.json();
+          const body = await (fnError as any).context?.json?.();
           if (body?.error) errMsg = body.error;
           if (body?.details) errMsg += " — " + body.details;
         } catch {}
         throw new Error(errMsg);
       }
-
-      const data = await fnResponse.json();
 
       const result: ExtractedData = {
         lieferant: data?.lieferant || null,
