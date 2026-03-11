@@ -27,15 +27,18 @@ serve(async (req) => {
       );
     }
 
-    // For non-image files (PDF, DOC, etc.): skip AI extraction
+    const isPdf = mediaType === "application/pdf";
     const isImage = typeof mediaType === "string" && mediaType.startsWith("image/");
-    if (!isImage) {
+
+    // Skip unsupported file types
+    if (!isPdf && !isImage) {
       return new Response(
         JSON.stringify({
           lieferant: null,
           datum: null,
           belegnummer: null,
           betrag: null,
+          preistyp: "unbekannt",
           positionen: [],
           qualitaet: "nicht_bild",
         }),
@@ -43,7 +46,54 @@ serve(async (req) => {
       );
     }
 
-    // Call OpenAI GPT-4o Vision API with base64 image
+    // Build content block depending on file type:
+    // PDFs → native file input (GPT-4o reads all pages as text, no quality loss)
+    // Images → image_url (vision)
+    const fileContent = isPdf
+      ? {
+          type: "file",
+          file: {
+            filename: "document.pdf",
+            file_data: `data:application/pdf;base64,${imageBase64}`,
+          },
+        }
+      : {
+          type: "image_url",
+          image_url: {
+            url: `data:${mediaType};base64,${imageBase64}`,
+          },
+        };
+
+    const PROMPT = `Analysiere dieses Dokument (Rechnung, Lieferschein oder Lagerlieferschein) vollständig — alle Seiten, alle Zeilen.
+
+Antworte NUR mit einem validen JSON-Objekt (kein Markdown, kein Text davor oder danach):
+
+{
+  "lieferant": "Name des Lieferanten/Firma",
+  "datum": "YYYY-MM-DD",
+  "belegnummer": "Beleg-/Rechnungsnummer",
+  "betrag": 0.00,
+  "preistyp": "brutto/netto/unbekannt",
+  "positionen": [
+    {
+      "material": "exakter Materialname wie im Dokument",
+      "menge": 1.0,
+      "einheit": "Stk/m/m²/m³/kg/t/l/etc",
+      "einzelpreis": 0.00,
+      "gesamtpreis": 0.00
+    }
+  ],
+  "qualitaet": "gut/mittel/schlecht"
+}
+
+WICHTIGE REGELN:
+- "positionen": Extrahiere JEDE einzelne Zeile/Position — lückenlos, von Seite 1 bis zur letzten Seite. Auch wenn es 100+ Positionen sind — überspringe keine einzige.
+- "preistyp": Steht meist im Dokument ("inkl. MwSt." = brutto, "exkl. MwSt." / "netto" = netto). Falls nicht erkennbar → "unbekannt".
+- "menge", "einzelpreis", "gesamtpreis": Immer als reine Zahlen (kein Währungszeichen, keine Einheit).
+- "gesamtpreis" pro Position: Menge × Einzelpreis — falls Einzelpreis null, dann auch null.
+- "betrag": Der Gesamtbetrag des gesamten Dokuments als reine Zahl.
+- Felder die nicht erkennbar sind → null.`;
+
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -57,38 +107,8 @@ serve(async (req) => {
           {
             role: "user",
             content: [
-              {
-                type: "image_url",
-                image_url: {
-                  url: `data:${mediaType};base64,${imageBase64}`,
-                },
-              },
-              {
-                type: "text",
-                text: `Analysiere dieses Bild einer Rechnung, eines Lieferscheins oder Lagerlieferscheins.
-
-Extrahiere ALLE Informationen und antworte NUR mit einem validen JSON-Objekt (keine Erklärungen, kein Markdown):
-
-{
-  "lieferant": "Name des Lieferanten/Firma",
-  "datum": "YYYY-MM-DD",
-  "belegnummer": "Beleg-/Rechnungsnummer",
-  "betrag": 0.00,
-  "positionen": [
-    {"material": "exakter Materialname", "menge": "Anzahl als Zahl", "einheit": "Stk/m/m²/kg/t/l/etc", "preis": "Einzelpreis als Zahl oder null"}
-  ],
-  "qualitaet": "gut/mittel/schlecht"
-}
-
-WICHTIGE REGELN:
-- "positionen": Extrahiere JEDE einzelne Zeile/Position lückenlos — auch wenn es 50+ Positionen sind. Überspringe keine einzige Zeile. Lies das gesamte Dokument von oben bis unten durch.
-- "datum": Format YYYY-MM-DD, sonst null.
-- "betrag": Gesamtbetrag als reine Zahl ohne Währungszeichen, sonst null.
-- "menge" und "preis": Als reine Zahlen (nicht als String mit Einheit).
-- "qualitaet": "gut" = Text klar lesbar | "mittel" = teilweise lesbar | "schlecht" = kaum lesbar.
-- Felder die nicht erkennbar sind → null.
-- Antworte NUR mit dem JSON — kein Text davor oder danach.`,
-              },
+              fileContent,
+              { type: "text", text: PROMPT },
             ],
           },
         ],

@@ -125,47 +125,15 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess }: Documen
       };
 
       if (file.type === "application/pdf") {
+        // Send PDF as-is (raw base64) — GPT-4o reads PDFs natively (all pages, full text quality)
         const reader = new FileReader();
         reader.onerror = reject;
-        reader.onload = async (e) => {
-          try {
-            const data = new Uint8Array(e.target!.result as ArrayBuffer);
-            const pdf = await pdfjsLib.getDocument({ data }).promise;
-            const scale = 1.5; // Reduziert von 2.0 — hält Payload unter 6MB (Supabase-Limit)
-            const maxPages = Math.min(pdf.numPages, 4); // Max 4 Seiten
-            const pageCanvases: HTMLCanvasElement[] = [];
-            for (let i = 1; i <= maxPages; i++) {
-              const page = await pdf.getPage(i);
-              const viewport = page.getViewport({ scale });
-              const canvas = document.createElement("canvas");
-              canvas.width = viewport.width;
-              canvas.height = viewport.height;
-              await page.render({ canvasContext: canvas.getContext("2d")!, viewport }).promise;
-              pageCanvases.push(canvas);
-            }
-            const totalW = pageCanvases[0].width;
-            const totalH = pageCanvases.reduce((sum, c) => sum + c.height, 0);
-            const combined = document.createElement("canvas");
-            combined.width = totalW;
-            combined.height = totalH;
-            const ctx = combined.getContext("2d")!;
-            let y = 0;
-            for (const pc of pageCanvases) {
-              ctx.drawImage(pc, 0, y);
-              y += pc.height;
-            }
-            // PDF: max 1200×4000px, quality 0.70 → ~1.5–3MB Base64, weit unter 6MB-Limit
-            let w = combined.width, h = combined.height;
-            if (w > 1200) { h = Math.round(h * 1200 / w); w = 1200; }
-            if (h > 4000) { w = Math.round(w * 4000 / h); h = 4000; }
-            const out = document.createElement("canvas");
-            out.width = w; out.height = h;
-            const octx = out.getContext("2d");
-            if (!octx) { reject(new Error("Canvas not supported")); return; }
-            octx.drawImage(combined, 0, 0, w, h);
-            const dataUrl = out.toDataURL("image/jpeg", 0.70);
-            resolve({ base64: dataUrl.split(",")[1] || "", mimeType: "image/jpeg" });
-          } catch (err) { reject(err); }
+        reader.onload = (e) => {
+          const arrayBuffer = e.target!.result as ArrayBuffer;
+          const bytes = new Uint8Array(arrayBuffer);
+          let binary = "";
+          for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+          resolve({ base64: btoa(binary), mimeType: "application/pdf" });
         };
         reader.readAsArrayBuffer(file);
       } else {

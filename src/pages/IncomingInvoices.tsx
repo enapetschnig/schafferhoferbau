@@ -14,49 +14,19 @@ import { DocumentDetailDialog, type IncomingDocument } from "@/components/Docume
 import { Download, Upload, Filter, FileText, Check, AlertTriangle, XCircle, Loader2, X, Plus } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import * as XLSX from "xlsx-js-style";
-import * as pdfjsLib from "pdfjs-dist";
-import pdfjsWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
 
 const prepareFileForAI = (file: File): Promise<{ base64: string; mimeType: string }> =>
   new Promise((resolve, reject) => {
     if (file.type === "application/pdf") {
+      // Send PDF as-is (raw base64) — GPT-4o reads PDFs natively (all pages, full text quality)
       const reader = new FileReader();
       reader.onerror = reject;
-      reader.onload = async (e) => {
-        try {
-          const data = new Uint8Array(e.target!.result as ArrayBuffer);
-          const pdf = await pdfjsLib.getDocument({ data }).promise;
-          const scale = 1.5;
-          const maxPages = Math.min(pdf.numPages, 4);
-          const pageCanvases: HTMLCanvasElement[] = [];
-          for (let i = 1; i <= maxPages; i++) {
-            const page = await pdf.getPage(i);
-            const viewport = page.getViewport({ scale });
-            const canvas = document.createElement("canvas");
-            canvas.width = viewport.width;
-            canvas.height = viewport.height;
-            await page.render({ canvasContext: canvas.getContext("2d")!, viewport }).promise;
-            pageCanvases.push(canvas);
-          }
-          const totalW = pageCanvases[0].width;
-          const totalH = pageCanvases.reduce((sum, c) => sum + c.height, 0);
-          const combined = document.createElement("canvas");
-          combined.width = totalW;
-          combined.height = totalH;
-          const ctx = combined.getContext("2d")!;
-          let y = 0;
-          for (const pc of pageCanvases) { ctx.drawImage(pc, 0, y); y += pc.height; }
-          let w = combined.width, h = combined.height;
-          if (w > 1200) { h = Math.round(h * 1200 / w); w = 1200; }
-          if (h > 4000) { w = Math.round(w * 4000 / h); h = 4000; }
-          const out = document.createElement("canvas");
-          out.width = w; out.height = h;
-          out.getContext("2d")!.drawImage(combined, 0, 0, w, h);
-          const dataUrl = out.toDataURL("image/jpeg", 0.70);
-          resolve({ base64: dataUrl.split(",")[1] || "", mimeType: "image/jpeg" });
-        } catch (err) { reject(err); }
+      reader.onload = (e) => {
+        const arrayBuffer = e.target!.result as ArrayBuffer;
+        const bytes = new Uint8Array(arrayBuffer);
+        let binary = "";
+        for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+        resolve({ base64: btoa(binary), mimeType: "application/pdf" });
       };
       reader.readAsArrayBuffer(file);
     } else {
@@ -103,7 +73,8 @@ type ExtractedData = {
   datum: string | null;
   belegnummer: string | null;
   betrag: number | null;
-  positionen: { material: string; menge: string; einheit: string; preis: string | null }[];
+  preistyp: string | null;
+  positionen: { material: string; menge: string; einheit: string; einzelpreis: string | null; gesamtpreis: string | null }[];
   qualitaet: string;
 };
 
@@ -139,7 +110,7 @@ export default function IncomingInvoices() {
   const [editBelegnummer, setEditBelegnummer] = useState("");
   const [editBetrag, setEditBetrag] = useState("");
   const [editProjectId, setEditProjectId] = useState("");
-  const [editPositionen, setEditPositionen] = useState<{ material: string; menge: string; einheit: string; preis: string }[]>([]);
+  const [editPositionen, setEditPositionen] = useState<{ material: string; menge: string; einheit: string; einzelpreis: string; gesamtpreis: string }[]>([]);
   const [saving, setSaving] = useState(false);
 
   const years = Array.from({ length: 5 }, (_, i) => now.getFullYear() - i);
@@ -385,7 +356,8 @@ export default function IncomingInvoices() {
         material: p.material || "",
         menge: p.menge != null ? String(p.menge) : "",
         einheit: p.einheit || "",
-        preis: p.preis != null ? String(p.preis) : "",
+        einzelpreis: p.einzelpreis != null ? String(p.einzelpreis) : "",
+        gesamtpreis: p.gesamtpreis != null ? String(p.gesamtpreis) : "",
       })));
     } catch (err: unknown) {
       toast({ variant: "destructive", title: "Extraktion fehlgeschlagen", description: (err as Error).message });
@@ -431,7 +403,8 @@ export default function IncomingInvoices() {
           material: p.material,
           menge: p.menge,
           einheit: p.einheit,
-          preis: p.preis || null,
+          einzelpreis: p.einzelpreis || null,
+          gesamtpreis: p.gesamtpreis || null,
         })),
       });
 
@@ -702,7 +675,11 @@ export default function IncomingInvoices() {
                             <Input value={editBelegnummer} onChange={(e) => setEditBelegnummer(e.target.value)} />
                           </div>
                           <div className="space-y-2">
-                            <Label>Betrag (&euro;)</Label>
+                            <div className="flex items-center gap-2">
+                              <Label>Betrag (&euro;)</Label>
+                              {extracted.preistyp === "brutto" && <span className="text-xs text-muted-foreground">(Brutto inkl. MwSt.)</span>}
+                              {extracted.preistyp === "netto" && <span className="text-xs text-muted-foreground">(Netto exkl. MwSt.)</span>}
+                            </div>
                             <Input
                               type="number"
                               step="0.01"
@@ -730,7 +707,7 @@ export default function IncomingInvoices() {
                           <div className="flex items-center justify-between">
                             <Label>Positionen ({editPositionen.length})</Label>
                             <Button size="sm" variant="outline" onClick={() =>
-                              setEditPositionen([...editPositionen, { material: "", menge: "", einheit: "", preis: "" }])
+                              setEditPositionen([...editPositionen, { material: "", menge: "", einheit: "", einzelpreis: "", gesamtpreis: "" }])
                             }>
                               <Plus className="w-3 h-3 mr-1" /> Position hinzufügen
                             </Button>
@@ -740,16 +717,17 @@ export default function IncomingInvoices() {
                               <TableHeader>
                                 <TableRow>
                                   <TableHead>Material</TableHead>
-                                  <TableHead className="w-20">Menge</TableHead>
-                                  <TableHead className="w-20">Einheit</TableHead>
-                                  <TableHead className="w-24">Preis (€)</TableHead>
+                                  <TableHead className="w-16">Menge</TableHead>
+                                  <TableHead className="w-16">Einheit</TableHead>
+                                  <TableHead className="w-24">Einzelpreis (€)</TableHead>
+                                  <TableHead className="w-24">Gesamt (€)</TableHead>
                                   <TableHead className="w-8"></TableHead>
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
                                 {editPositionen.length === 0 ? (
                                   <TableRow>
-                                    <TableCell colSpan={5} className="text-center text-muted-foreground py-4">Keine Positionen</TableCell>
+                                    <TableCell colSpan={6} className="text-center text-muted-foreground py-4">Keine Positionen</TableCell>
                                   </TableRow>
                                 ) : editPositionen.map((pos, i) => (
                                   <TableRow key={i}>
@@ -761,16 +739,21 @@ export default function IncomingInvoices() {
                                     <TableCell>
                                       <Input value={pos.menge} onChange={e => {
                                         const p = [...editPositionen]; p[i] = { ...p[i], menge: e.target.value }; setEditPositionen(p);
-                                      }} className="h-8 text-xs w-16" />
+                                      }} className="h-8 text-xs w-14" />
                                     </TableCell>
                                     <TableCell>
                                       <Input value={pos.einheit} onChange={e => {
                                         const p = [...editPositionen]; p[i] = { ...p[i], einheit: e.target.value }; setEditPositionen(p);
-                                      }} className="h-8 text-xs w-16" />
+                                      }} className="h-8 text-xs w-14" />
                                     </TableCell>
                                     <TableCell>
-                                      <Input value={pos.preis} onChange={e => {
-                                        const p = [...editPositionen]; p[i] = { ...p[i], preis: e.target.value }; setEditPositionen(p);
+                                      <Input value={pos.einzelpreis} onChange={e => {
+                                        const p = [...editPositionen]; p[i] = { ...p[i], einzelpreis: e.target.value }; setEditPositionen(p);
+                                      }} className="h-8 text-xs w-20" />
+                                    </TableCell>
+                                    <TableCell>
+                                      <Input value={pos.gesamtpreis} onChange={e => {
+                                        const p = [...editPositionen]; p[i] = { ...p[i], gesamtpreis: e.target.value }; setEditPositionen(p);
                                       }} className="h-8 text-xs w-20" />
                                     </TableCell>
                                     <TableCell>
