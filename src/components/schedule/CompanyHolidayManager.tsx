@@ -1,6 +1,5 @@
 import { useState } from "react";
-import { format, parseISO } from "date-fns";
-import { de } from "date-fns/locale";
+import { format, parseISO, eachDayOfInterval } from "date-fns";
 import { Trash2, Plus, CalendarOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,16 +24,31 @@ export function CompanyHolidayManager({ holidays, onUpdate, userId }: Props) {
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [newDate, setNewDate] = useState("");
+  const [newEndDate, setNewEndDate] = useState("");
   const [newLabel, setNewLabel] = useState("Betriebsurlaub");
 
   const handleAdd = async () => {
     if (!newDate) return;
 
-    const { error } = await supabase.from("company_holidays").insert({
-      datum: newDate,
-      bezeichnung: newLabel || "Betriebsurlaub",
+    const label = newLabel || "Betriebsurlaub";
+    let dates: string[] = [newDate];
+
+    if (newEndDate && newEndDate > newDate) {
+      dates = eachDayOfInterval({
+        start: new Date(newDate),
+        end: new Date(newEndDate),
+      }).map(d => format(d, "yyyy-MM-dd"));
+    }
+
+    const rows = dates.map(d => ({
+      datum: d,
+      bezeichnung: label,
       created_by: userId,
-    });
+    }));
+
+    const { error } = await supabase
+      .from("company_holidays")
+      .upsert(rows, { onConflict: "datum" });
 
     if (error) {
       toast({
@@ -46,9 +60,10 @@ export function CompanyHolidayManager({ holidays, onUpdate, userId }: Props) {
     }
 
     setNewDate("");
+    setNewEndDate("");
     setNewLabel("Betriebsurlaub");
     onUpdate();
-    toast({ title: "Betriebsurlaub hinzugefügt" });
+    toast({ title: `${dates.length} Tag${dates.length > 1 ? "e" : ""} hinzugefügt` });
   };
 
   const handleDelete = async (id: string) => {
@@ -86,22 +101,35 @@ export function CompanyHolidayManager({ holidays, onUpdate, userId }: Props) {
 
         <div className="space-y-4">
           {/* Add new */}
-          <div className="flex gap-2">
-            <Input
-              type="date"
-              value={newDate}
-              onChange={(e) => setNewDate(e.target.value)}
-              className="flex-1"
-            />
-            <Input
-              value={newLabel}
-              onChange={(e) => setNewLabel(e.target.value)}
-              placeholder="Bezeichnung"
-              className="flex-1"
-            />
-            <Button size="sm" onClick={handleAdd} disabled={!newDate}>
-              <Plus className="h-4 w-4" />
-            </Button>
+          <div className="space-y-2">
+            <div className="flex gap-2 items-center">
+              <Input
+                type="date"
+                value={newDate}
+                onChange={(e) => setNewDate(e.target.value)}
+                className="flex-1"
+              />
+              <span className="text-sm text-muted-foreground">–</span>
+              <Input
+                type="date"
+                value={newEndDate}
+                onChange={(e) => setNewEndDate(e.target.value)}
+                min={newDate}
+                className="flex-1"
+                placeholder="bis (optional)"
+              />
+            </div>
+            <div className="flex gap-2">
+              <Input
+                value={newLabel}
+                onChange={(e) => setNewLabel(e.target.value)}
+                placeholder="Bezeichnung"
+                className="flex-1"
+              />
+              <Button size="sm" onClick={handleAdd} disabled={!newDate}>
+                <Plus className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
 
           {/* List */}

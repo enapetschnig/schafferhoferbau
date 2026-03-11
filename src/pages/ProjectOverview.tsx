@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, FileText, FileCheck, Package, Camera, ImagePlus, Lock, Plus, MapPin, Users, Copy, Pencil, Trash2, Phone, Mail, Shield, MessageCircle, ClipboardCheck } from "lucide-react";
+import { ArrowLeft, FileText, FileCheck, Camera, ImagePlus, Lock, Plus, MapPin, Users, Copy, Pencil, Trash2, Phone, Mail, Shield, MessageCircle, ClipboardCheck } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -20,13 +21,10 @@ type DocumentCategory = {
   adminOnly?: boolean;
 };
 
-type CatalogItem = { id: string; name: string; einheit: string };
 type Contact = {
   id: string; name: string; rolle: string | null; telefon: string | null;
   email: string | null; firma: string | null; phase: string; notizen: string | null;
 };
-
-const CUSTOM_MATERIAL_VALUE = "__custom__";
 
 const ProjectOverview = () => {
   const { projectId } = useParams<{ projectId: string }>();
@@ -41,7 +39,6 @@ const ProjectOverview = () => {
     erreichbarkeit: string | null; besonderheiten: string | null; hinweise: string | null;
   } | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [materialCount, setMaterialCount] = useState(0);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [categories, setCategories] = useState<DocumentCategory[]>([
     {
@@ -75,14 +72,6 @@ const ProjectOverview = () => {
     },
   ]);
 
-  // Material dialog state
-  const [materialCatalog, setMaterialCatalog] = useState<CatalogItem[]>([]);
-  const [showMaterialDialog, setShowMaterialDialog] = useState(false);
-  const [selectedMaterial, setSelectedMaterial] = useState("");
-  const [customMaterial, setCustomMaterial] = useState("");
-  const [newMenge, setNewMenge] = useState("");
-  const [submittingMaterial, setSubmittingMaterial] = useState(false);
-
   // Contacts state
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [showContactDialog, setShowContactDialog] = useState(false);
@@ -94,6 +83,72 @@ const ProjectOverview = () => {
   const [allEmployees, setAllEmployees] = useState<{ id: string; user_id: string | null; name: string }[]>([]);
   const [accessUserIds, setAccessUserIds] = useState<Set<string>>(new Set());
   const [savingAccess, setSavingAccess] = useState(false);
+
+  // Edit project state
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [editForm, setEditForm] = useState({
+    name: "", beschreibung: "", adresse: "", plz: "",
+    bauherr: "", bauherr_kontakt: "", bauleiter: "",
+    budget: "", start_datum: "", end_datum: "",
+    kunde_telefon: "", kunde_email: "",
+    erreichbarkeit: "", besonderheiten: "", hinweise: "",
+  });
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  const openEditDialog = () => {
+    if (!projectInfo) return;
+    setEditForm({
+      name: projectName,
+      beschreibung: projectInfo.beschreibung || "",
+      adresse: projectInfo.adresse || "",
+      plz: projectInfo.plz || "",
+      bauherr: projectInfo.bauherr || "",
+      bauherr_kontakt: projectInfo.bauherr_kontakt || "",
+      bauleiter: projectInfo.bauleiter || "",
+      budget: projectInfo.budget != null ? String(projectInfo.budget) : "",
+      start_datum: projectInfo.start_datum || "",
+      end_datum: projectInfo.end_datum || "",
+      kunde_telefon: projectInfo.kunde_telefon || "",
+      kunde_email: projectInfo.kunde_email || "",
+      erreichbarkeit: projectInfo.erreichbarkeit || "",
+      besonderheiten: projectInfo.besonderheiten || "",
+      hinweise: projectInfo.hinweise || "",
+    });
+    setShowEditDialog(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!projectId || !editForm.name.trim()) return;
+    setSavingEdit(true);
+    const { error } = await supabase
+      .from("projects")
+      .update({
+        name: editForm.name.trim(),
+        beschreibung: editForm.beschreibung.trim() || null,
+        adresse: editForm.adresse.trim() || null,
+        plz: editForm.plz.trim() || null,
+        bauherr: editForm.bauherr.trim() || null,
+        bauherr_kontakt: editForm.bauherr_kontakt.trim() || null,
+        bauleiter: editForm.bauleiter.trim() || null,
+        budget: editForm.budget ? Number(editForm.budget) : null,
+        start_datum: editForm.start_datum || null,
+        end_datum: editForm.end_datum || null,
+        kunde_telefon: editForm.kunde_telefon.trim() || null,
+        kunde_email: editForm.kunde_email.trim() || null,
+        erreichbarkeit: editForm.erreichbarkeit.trim() || null,
+        besonderheiten: editForm.besonderheiten.trim() || null,
+        hinweise: editForm.hinweise.trim() || null,
+      })
+      .eq("id", projectId);
+    setSavingEdit(false);
+    if (error) {
+      toast({ variant: "destructive", title: "Fehler", description: error.message });
+    } else {
+      toast({ title: "Projekt aktualisiert" });
+      setShowEditDialog(false);
+      fetchProjectName();
+    }
+  };
 
   const fetchAccessData = async () => {
     if (!projectId) return;
@@ -147,7 +202,6 @@ const ProjectOverview = () => {
     if (projectId) {
       checkAdminStatus();
       fetchProjectName();
-      fetchMaterialCatalog();
       fetchContacts();
     }
   }, [projectId]);
@@ -155,7 +209,6 @@ const ProjectOverview = () => {
   useEffect(() => {
     if (projectId) {
       fetchFileCounts();
-      fetchMaterialCount();
     }
   }, [projectId, isAdmin]);
 
@@ -196,25 +249,6 @@ const ProjectOverview = () => {
         besonderheiten: d.besonderheiten, hinweise: d.hinweise,
       });
     }
-  };
-
-  const fetchMaterialCount = async () => {
-    if (!projectId) return;
-
-    const { count } = await supabase
-      .from("material_entries")
-      .select("*", { count: "exact", head: true })
-      .eq("project_id", projectId);
-
-    setMaterialCount(count || 0);
-  };
-
-  const fetchMaterialCatalog = async () => {
-    const { data } = await supabase
-      .from("materials")
-      .select("id, name, einheit")
-      .order("name");
-    if (data) setMaterialCatalog(data);
   };
 
   const fetchContacts = async () => {
@@ -280,42 +314,6 @@ const ProjectOverview = () => {
     toast({ title: "Kopiert", description: "Kontaktdaten in Zwischenablage" });
   };
 
-  const getMaterialName = (): string => {
-    if (selectedMaterial === CUSTOM_MATERIAL_VALUE) return customMaterial.trim();
-    return selectedMaterial;
-  };
-
-  const handleAddMaterial = async () => {
-    const materialName = getMaterialName();
-    if (!projectId || !currentUserId || !materialName) return;
-
-    setSubmittingMaterial(true);
-    const { error } = await supabase
-      .from("material_entries")
-      .insert({
-        project_id: projectId,
-        user_id: currentUserId,
-        material: materialName,
-        menge: newMenge.trim() || null,
-      });
-
-    if (error) {
-      toast({ variant: "destructive", title: "Fehler", description: "Material konnte nicht gespeichert werden" });
-    } else {
-      toast({ title: "Gespeichert", description: "Material wurde hinzugefügt" });
-      resetMaterialDialog();
-      fetchMaterialCount();
-    }
-    setSubmittingMaterial(false);
-  };
-
-  const resetMaterialDialog = () => {
-    setShowMaterialDialog(false);
-    setSelectedMaterial("");
-    setCustomMaterial("");
-    setNewMenge("");
-  };
-
   const fetchFileCounts = async () => {
     if (!projectId) return;
 
@@ -356,16 +354,6 @@ const ProjectOverview = () => {
     (category) => !category.adminOnly || isAdmin
   );
 
-  // Get unit hint from catalog for selected material
-  const selectedCatalogItem = materialCatalog.find(c => c.name === selectedMaterial);
-  const mengePlaceholder = selectedCatalogItem
-    ? `z.B. 10 ${selectedCatalogItem.einheit}`
-    : "z.B. 10 Stück";
-
-  const isMaterialValid = selectedMaterial === CUSTOM_MATERIAL_VALUE
-    ? customMaterial.trim().length > 0
-    : selectedMaterial.length > 0;
-
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b bg-card sticky top-0 z-50 shadow-sm">
@@ -390,15 +378,21 @@ const ProjectOverview = () => {
           <div className="flex items-center justify-between mb-2">
             <h1 className="text-2xl sm:text-3xl font-bold">{projectName}</h1>
             {isAdmin && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-1.5"
-                onClick={() => { fetchAccessData(); setShowAccessDialog(true); }}
-              >
-                <Shield className="h-4 w-4" />
-                <span className="hidden sm:inline">Zugriff verwalten</span>
-              </Button>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" className="gap-1.5" onClick={openEditDialog}>
+                  <Pencil className="h-4 w-4" />
+                  <span className="hidden sm:inline">Bearbeiten</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => { fetchAccessData(); setShowAccessDialog(true); }}
+                >
+                  <Shield className="h-4 w-4" />
+                  <span className="hidden sm:inline">Zugriff</span>
+                </Button>
+              </div>
             )}
           </div>
           {projectInfo && (projectInfo.adresse || projectInfo.bauherr || projectInfo.bauleiter || projectInfo.budget) ? (
@@ -598,24 +592,6 @@ const ProjectOverview = () => {
             </Card>
           ))}
 
-          {/* Materialliste - second (nach Fotos) */}
-          <Card
-            className="cursor-pointer hover:shadow-lg transition-shadow"
-            onClick={() => navigate(`/projects/${projectId}/materials`)}
-          >
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div className="text-primary"><Package className="h-8 w-8" /></div>
-                <div className="text-2xl font-bold">{materialCount}</div>
-              </div>
-              <CardTitle className="text-xl">Materialliste</CardTitle>
-              <CardDescription>Verwendete Materialien dokumentieren</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button variant="outline" className="w-full">Öffnen</Button>
-            </CardContent>
-          </Card>
-
           {/* Bestellungen */}
           <Card
             className="cursor-pointer hover:shadow-lg transition-shadow"
@@ -672,17 +648,6 @@ const ProjectOverview = () => {
           ))}
         </div>
 
-        {/* Material hinzufügen Button */}
-        <Button
-          className="w-full mt-4 gap-2"
-          variant="outline"
-          size="lg"
-          onClick={() => setShowMaterialDialog(true)}
-        >
-          <Plus className="h-5 w-5" />
-          Material hinzufügen
-        </Button>
-
         {/* Floating Action Button für Fotos */}
         <Button
           className="fixed bottom-6 right-6 z-50 h-14 w-14 rounded-full shadow-lg"
@@ -692,72 +657,6 @@ const ProjectOverview = () => {
           <ImagePlus className="h-6 w-6" />
         </Button>
       </main>
-
-      {/* Material Dialog */}
-      <Dialog open={showMaterialDialog} onOpenChange={(open) => { if (!open) resetMaterialDialog(); else setShowMaterialDialog(true); }}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Package className="h-5 w-5" />
-              Material hinzufügen
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 pt-2">
-            <div className="space-y-2">
-              <Label>Material</Label>
-              <Select value={selectedMaterial} onValueChange={(val) => { setSelectedMaterial(val); if (val !== CUSTOM_MATERIAL_VALUE) setCustomMaterial(""); }}>
-                <SelectTrigger className="h-12 text-base">
-                  <SelectValue placeholder="Material auswählen" />
-                </SelectTrigger>
-                <SelectContent>
-                  {materialCatalog.map(c => (
-                    <SelectItem key={c.id} value={c.name} className="text-base py-3">
-                      {c.name} ({c.einheit})
-                    </SelectItem>
-                  ))}
-                  <SelectItem value={CUSTOM_MATERIAL_VALUE} className="text-base py-3 font-medium">
-                    Anderes Material...
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-              {selectedMaterial === CUSTOM_MATERIAL_VALUE && (
-                <Input
-                  placeholder="Material eingeben"
-                  value={customMaterial}
-                  onChange={(e) => setCustomMaterial(e.target.value)}
-                  autoFocus
-                  className="h-12 text-base"
-                />
-              )}
-            </div>
-            <div className="space-y-2">
-              <Label>Menge</Label>
-              <Input
-                placeholder={mengePlaceholder}
-                value={newMenge}
-                onChange={(e) => setNewMenge(e.target.value)}
-                className="h-12 text-base"
-              />
-            </div>
-            <div className="flex gap-2 pt-2">
-              <Button
-                className="flex-1 h-12 text-base"
-                onClick={handleAddMaterial}
-                disabled={submittingMaterial || !isMaterialValid}
-              >
-                {submittingMaterial ? "Speichert..." : "Speichern"}
-              </Button>
-              <Button
-                className="flex-1 h-12 text-base"
-                variant="outline"
-                onClick={resetMaterialDialog}
-              >
-                Abbrechen
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
 
       {/* Contact Dialog */}
       <Dialog open={showContactDialog} onOpenChange={(open) => { if (!open) resetContactDialog(); else setShowContactDialog(true); }}>
@@ -846,6 +745,105 @@ const ProjectOverview = () => {
                 {savingAccess ? "Speichert..." : `Speichern (${accessUserIds.size})`}
               </Button>
               <Button className="flex-1" variant="outline" onClick={() => setShowAccessDialog(false)}>Abbrechen</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Project Dialog */}
+      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Pencil className="h-5 w-5" />
+              Projekt bearbeiten
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div className="space-y-1">
+              <Label>Projektname *</Label>
+              <Input value={editForm.name} onChange={(e) => setEditForm(f => ({ ...f, name: e.target.value }))} className="h-10" />
+            </div>
+            <div className="space-y-1">
+              <Label>Beschreibung</Label>
+              <Textarea value={editForm.beschreibung} onChange={(e) => setEditForm(f => ({ ...f, beschreibung: e.target.value }))} rows={2} />
+            </div>
+
+            <div className="border-t pt-3">
+              <p className="text-sm font-medium mb-2">Adresse & Kunde</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1 col-span-2 sm:col-span-1">
+                  <Label>Adresse</Label>
+                  <Input value={editForm.adresse} onChange={(e) => setEditForm(f => ({ ...f, adresse: e.target.value }))} className="h-10" />
+                </div>
+                <div className="space-y-1 col-span-2 sm:col-span-1">
+                  <Label>PLZ</Label>
+                  <Input value={editForm.plz} onChange={(e) => setEditForm(f => ({ ...f, plz: e.target.value }))} className="h-10" />
+                </div>
+                <div className="space-y-1">
+                  <Label>Bauherr</Label>
+                  <Input value={editForm.bauherr} onChange={(e) => setEditForm(f => ({ ...f, bauherr: e.target.value }))} className="h-10" />
+                </div>
+                <div className="space-y-1">
+                  <Label>Bauherr Kontakt</Label>
+                  <Input value={editForm.bauherr_kontakt} onChange={(e) => setEditForm(f => ({ ...f, bauherr_kontakt: e.target.value }))} className="h-10" />
+                </div>
+                <div className="space-y-1">
+                  <Label>Telefon</Label>
+                  <Input type="tel" value={editForm.kunde_telefon} onChange={(e) => setEditForm(f => ({ ...f, kunde_telefon: e.target.value }))} className="h-10" />
+                </div>
+                <div className="space-y-1">
+                  <Label>E-Mail</Label>
+                  <Input type="email" value={editForm.kunde_email} onChange={(e) => setEditForm(f => ({ ...f, kunde_email: e.target.value }))} className="h-10" />
+                </div>
+              </div>
+            </div>
+
+            <div className="border-t pt-3">
+              <p className="text-sm font-medium mb-2">Projektleitung & Zeitraum</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label>Bauleiter</Label>
+                  <Input value={editForm.bauleiter} onChange={(e) => setEditForm(f => ({ ...f, bauleiter: e.target.value }))} className="h-10" />
+                </div>
+                <div className="space-y-1">
+                  <Label>Budget</Label>
+                  <Input type="number" value={editForm.budget} onChange={(e) => setEditForm(f => ({ ...f, budget: e.target.value }))} className="h-10" placeholder="in EUR" />
+                </div>
+                <div className="space-y-1">
+                  <Label>Startdatum</Label>
+                  <Input type="date" value={editForm.start_datum} onChange={(e) => setEditForm(f => ({ ...f, start_datum: e.target.value }))} className="h-10" />
+                </div>
+                <div className="space-y-1">
+                  <Label>Enddatum</Label>
+                  <Input type="date" value={editForm.end_datum} onChange={(e) => setEditForm(f => ({ ...f, end_datum: e.target.value }))} className="h-10" />
+                </div>
+              </div>
+            </div>
+
+            <div className="border-t pt-3">
+              <p className="text-sm font-medium mb-2">Zusatzinformationen</p>
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <Label>Erreichbarkeit</Label>
+                  <Input value={editForm.erreichbarkeit} onChange={(e) => setEditForm(f => ({ ...f, erreichbarkeit: e.target.value }))} className="h-10" />
+                </div>
+                <div className="space-y-1">
+                  <Label>Besonderheiten</Label>
+                  <Textarea value={editForm.besonderheiten} onChange={(e) => setEditForm(f => ({ ...f, besonderheiten: e.target.value }))} rows={2} />
+                </div>
+                <div className="space-y-1">
+                  <Label>Hinweise zur Baustelle</Label>
+                  <Textarea value={editForm.hinweise} onChange={(e) => setEditForm(f => ({ ...f, hinweise: e.target.value }))} rows={2} />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <Button className="flex-1" onClick={handleSaveEdit} disabled={savingEdit || !editForm.name.trim()}>
+                {savingEdit ? "Speichert..." : "Speichern"}
+              </Button>
+              <Button className="flex-1" variant="outline" onClick={() => setShowEditDialog(false)}>Abbrechen</Button>
             </div>
           </div>
         </DialogContent>

@@ -24,7 +24,6 @@ import Admin from "./pages/Admin";
 import HoursReport from "./pages/HoursReport";
 import Employees from "./pages/Employees";
 import Notepad from "./pages/Notepad";
-import MaterialList from "./pages/MaterialList";
 import Disturbances from "./pages/Disturbances";
 import DisturbanceDetail from "./pages/DisturbanceDetail";
 import BadWeather from "./pages/BadWeather";
@@ -134,7 +133,6 @@ function AppContent() {
         <Route path="/projects/:projectId" element={<ProtectedRoute minRole="facharbeiter"><ProjectOverview /></ProtectedRoute>} />
         <Route path="/projects/:projectId/chat" element={<ProtectedRoute minRole="facharbeiter"><ProjectChatPage /></ProtectedRoute>} />
         <Route path="/projects/:projectId/:type" element={<ProtectedRoute minRole="facharbeiter"><ProjectDetail /></ProtectedRoute>} />
-        <Route path="/projects/:projectId/materials" element={<ProtectedRoute minRole="facharbeiter"><MaterialList /></ProtectedRoute>} />
         <Route path="/projects/:projectId/orders" element={<ProtectedRoute minRole="facharbeiter"><OrderManagement /></ProtectedRoute>} />
         {/* Alle eingeloggten */}
         <Route path="/company-chat" element={<CompanyChatPage />} />

@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import { ArrowLeft, FolderOpen, Plus, FileText, Image, Package, Lock, Search, Upload, Camera, Trash2, ChevronDown, Home, MapPin, Star, X, Download } from "lucide-react";
+import { ArrowLeft, FolderOpen, Plus, FileText, Image, Lock, Search, Upload, Camera, Trash2, ChevronDown, Home, MapPin, Star, X, Download } from "lucide-react";
 import * as XLSX from "xlsx-js-style";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -37,7 +37,6 @@ type Project = {
   fileCount?: {
     plans: number;
     reports: number;
-    materials: number;
     photos: number;
     chef: number;
   };
@@ -63,7 +62,7 @@ const Projects = () => {
   const [newContacts, setNewContacts] = useState<{ rolle: string; name: string; telefon: string; email: string }[]>([]);
   const [quickUploadProject, setQuickUploadProject] = useState<{
     projectId: string;
-    documentType: 'photos' | 'plans' | 'reports' | 'materials';
+    documentType: 'photos' | 'plans' | 'reports';
   } | null>(null);
   const [projectToClose, setProjectToClose] = useState<{id: string, name: string} | null>(null);
   const [projectToDelete, setProjectToDelete] = useState<{id: string, name: string} | null>(null);
@@ -185,17 +184,16 @@ const Projects = () => {
     // Fetch file counts for each project
     const projectsWithCounts = await Promise.all(
       (data || []).map(async (project) => {
-        const [plans, reports, materials, photos, chef] = await Promise.all([
+        const [plans, reports, photos, chef] = await Promise.all([
           getFileCount(project.id, 'project-plans'),
           getFileCount(project.id, 'project-reports'),
-          getFileCount(project.id, 'project-materials'),
           getFileCount(project.id, 'project-photos'),
           getFileCount(project.id, 'project-chef'),
         ]);
 
         return {
           ...project,
-          fileCount: { plans, reports, materials, photos, chef },
+          fileCount: { plans, reports, photos, chef },
         };
       })
     );
@@ -825,13 +823,6 @@ const Projects = () => {
                     </span>
                   </div>
                   <div className="flex flex-col items-center gap-1 p-2">
-                    <Package className="w-5 h-5 text-primary" />
-                    <span className="text-xs font-medium">Material</span>
-                    <span className="text-xs text-muted-foreground">
-                      {project.fileCount?.materials || 0}
-                    </span>
-                  </div>
-                  <div className="flex flex-col items-center gap-1 p-2">
                     <Image className="w-5 h-5 text-primary" />
                     <span className="text-xs font-medium">Fotos</span>
                     <span className="text-xs text-muted-foreground">
@@ -890,13 +881,6 @@ const Projects = () => {
                     }}>
                       <FileText className="w-4 h-4 mr-2" />
                       📄 Regieberichte hochladen
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={(e) => {
-                      e.stopPropagation();
-                      setQuickUploadProject({ projectId: project.id, documentType: 'materials' });
-                    }}>
-                      <Package className="w-4 h-4 mr-2" />
-                      📦 Materiallisten hochladen
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -1011,13 +995,6 @@ const Projects = () => {
                           </span>
                         </div>
                         <div className="flex flex-col items-center gap-1 p-2">
-                          <Package className="w-5 h-5 text-primary" />
-                          <span className="text-xs font-medium">Material</span>
-                          <span className="text-xs text-muted-foreground">
-                            {project.fileCount?.materials || 0}
-                          </span>
-                        </div>
-                        <div className="flex flex-col items-center gap-1 p-2">
                           <Image className="w-5 h-5 text-primary" />
                           <span className="text-xs font-medium">Fotos</span>
                           <span className="text-xs text-muted-foreground">
@@ -1026,7 +1003,7 @@ const Projects = () => {
                         </div>
                       </div>
 
-                      <div 
+                      <div
                         className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t mt-3"
                         onClick={(e) => e.stopPropagation()}
                       >

@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Session, User } from "@supabase/supabase-js";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Clock, FolderKanban, Users, BarChart3, LogOut, FileText, Camera, ArrowRight, Info, User as UserIcon, UserPlus, Zap, Receipt, Bell, X, CloudRain, ClipboardList, Scale, Wrench, CalendarDays, BookOpen, Star, MapPin, Megaphone, MessageCircle, ChevronLeft, Package, ShieldCheck, Plus } from "lucide-react";
+import { Clock, FolderKanban, Users, BarChart3, LogOut, FileText, Camera, ArrowRight, Info, User as UserIcon, UserPlus, Zap, Receipt, Bell, X, CloudRain, ClipboardList, Wrench, CalendarDays, BookOpen, Star, MapPin, Megaphone, MessageCircle, ChevronLeft, Package, ShieldCheck, Plus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useOnboarding } from "@/contexts/OnboardingContext";
 import {
@@ -998,44 +998,23 @@ export default function Index() {
           </Card>
           )}
 
-          {/* Admin: Stundenauswertung */}
+          {/* Admin: Stundenübersicht */}
           {isAdmin && (
-            <Card 
-              className="cursor-pointer hover:shadow-lg transition-all hover:border-primary/50" 
+            <Card
+              className="cursor-pointer hover:shadow-lg transition-all hover:border-primary/50"
               onClick={() => navigate("/hours-report")}
             >
               <CardHeader className="space-y-2 pb-3">
                 <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center">
                   <BarChart3 className="h-6 w-6 text-primary" />
                 </div>
-                <CardTitle className="text-lg sm:text-xl">Stundenauswertung</CardTitle>
+                <CardTitle className="text-lg sm:text-xl">Stundenübersicht</CardTitle>
                 <CardDescription className="text-sm">
-                  Auswertung der Projektstunden
+                  Stundenauswertung & Arbeitszeitaufzeichnung
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <Button className="w-full" size="sm">Auswerten</Button>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Admin: Arbeitszeitaufzeichnung */}
-          {isAdmin && (
-            <Card
-              className="cursor-pointer hover:shadow-lg transition-all hover:border-primary/50"
-              onClick={() => navigate("/hours-report?tab=arbeitszeitaufzeichnung")}
-            >
-              <CardHeader className="space-y-2 pb-3">
-                <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center">
-                  <Scale className="h-6 w-6 text-primary" />
-                </div>
-                <CardTitle className="text-lg sm:text-xl">Arbeitszeitaufzeichnung</CardTitle>
-                <CardDescription className="text-sm">
-                  Gesetzliche Aufzeichnung gemäß § 26 AZG
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Button className="w-full" size="sm" variant="outline">Aufzeichnung öffnen</Button>
+                <Button className="w-full" size="sm">Öffnen</Button>
               </CardContent>
             </Card>
           )}
