@@ -32,6 +32,286 @@ export type Database = {
         }
         Relationships: []
       }
+      assignment_resources: {
+        Row: {
+          created_at: string | null
+          created_by: string
+          datum: string
+          einheit: string | null
+          id: string
+          menge: number | null
+          project_id: string
+          resource_name: string
+        }
+        Insert: {
+          created_at?: string | null
+          created_by: string
+          datum: string
+          einheit?: string | null
+          id?: string
+          menge?: number | null
+          project_id: string
+          resource_name: string
+        }
+        Update: {
+          created_at?: string | null
+          created_by?: string
+          datum?: string
+          einheit?: string | null
+          id?: string
+          menge?: number | null
+          project_id?: string
+          resource_name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assignment_resources_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "assignment_resources_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bad_weather_records: {
+        Row: {
+          arbeitsstunden_vor_schlechtwetter: number | null
+          beginn_schlechtwetter: string
+          created_at: string | null
+          datum: string
+          ende_schlechtwetter: string
+          id: string
+          notizen: string | null
+          project_id: string
+          schlechtwetter_stunden: number
+          updated_at: string | null
+          user_id: string
+          wetter_art: string[] | null
+        }
+        Insert: {
+          arbeitsstunden_vor_schlechtwetter?: number | null
+          beginn_schlechtwetter: string
+          created_at?: string | null
+          datum: string
+          ende_schlechtwetter: string
+          id?: string
+          notizen?: string | null
+          project_id: string
+          schlechtwetter_stunden: number
+          updated_at?: string | null
+          user_id: string
+          wetter_art?: string[] | null
+        }
+        Update: {
+          arbeitsstunden_vor_schlechtwetter?: number | null
+          beginn_schlechtwetter?: string
+          created_at?: string | null
+          datum?: string
+          ende_schlechtwetter?: string
+          id?: string
+          notizen?: string | null
+          project_id?: string
+          schlechtwetter_stunden?: number
+          updated_at?: string | null
+          user_id?: string
+          wetter_art?: string[] | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bad_weather_records_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      daily_report_activities: {
+        Row: {
+          beschreibung: string
+          created_at: string | null
+          daily_report_id: string
+          geschoss: string
+          id: string
+          sort_order: number | null
+        }
+        Insert: {
+          beschreibung: string
+          created_at?: string | null
+          daily_report_id: string
+          geschoss: string
+          id?: string
+          sort_order?: number | null
+        }
+        Update: {
+          beschreibung?: string
+          created_at?: string | null
+          daily_report_id?: string
+          geschoss?: string
+          id?: string
+          sort_order?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_report_activities_daily_report_id_fkey"
+            columns: ["daily_report_id"]
+            isOneToOne: false
+            referencedRelation: "daily_reports"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      daily_report_photos: {
+        Row: {
+          created_at: string | null
+          daily_report_id: string
+          file_name: string
+          file_path: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          daily_report_id: string
+          file_name: string
+          file_path: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          daily_report_id?: string
+          file_name?: string
+          file_path?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_report_photos_daily_report_id_fkey"
+            columns: ["daily_report_id"]
+            isOneToOne: false
+            referencedRelation: "daily_reports"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      daily_report_workers: {
+        Row: {
+          created_at: string | null
+          daily_report_id: string
+          id: string
+          is_main: boolean | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          daily_report_id: string
+          id?: string
+          is_main?: boolean | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          daily_report_id?: string
+          id?: string
+          is_main?: boolean | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_report_workers_daily_report_id_fkey"
+            columns: ["daily_report_id"]
+            isOneToOne: false
+            referencedRelation: "daily_reports"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      daily_reports: {
+        Row: {
+          beschreibung: string
+          created_at: string | null
+          datum: string
+          geschoss: string[] | null
+          id: string
+          notizen: string | null
+          pdf_gesendet_am: string | null
+          project_id: string
+          report_type: string
+          sicherheit_bestaetigt: boolean | null
+          sicherheitscheckliste: Json | null
+          status: string | null
+          temperatur_max: number | null
+          temperatur_min: number | null
+          unterschrift_am: string | null
+          unterschrift_kunde: string | null
+          unterschrift_name: string | null
+          updated_at: string | null
+          user_id: string
+          wetter: string[] | null
+        }
+        Insert: {
+          beschreibung?: string
+          created_at?: string | null
+          datum: string
+          geschoss?: string[] | null
+          id?: string
+          notizen?: string | null
+          pdf_gesendet_am?: string | null
+          project_id: string
+          report_type?: string
+          sicherheit_bestaetigt?: boolean | null
+          sicherheitscheckliste?: Json | null
+          status?: string | null
+          temperatur_max?: number | null
+          temperatur_min?: number | null
+          unterschrift_am?: string | null
+          unterschrift_kunde?: string | null
+          unterschrift_name?: string | null
+          updated_at?: string | null
+          user_id: string
+          wetter?: string[] | null
+        }
+        Update: {
+          beschreibung?: string
+          created_at?: string | null
+          datum?: string
+          geschoss?: string[] | null
+          id?: string
+          notizen?: string | null
+          pdf_gesendet_am?: string | null
+          project_id?: string
+          report_type?: string
+          sicherheit_bestaetigt?: boolean | null
+          sicherheitscheckliste?: Json | null
+          status?: string | null
+          temperatur_max?: number | null
+          temperatur_min?: number | null
+          unterschrift_am?: string | null
+          unterschrift_kunde?: string | null
+          unterschrift_name?: string | null
+          updated_at?: string | null
+          user_id?: string
+          wetter?: string[] | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_reports_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       disturbance_materials: {
         Row: {
           created_at: string
@@ -221,333 +501,6 @@ export type Database = {
         }
         Relationships: []
       }
-      bad_weather_records: {
-        Row: {
-          id: string
-          user_id: string
-          project_id: string
-          datum: string
-          beginn_schlechtwetter: string
-          ende_schlechtwetter: string
-          schlechtwetter_stunden: number
-          arbeitsstunden_vor_schlechtwetter: number
-          wetter_art: string[] | null
-          notizen: string | null
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          user_id: string
-          project_id: string
-          datum: string
-          beginn_schlechtwetter: string
-          ende_schlechtwetter: string
-          schlechtwetter_stunden: number
-          arbeitsstunden_vor_schlechtwetter?: number
-          wetter_art?: string[] | null
-          notizen?: string | null
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          user_id?: string
-          project_id?: string
-          datum?: string
-          beginn_schlechtwetter?: string
-          ende_schlechtwetter?: string
-          schlechtwetter_stunden?: number
-          arbeitsstunden_vor_schlechtwetter?: number
-          wetter_art?: string[] | null
-          notizen?: string | null
-          created_at?: string
-          updated_at?: string
-        }
-        Relationships: []
-      }
-      daily_reports: {
-        Row: {
-          id: string
-          user_id: string
-          project_id: string
-          report_type: string
-          datum: string
-          temperatur_min: number | null
-          temperatur_max: number | null
-          wetter: string[] | null
-          geschoss: string[] | null
-          beschreibung: string
-          notizen: string | null
-          sicherheitscheckliste: Json | null
-          sicherheit_bestaetigt: boolean
-          unterschrift_kunde: string | null
-          unterschrift_am: string | null
-          unterschrift_name: string | null
-          status: string
-          pdf_gesendet_am: string | null
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          user_id: string
-          project_id: string
-          report_type?: string
-          datum: string
-          temperatur_min?: number | null
-          temperatur_max?: number | null
-          wetter?: string[] | null
-          geschoss?: string[] | null
-          beschreibung?: string
-          notizen?: string | null
-          sicherheitscheckliste?: Json | null
-          sicherheit_bestaetigt?: boolean
-          unterschrift_kunde?: string | null
-          unterschrift_am?: string | null
-          unterschrift_name?: string | null
-          status?: string
-          pdf_gesendet_am?: string | null
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          user_id?: string
-          project_id?: string
-          report_type?: string
-          datum?: string
-          temperatur_min?: number | null
-          temperatur_max?: number | null
-          wetter?: string[] | null
-          geschoss?: string[] | null
-          beschreibung?: string
-          notizen?: string | null
-          sicherheitscheckliste?: Json | null
-          sicherheit_bestaetigt?: boolean
-          unterschrift_kunde?: string | null
-          unterschrift_am?: string | null
-          unterschrift_name?: string | null
-          status?: string
-          pdf_gesendet_am?: string | null
-          created_at?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "daily_reports_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      daily_report_activities: {
-        Row: {
-          id: string
-          daily_report_id: string
-          geschoss: string
-          beschreibung: string
-          sort_order: number
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          daily_report_id: string
-          geschoss: string
-          beschreibung: string
-          sort_order?: number
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          daily_report_id?: string
-          geschoss?: string
-          beschreibung?: string
-          sort_order?: number
-          created_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "daily_report_activities_daily_report_id_fkey"
-            columns: ["daily_report_id"]
-            isOneToOne: false
-            referencedRelation: "daily_reports"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      daily_report_photos: {
-        Row: {
-          id: string
-          daily_report_id: string
-          user_id: string
-          file_path: string
-          file_name: string
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          daily_report_id: string
-          user_id: string
-          file_path: string
-          file_name: string
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          daily_report_id?: string
-          user_id?: string
-          file_path?: string
-          file_name?: string
-          created_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "daily_report_photos_daily_report_id_fkey"
-            columns: ["daily_report_id"]
-            isOneToOne: false
-            referencedRelation: "daily_reports"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      daily_report_workers: {
-        Row: {
-          id: string
-          daily_report_id: string
-          user_id: string
-          is_main: boolean
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          daily_report_id: string
-          user_id: string
-          is_main?: boolean
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          daily_report_id?: string
-          user_id?: string
-          is_main?: boolean
-          created_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "daily_report_workers_daily_report_id_fkey"
-            columns: ["daily_report_id"]
-            isOneToOne: false
-            referencedRelation: "daily_reports"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      equipment: {
-        Row: {
-          id: string
-          name: string
-          kategorie: string
-          seriennummer: string | null
-          kaufdatum: string | null
-          zustand: string
-          standort_typ: string
-          standort_project_id: string | null
-          notizen: string | null
-          naechste_wartung: string | null
-          wartungsintervall_monate: number | null
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          name: string
-          kategorie: string
-          seriennummer?: string | null
-          kaufdatum?: string | null
-          zustand?: string
-          standort_typ?: string
-          standort_project_id?: string | null
-          notizen?: string | null
-          naechste_wartung?: string | null
-          wartungsintervall_monate?: number | null
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          name?: string
-          kategorie?: string
-          seriennummer?: string | null
-          kaufdatum?: string | null
-          zustand?: string
-          standort_typ?: string
-          standort_project_id?: string | null
-          notizen?: string | null
-          naechste_wartung?: string | null
-          wartungsintervall_monate?: number | null
-          created_at?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "equipment_standort_project_id_fkey"
-            columns: ["standort_project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      equipment_transfers: {
-        Row: {
-          id: string
-          equipment_id: string
-          von_typ: string
-          von_project_id: string | null
-          nach_typ: string
-          nach_project_id: string | null
-          transferiert_am: string
-          transferiert_von: string
-          notizen: string | null
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          equipment_id: string
-          von_typ: string
-          von_project_id?: string | null
-          nach_typ: string
-          nach_project_id?: string | null
-          transferiert_am?: string
-          transferiert_von: string
-          notizen?: string | null
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          equipment_id?: string
-          von_typ?: string
-          von_project_id?: string | null
-          nach_typ?: string
-          nach_project_id?: string | null
-          transferiert_am?: string
-          transferiert_von?: string
-          notizen?: string | null
-          created_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "equipment_transfers_equipment_id_fkey"
-            columns: ["equipment_id"]
-            isOneToOne: false
-            referencedRelation: "equipment"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       documents: {
         Row: {
           beschreibung: string | null
@@ -684,6 +637,130 @@ export type Database = {
           wochen_soll_stunden?: number | null
         }
         Relationships: []
+      }
+      equipment: {
+        Row: {
+          created_at: string
+          id: string
+          kategorie: string
+          kaufdatum: string | null
+          naechste_wartung: string | null
+          name: string
+          notizen: string | null
+          seriennummer: string | null
+          standort_project_id: string | null
+          standort_typ: string
+          updated_at: string
+          wartungsintervall_monate: number | null
+          zustand: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          kategorie: string
+          kaufdatum?: string | null
+          naechste_wartung?: string | null
+          name: string
+          notizen?: string | null
+          seriennummer?: string | null
+          standort_project_id?: string | null
+          standort_typ?: string
+          updated_at?: string
+          wartungsintervall_monate?: number | null
+          zustand?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          kategorie?: string
+          kaufdatum?: string | null
+          naechste_wartung?: string | null
+          name?: string
+          notizen?: string | null
+          seriennummer?: string | null
+          standort_project_id?: string | null
+          standort_typ?: string
+          updated_at?: string
+          wartungsintervall_monate?: number | null
+          zustand?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "equipment_standort_project_id_fkey"
+            columns: ["standort_project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      equipment_transfers: {
+        Row: {
+          created_at: string
+          equipment_id: string
+          id: string
+          nach_project_id: string | null
+          nach_typ: string
+          notizen: string | null
+          transferiert_am: string
+          transferiert_von: string
+          von_project_id: string | null
+          von_typ: string
+        }
+        Insert: {
+          created_at?: string
+          equipment_id: string
+          id?: string
+          nach_project_id?: string | null
+          nach_typ: string
+          notizen?: string | null
+          transferiert_am?: string
+          transferiert_von: string
+          von_project_id?: string | null
+          von_typ: string
+        }
+        Update: {
+          created_at?: string
+          equipment_id?: string
+          id?: string
+          nach_project_id?: string | null
+          nach_typ?: string
+          notizen?: string | null
+          transferiert_am?: string
+          transferiert_von?: string
+          von_project_id?: string | null
+          von_typ?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "equipment_transfers_equipment_id_fkey"
+            columns: ["equipment_id"]
+            isOneToOne: false
+            referencedRelation: "equipment"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "equipment_transfers_nach_project_id_fkey"
+            columns: ["nach_project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "equipment_transfers_transferiert_von_fkey"
+            columns: ["transferiert_von"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "equipment_transfers_von_project_id_fkey"
+            columns: ["von_project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       invitation_logs: {
         Row: {
@@ -967,6 +1044,78 @@ export type Database = {
           },
         ]
       }
+      materials: {
+        Row: {
+          created_at: string | null
+          einheit: string | null
+          id: string
+          name: string
+        }
+        Insert: {
+          created_at?: string | null
+          einheit?: string | null
+          id?: string
+          name: string
+        }
+        Update: {
+          created_at?: string | null
+          einheit?: string | null
+          id?: string
+          name?: string
+        }
+        Relationships: []
+      }
+      notifications: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          is_read: boolean
+          message: string
+          metadata: Json | null
+          title: string
+          type: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_read?: boolean
+          message: string
+          metadata?: Json | null
+          title: string
+          type: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_read?: boolean
+          message?: string
+          metadata?: Json | null
+          title?: string
+          type?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notifications_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notifications_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           anleitung_completed: boolean | null
@@ -997,6 +1146,228 @@ export type Database = {
         }
         Relationships: []
       }
+      project_access: {
+        Row: {
+          created_at: string | null
+          granted_by: string | null
+          id: string
+          project_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          granted_by?: string | null
+          id?: string
+          project_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          granted_by?: string | null
+          id?: string
+          project_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_access_granted_by_fkey"
+            columns: ["granted_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_access_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_access_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      project_contacts: {
+        Row: {
+          created_at: string | null
+          email: string | null
+          firma: string | null
+          id: string
+          name: string
+          notizen: string | null
+          phase: string | null
+          project_id: string
+          rolle: string | null
+          telefon: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          email?: string | null
+          firma?: string | null
+          id?: string
+          name: string
+          notizen?: string | null
+          phase?: string | null
+          project_id: string
+          rolle?: string | null
+          telefon?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          email?: string | null
+          firma?: string | null
+          id?: string
+          name?: string
+          notizen?: string | null
+          phase?: string | null
+          project_id?: string
+          rolle?: string | null
+          telefon?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_contacts_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      project_daily_targets: {
+        Row: {
+          created_at: string | null
+          created_by: string
+          datum: string
+          id: string
+          nachkalkulation_stunden: number | null
+          notizen: string | null
+          project_id: string
+          tagesziel: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          created_by: string
+          datum: string
+          id?: string
+          nachkalkulation_stunden?: number | null
+          notizen?: string | null
+          project_id: string
+          tagesziel?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          created_by?: string
+          datum?: string
+          id?: string
+          nachkalkulation_stunden?: number | null
+          notizen?: string | null
+          project_id?: string
+          tagesziel?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_daily_targets_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_daily_targets_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      project_favorites: {
+        Row: {
+          created_at: string | null
+          id: string
+          project_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          project_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          project_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_favorites_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_favorites_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      project_messages: {
+        Row: {
+          created_at: string | null
+          id: string
+          image_url: string | null
+          message: string | null
+          project_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          image_url?: string | null
+          message?: string | null
+          project_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          image_url?: string | null
+          message?: string | null
+          project_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_messages_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_messages_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       projects: {
         Row: {
           adresse: string | null
@@ -1004,10 +1375,15 @@ export type Database = {
           bauherr_kontakt: string | null
           bauleiter: string | null
           beschreibung: string | null
+          besonderheiten: string | null
           budget: number | null
           created_at: string
           end_datum: string | null
+          erreichbarkeit: string | null
+          hinweise: string | null
           id: string
+          kunde_email: string | null
+          kunde_telefon: string | null
           name: string
           plz: string
           start_datum: string | null
@@ -1020,10 +1396,15 @@ export type Database = {
           bauherr_kontakt?: string | null
           bauleiter?: string | null
           beschreibung?: string | null
+          besonderheiten?: string | null
           budget?: number | null
           created_at?: string
           end_datum?: string | null
+          erreichbarkeit?: string | null
+          hinweise?: string | null
           id?: string
+          kunde_email?: string | null
+          kunde_telefon?: string | null
           name: string
           plz: string
           start_datum?: string | null
@@ -1036,10 +1417,15 @@ export type Database = {
           bauherr_kontakt?: string | null
           bauleiter?: string | null
           beschreibung?: string | null
+          besonderheiten?: string | null
           budget?: number | null
           created_at?: string
           end_datum?: string | null
+          erreichbarkeit?: string | null
+          hinweise?: string | null
           id?: string
+          kunde_email?: string | null
+          kunde_telefon?: string | null
           name?: string
           plz?: string
           start_datum?: string | null
@@ -1047,6 +1433,54 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      report_extras: {
+        Row: {
+          betrag: number | null
+          bezeichnung: string
+          created_at: string | null
+          created_by: string
+          id: string
+          jahr: number
+          monat: number
+          user_id: string
+        }
+        Insert: {
+          betrag?: number | null
+          bezeichnung: string
+          created_at?: string | null
+          created_by: string
+          id?: string
+          jahr: number
+          monat: number
+          user_id: string
+        }
+        Update: {
+          betrag?: number | null
+          bezeichnung?: string
+          created_at?: string | null
+          created_by?: string
+          id?: string
+          jahr?: number
+          monat?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "report_extras_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "report_extras_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       reports: {
         Row: {
@@ -1176,7 +1610,7 @@ export type Database = {
           stunden: number
           taetigkeit: string | null
           updated_at: string
-          user_id: string
+          user_id: string | null
           week_type: string | null
           zeit_typ: string | null
         }
@@ -1200,7 +1634,7 @@ export type Database = {
           stunden: number
           taetigkeit?: string | null
           updated_at?: string
-          user_id: string
+          user_id?: string | null
           week_type?: string | null
           zeit_typ?: string | null
         }
@@ -1224,7 +1658,7 @@ export type Database = {
           stunden?: number
           taetigkeit?: string | null
           updated_at?: string
-          user_id?: string
+          user_id?: string | null
           week_type?: string | null
           zeit_typ?: string | null
         }
@@ -1355,269 +1789,38 @@ export type Database = {
         }
         Relationships: []
       }
-    }
-      project_contacts: {
-        Row: {
-          id: string
-          project_id: string
-          name: string
-          rolle: string | null
-          telefon: string | null
-          email: string | null
-          firma: string | null
-          phase: string
-          notizen: string | null
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          project_id: string
-          name: string
-          rolle?: string | null
-          telefon?: string | null
-          email?: string | null
-          firma?: string | null
-          phase?: string
-          notizen?: string | null
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          project_id?: string
-          name?: string
-          rolle?: string | null
-          telefon?: string | null
-          email?: string | null
-          firma?: string | null
-          phase?: string
-          notizen?: string | null
-          created_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "project_contacts_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      assignment_resources: {
-        Row: {
-          id: string
-          project_id: string
-          datum: string
-          resource_name: string
-          menge: number | null
-          einheit: string | null
-          created_by: string
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          project_id: string
-          datum: string
-          resource_name: string
-          menge?: number | null
-          einheit?: string | null
-          created_by: string
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          project_id?: string
-          datum?: string
-          resource_name?: string
-          menge?: number | null
-          einheit?: string | null
-          created_by?: string
-          created_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "assignment_resources_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "assignment_resources_created_by_fkey"
-            columns: ["created_by"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      project_daily_targets: {
-        Row: {
-          id: string
-          project_id: string
-          datum: string
-          tagesziel: string | null
-          nachkalkulation_stunden: number | null
-          notizen: string | null
-          created_by: string
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          project_id: string
-          datum: string
-          tagesziel?: string | null
-          nachkalkulation_stunden?: number | null
-          notizen?: string | null
-          created_by: string
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          project_id?: string
-          datum?: string
-          tagesziel?: string | null
-          nachkalkulation_stunden?: number | null
-          notizen?: string | null
-          created_by?: string
-          created_at?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "project_daily_targets_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "project_daily_targets_created_by_fkey"
-            columns: ["created_by"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      report_extras: {
-        Row: {
-          id: string
-          user_id: string
-          monat: number
-          jahr: number
-          bezeichnung: string
-          betrag: number | null
-          created_by: string
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          user_id: string
-          monat: number
-          jahr: number
-          bezeichnung: string
-          betrag?: number | null
-          created_by: string
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          user_id?: string
-          monat?: number
-          jahr?: number
-          bezeichnung?: string
-          betrag?: number | null
-          created_by?: string
-          created_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "report_extras_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "report_extras_created_by_fkey"
-            columns: ["created_by"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      project_favorites: {
-        Row: {
-          id: string
-          user_id: string
-          project_id: string
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          user_id: string
-          project_id: string
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          user_id?: string
-          project_id?: string
-          created_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "project_favorites_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "project_favorites_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       worker_assignments: {
         Row: {
-          id: string
-          user_id: string
-          project_id: string
-          datum: string
-          notizen: string | null
+          created_at: string | null
           created_by: string
-          created_at: string
+          datum: string
+          id: string
+          notizen: string | null
+          project_id: string
+          user_id: string
         }
         Insert: {
-          id?: string
-          user_id: string
-          project_id: string
-          datum: string
-          notizen?: string | null
+          created_at?: string | null
           created_by: string
-          created_at?: string
+          datum: string
+          id?: string
+          notizen?: string | null
+          project_id: string
+          user_id: string
         }
         Update: {
-          id?: string
-          user_id?: string
-          project_id?: string
-          datum?: string
-          notizen?: string | null
+          created_at?: string | null
           created_by?: string
-          created_at?: string
+          datum?: string
+          id?: string
+          notizen?: string | null
+          project_id?: string
+          user_id?: string
         }
         Relationships: [
           {
-            foreignKeyName: "worker_assignments_user_id_fkey"
-            columns: ["user_id"]
+            foreignKeyName: "worker_assignments_created_by_fkey"
+            columns: ["created_by"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
@@ -1630,8 +1833,8 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "worker_assignments_created_by_fkey"
-            columns: ["created_by"]
+            foreignKeyName: "worker_assignments_user_id_fkey"
+            columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
@@ -1655,12 +1858,20 @@ export type Database = {
         Args: { p_jahr?: number; p_typ: string }
         Returns: string
       }
+      notify_admins_sick_note: {
+        Args: {
+          p_file_name: string
+          p_uploader_id: string
+          p_uploader_name: string
+        }
+        Returns: undefined
+      }
       transfer_equipment: {
         Args: {
           p_equipment_id: string
+          p_nach_project_id?: string
           p_nach_typ: string
-          p_nach_project_id?: string | null
-          p_notizen?: string | null
+          p_notizen?: string
         }
         Returns: undefined
       }

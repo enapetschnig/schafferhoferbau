@@ -6,10 +6,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Download, Calendar, Briefcase, MapPin, Wrench } from "lucide-react";
+import { Download, Calendar, Briefcase, MapPin, Wrench, Users, Car } from "lucide-react";
 import * as XLSX from "xlsx-js-style";
 import { format, parseISO } from "date-fns";
 import { de } from "date-fns/locale";
+import { calculateOvertime, type WeekSchedule } from "@/lib/workingHours";
 
 interface DetailedProjectEntry {
   id: string;
@@ -24,6 +25,9 @@ interface DetailedProjectEntry {
   taetigkeit: string;
   hours: number;
   locationType: string;
+  kilometer: number;
+  isExternal: boolean;
+  overtime: number;
 }
 
 interface Project {
@@ -32,13 +36,29 @@ interface Project {
   plz?: string;
 }
 
+interface EmployeeSummary {
+  userId: string;
+  name: string;
+  isExternal: boolean;
+  totalHours: number;
+  normalHours: number;
+  overtime: number;
+  km: number;
+}
+
 export default function ProjectHoursReport() {
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectData, setProjectData] = useState<DetailedProjectEntry[]>([]);
   const [totalHours, setTotalHours] = useState(0);
+  const [totalOvertime, setTotalOvertime] = useState(0);
+  const [totalExternalHours, setTotalExternalHours] = useState(0);
+  const [totalKm, setTotalKm] = useState(0);
+  const [employeeSummaries, setEmployeeSummaries] = useState<EmployeeSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [profiles, setProfiles] = useState<Record<string, { vorname: string; nachname: string }>>({});
+  const [externalUserIds, setExternalUserIds] = useState<Set<string>>(new Set());
+  const [employeeSchedules, setEmployeeSchedules] = useState<Record<string, WeekSchedule | null>>({});
   const [startDate, setStartDate] = useState<string>(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
@@ -49,6 +69,7 @@ export default function ProjectHoursReport() {
   useEffect(() => {
     fetchProfiles();
     fetchProjects();
+    fetchEmployeeData();
   }, []);
 
   const fetchProfiles = async () => {
@@ -62,15 +83,37 @@ export default function ProjectHoursReport() {
     }
   };
 
+  const fetchEmployeeData = async () => {
+    const { data } = await supabase
+      .from("employees")
+      .select("user_id, is_external, kategorie, regelarbeitszeit")
+      .not("user_id", "is", null);
+
+    if (data) {
+      const extIds = new Set<string>();
+      const schedules: Record<string, WeekSchedule | null> = {};
+      data.forEach((emp) => {
+        if (emp.user_id) {
+          if (emp.is_external === true || emp.kategorie === "extern") {
+            extIds.add(emp.user_id);
+          }
+          schedules[emp.user_id] = emp.regelarbeitszeit || null;
+        }
+      });
+      setExternalUserIds(extIds);
+      setEmployeeSchedules(schedules);
+    }
+  };
+
   useEffect(() => {
     if (selectedProjectId) {
       fetchProjectHours();
     }
-  }, [selectedProjectId, startDate, endDate]);
+  }, [selectedProjectId, startDate, endDate, profiles, externalUserIds, employeeSchedules]);
 
   useEffect(() => {
     if (!selectedProjectId) return;
-    
+
     const channel = supabase
       .channel('project-hours-changes')
       .on('postgres_changes', {
@@ -79,7 +122,6 @@ export default function ProjectHoursReport() {
         table: 'time_entries',
         filter: `project_id=eq.${selectedProjectId}`
       }, () => {
-        console.log('Projektstunden aktualisiert - neu laden');
         fetchProjectHours();
       })
       .subscribe();
@@ -105,13 +147,13 @@ export default function ProjectHoursReport() {
   };
 
   const fetchProjectHours = async () => {
-    if (!selectedProjectId) return;
+    if (!selectedProjectId || Object.keys(profiles).length === 0) return;
 
     setLoading(true);
 
     const { data, error } = await supabase
       .from("time_entries")
-      .select("id, datum, start_time, end_time, pause_start, pause_end, pause_minutes, stunden, taetigkeit, user_id, location_type")
+      .select("id, datum, start_time, end_time, pause_start, pause_end, pause_minutes, stunden, taetigkeit, user_id, location_type, kilometer")
       .eq("project_id", selectedProjectId)
       .gte("datum", startDate)
       .lte("datum", endDate)
@@ -129,24 +171,51 @@ export default function ProjectHoursReport() {
       return;
     }
 
-    console.log(`Projektstunden geladen: ${data?.length || 0} Einträge gefunden`);
     if (data) {
       const detailedEntries: DetailedProjectEntry[] = [];
       let total = 0;
+      let otTotal = 0;
+      let extTotal = 0;
+      let kmTotal = 0;
+      const empMap: Record<string, EmployeeSummary> = {};
 
       data.forEach((entry: any) => {
-        total += entry.stunden;
-
         const profile = profiles[entry.user_id];
-        if (!profile) {
-          console.warn(`Profil nicht gefunden für user_id: ${entry.user_id}`);
-          return;
+        if (!profile) return;
+
+        const isExt = externalUserIds.has(entry.user_id);
+        const schedule = employeeSchedules[entry.user_id] || null;
+        const ot = isExt ? 0 : calculateOvertime(entry.stunden, new Date(entry.datum), schedule);
+        const km = entry.kilometer || 0;
+
+        total += entry.stunden;
+        otTotal += ot;
+        if (isExt) extTotal += entry.stunden;
+        kmTotal += km;
+
+        const name = `${profile.vorname} ${profile.nachname}`;
+
+        // Aggregate per employee
+        if (!empMap[entry.user_id]) {
+          empMap[entry.user_id] = {
+            userId: entry.user_id,
+            name,
+            isExternal: isExt,
+            totalHours: 0,
+            normalHours: 0,
+            overtime: 0,
+            km: 0,
+          };
         }
+        empMap[entry.user_id].totalHours += entry.stunden;
+        empMap[entry.user_id].overtime += ot;
+        empMap[entry.user_id].normalHours += entry.stunden - ot;
+        empMap[entry.user_id].km += km;
 
         detailedEntries.push({
           id: entry.id,
           userId: entry.user_id,
-          employeeName: `${profile.vorname} ${profile.nachname}`,
+          employeeName: name,
           datum: entry.datum,
           startTime: entry.start_time,
           endTime: entry.end_time,
@@ -156,18 +225,26 @@ export default function ProjectHoursReport() {
           taetigkeit: entry.taetigkeit,
           hours: entry.stunden,
           locationType: entry.location_type || "baustelle",
+          kilometer: km,
+          isExternal: isExt,
+          overtime: ot,
         });
       });
 
-      // Sort by date, then by employee name
       detailedEntries.sort((a, b) => {
         const dateCompare = a.datum.localeCompare(b.datum);
         if (dateCompare !== 0) return dateCompare;
         return a.employeeName.localeCompare(b.employeeName);
       });
 
+      const summaries = Object.values(empMap).sort((a, b) => a.name.localeCompare(b.name));
+
       setProjectData(detailedEntries);
       setTotalHours(total);
+      setTotalOvertime(otTotal);
+      setTotalExternalHours(extTotal);
+      setTotalKm(kmTotal);
+      setEmployeeSummaries(summaries);
     }
 
     setLoading(false);
@@ -210,44 +287,66 @@ export default function ProjectHoursReport() {
       ["PLZ:", selectedProject.plz || "k.A."],
       ["Zeitraum:", `${startDate} bis ${endDate}`],
       [],
-      ["Datum", "Start", "Ende", "Pause", "Stunden", "Mitarbeiter", "Tätigkeit", "Ort"],
+      ["Datum", "Start", "Ende", "Pause", "Stunden", "Überstunden", "km", "Mitarbeiter", "Tätigkeit", "Ort"],
     ];
 
     projectData.forEach((entry) => {
       const dateFormatted = format(parseISO(entry.datum), "dd.MM.yyyy", { locale: de });
       const ortText = entry.locationType === "werkstatt" ? "Lager" : "Baustelle";
-      
+      const empLabel = entry.isExternal ? `${entry.employeeName} (Extern)` : entry.employeeName;
+
       worksheetData.push([
         dateFormatted,
         formatTime(entry.startTime),
         formatTime(entry.endTime),
         formatPause(entry),
         entry.hours.toFixed(2),
-        entry.employeeName,
+        entry.overtime > 0 ? entry.overtime.toFixed(2) : "",
+        entry.kilometer > 0 ? entry.kilometer.toFixed(0) : "",
+        empLabel,
         entry.taetigkeit,
         ortText,
       ]);
     });
 
+    // Summary section
     worksheetData.push([]);
-    worksheetData.push(["GESAMT", "", "", "", totalHours.toFixed(2), "", "", ""]);
+    worksheetData.push(["ZUSAMMENFASSUNG"]);
+    worksheetData.push(["Gesamtstunden:", "", "", "", totalHours.toFixed(2)]);
+    worksheetData.push(["Normalarbeitszeit:", "", "", "", (totalHours - totalOvertime).toFixed(2)]);
+    worksheetData.push(["Überstunden:", "", "", "", totalOvertime.toFixed(2)]);
+    if (totalExternalHours > 0) {
+      worksheetData.push(["Stunden Externe:", "", "", "", totalExternalHours.toFixed(2)]);
+    }
+    worksheetData.push(["Kilometer gesamt:", "", "", "", "", "", totalKm.toFixed(0)]);
+
+    // Per-employee summary
+    worksheetData.push([]);
+    worksheetData.push(["MITARBEITER-ZUSAMMENFASSUNG"]);
+    worksheetData.push(["Mitarbeiter", "", "", "", "Stunden", "Überstunden", "km"]);
+    employeeSummaries.forEach((emp) => {
+      const label = emp.isExternal ? `${emp.name} (Extern)` : emp.name;
+      worksheetData.push([label, "", "", "", emp.totalHours.toFixed(2), emp.overtime > 0 ? emp.overtime.toFixed(2) : "", emp.km > 0 ? emp.km.toFixed(0) : ""]);
+    });
 
     const ws = XLSX.utils.aoa_to_sheet(worksheetData);
-    
+
     ws["!cols"] = [
       { wch: 12 },  // Datum
       { wch: 8 },   // Start
       { wch: 8 },   // Ende
       { wch: 14 },  // Pause
       { wch: 10 },  // Stunden
+      { wch: 12 },  // Überstunden
+      { wch: 8 },   // km
       { wch: 22 },  // Mitarbeiter
       { wch: 20 },  // Tätigkeit
       { wch: 12 },  // Ort
     ];
 
     ws["!merges"] = [
-      { s: { r: 0, c: 1 }, e: { r: 0, c: 7 } },
-      { s: { r: 2, c: 1 }, e: { r: 2, c: 7 } },
+      { s: { r: 0, c: 1 }, e: { r: 0, c: 9 } },
+      { s: { r: 2, c: 1 }, e: { r: 2, c: 9 } },
     ];
 
     const range = XLSX.utils.decode_range(ws["!ref"] || "A1");
@@ -257,11 +356,11 @@ export default function ProjectHoursReport() {
         if (!ws[cellAddress]) {
           ws[cellAddress] = { t: "s", v: "" };
         }
-        
+
         const isHeader = R === 4;
         addBordersToCell(ws[cellAddress], isHeader);
-        
-        if (isHeader || R === worksheetData.length - 1) {
+
+        if (isHeader) {
           ws[cellAddress].s = {
             ...ws[cellAddress].s,
             font: { bold: true },
@@ -296,8 +395,8 @@ export default function ProjectHoursReport() {
               Detaillierte Stunden nach Projekt mit Arbeitszeiten
             </CardDescription>
           </div>
-          <Button 
-            onClick={exportToExcel} 
+          <Button
+            onClick={exportToExcel}
             disabled={!selectedProjectId || projectData.length === 0}
             className="gap-2"
           >
@@ -306,7 +405,7 @@ export default function ProjectHoursReport() {
           </Button>
         </div>
       </CardHeader>
-      
+
       <CardContent className="space-y-6">
         <Card>
           <CardContent className="pt-6 space-y-4">
@@ -388,33 +487,103 @@ export default function ProjectHoursReport() {
           </CardContent>
         </Card>
 
-        {selectedProject && (
-          <div className="grid grid-cols-2 gap-4">
+        {/* Summary Cards */}
+        {selectedProject && projectData.length > 0 && (
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Projekt</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-xl font-bold">{selectedProject.name}</p>
-                <p className="text-sm text-muted-foreground">
-                  PLZ: {selectedProject.plz || "k.A."}
-                </p>
+              <CardContent className="pt-4 pb-3">
+                <p className="text-xs text-muted-foreground">Gesamtstunden</p>
+                <p className="text-2xl font-bold">{totalHours.toFixed(2)}</p>
               </CardContent>
             </Card>
             <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Gesamt-Stunden</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-3xl font-bold">{totalHours.toFixed(2)}</p>
+              <CardContent className="pt-4 pb-3">
+                <p className="text-xs text-muted-foreground">Normalarbeitszeit</p>
+                <p className="text-2xl font-bold">{(totalHours - totalOvertime).toFixed(2)}</p>
               </CardContent>
             </Card>
+            <Card>
+              <CardContent className="pt-4 pb-3">
+                <p className="text-xs text-muted-foreground">Überstunden</p>
+                <p className="text-2xl font-bold text-orange-600">{totalOvertime.toFixed(2)}</p>
+              </CardContent>
+            </Card>
+            {totalExternalHours > 0 && (
+              <Card>
+                <CardContent className="pt-4 pb-3">
+                  <p className="text-xs text-muted-foreground flex items-center gap-1"><Users className="w-3 h-3" /> Externe</p>
+                  <p className="text-2xl font-bold text-blue-600">{totalExternalHours.toFixed(2)}</p>
+                </CardContent>
+              </Card>
+            )}
+            {totalKm > 0 && (
+              <Card>
+                <CardContent className="pt-4 pb-3">
+                  <p className="text-xs text-muted-foreground flex items-center gap-1"><Car className="w-3 h-3" /> Kilometer</p>
+                  <p className="text-2xl font-bold">{totalKm.toFixed(0)}</p>
+                </CardContent>
+              </Card>
+            )}
           </div>
         )}
 
+        {/* Per-Employee Summary */}
+        {employeeSummaries.length > 0 && (
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Users className="w-4 h-4" />
+                Mitarbeiter-Zusammenfassung
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Mitarbeiter</TableHead>
+                    <TableHead className="text-right">Stunden</TableHead>
+                    <TableHead className="text-right">Normal</TableHead>
+                    <TableHead className="text-right">Überstunden</TableHead>
+                    <TableHead className="text-right">km</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {employeeSummaries.map((emp) => (
+                    <TableRow key={emp.userId}>
+                      <TableCell className="font-medium">
+                        {emp.name}
+                        {emp.isExternal && (
+                          <Badge variant="outline" className="ml-2 text-xs">Extern</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right font-bold">{emp.totalHours.toFixed(2)}</TableCell>
+                      <TableCell className="text-right">{emp.isExternal ? "–" : emp.normalHours.toFixed(2)}</TableCell>
+                      <TableCell className="text-right text-orange-600">{emp.isExternal ? "–" : (emp.overtime > 0 ? emp.overtime.toFixed(2) : "–")}</TableCell>
+                      <TableCell className="text-right">{emp.km > 0 ? emp.km.toFixed(0) : "–"}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+                <TableFooter>
+                  <TableRow>
+                    <TableCell className="font-bold">Gesamt</TableCell>
+                    <TableCell className="text-right font-bold">{totalHours.toFixed(2)}</TableCell>
+                    <TableCell className="text-right font-bold">{(totalHours - totalOvertime).toFixed(2)}</TableCell>
+                    <TableCell className="text-right font-bold text-orange-600">{totalOvertime > 0 ? totalOvertime.toFixed(2) : "–"}</TableCell>
+                    <TableCell className="text-right font-bold">{totalKm > 0 ? totalKm.toFixed(0) : "–"}</TableCell>
+                  </TableRow>
+                </TableFooter>
+              </Table>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Detail Table */}
         {projectData.length > 0 ? (
           <Card>
-            <CardContent className="pt-6 overflow-x-auto">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Einzelnachweise</CardTitle>
+            </CardHeader>
+            <CardContent className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -423,6 +592,7 @@ export default function ProjectHoursReport() {
                     <TableHead>Ende</TableHead>
                     <TableHead>Pause</TableHead>
                     <TableHead className="text-right">Stunden</TableHead>
+                    <TableHead className="text-right">km</TableHead>
                     <TableHead>Mitarbeiter</TableHead>
                     <TableHead>Tätigkeit</TableHead>
                     <TableHead>Ort</TableHead>
@@ -440,7 +610,15 @@ export default function ProjectHoursReport() {
                       <TableCell className="text-right font-medium">
                         {entry.hours.toFixed(2)}
                       </TableCell>
-                      <TableCell>{entry.employeeName}</TableCell>
+                      <TableCell className="text-right">
+                        {entry.kilometer > 0 ? entry.kilometer.toFixed(0) : ""}
+                      </TableCell>
+                      <TableCell>
+                        {entry.employeeName}
+                        {entry.isExternal && (
+                          <Badge variant="outline" className="ml-1 text-xs">Ext.</Badge>
+                        )}
+                      </TableCell>
                       <TableCell>
                         <Badge variant="outline" className="gap-1">
                           <Briefcase className="w-3 h-3" />
@@ -468,6 +646,9 @@ export default function ProjectHoursReport() {
                     <TableCell colSpan={4} className="font-bold">Gesamt</TableCell>
                     <TableCell className="text-right font-bold">
                       {totalHours.toFixed(2)}
+                    </TableCell>
+                    <TableCell className="text-right font-bold">
+                      {totalKm > 0 ? totalKm.toFixed(0) : ""}
                     </TableCell>
                     <TableCell colSpan={3}></TableCell>
                   </TableRow>

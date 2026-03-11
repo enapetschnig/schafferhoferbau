@@ -15,6 +15,7 @@ export default function Auth() {
   const [loading, setLoading] = useState(false);
   const [isLogin, setIsLogin] = useState(true);
   const [showPasswordReset, setShowPasswordReset] = useState(false);
+  const [registrationComplete, setRegistrationComplete] = useState(false);
 
   const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -75,12 +76,7 @@ export default function Auth() {
       return;
     }
 
-    toast({ 
-      title: "Registrierung erfolgreich!",
-      description: "Sie können jetzt die App nutzen.",
-    });
-    
-    navigate("/");
+    setRegistrationComplete(true);
     setLoading(false);
   };
 
@@ -112,6 +108,32 @@ export default function Auth() {
     setLoading(false);
   };
 
+
+  if (registrationComplete) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-4">
+        <Card className="w-full max-w-md">
+          <CardHeader className="text-center">
+            <img src="/schafferhofer-logo.svg" alt="Schafferhofer Bau" className="h-24 mx-auto mb-4" />
+            <CardTitle>Registrierung erfolgreich!</CardTitle>
+          </CardHeader>
+          <CardContent className="text-center space-y-4">
+            <div className="bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
+              <p className="text-sm text-green-800 dark:text-green-200">
+                Dein Konto wurde erstellt. Der Administrator muss dich jetzt freischalten, bevor du die App nutzen kannst.
+              </p>
+              <p className="text-xs text-green-700 dark:text-green-300 mt-2">
+                Du wirst benachrichtigt, sobald dein Zugang aktiviert wurde.
+              </p>
+            </div>
+            <Button variant="outline" className="w-full" onClick={() => { setRegistrationComplete(false); setIsLogin(true); }}>
+              Zur Anmeldung
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">

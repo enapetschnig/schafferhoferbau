@@ -762,7 +762,7 @@ export default function HoursReport() {
         <h1 className="text-3xl font-bold">Stundenauswertung</h1>
       </div>
 
-      <Tabs defaultValue="mitarbeiter" className="w-full">
+      <Tabs defaultValue={searchParams.get("tab") || "mitarbeiter"} className="w-full">
         <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="mitarbeiter">
             <FileSpreadsheet className="w-4 h-4 mr-2" />

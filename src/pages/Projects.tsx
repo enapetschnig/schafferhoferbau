@@ -60,6 +60,11 @@ const Projects = () => {
     budget: "",
     start_datum: "",
     end_datum: "",
+    kunde_telefon: "",
+    kunde_email: "",
+    erreichbarkeit: "",
+    besonderheiten: "",
+    hinweise: "",
   });
   const [quickUploadProject, setQuickUploadProject] = useState<{
     projectId: string;
@@ -113,9 +118,14 @@ const Projects = () => {
     setSubmittingMaterial(false);
   };
 
+  const [adminChecked, setAdminChecked] = useState(false);
+
   useEffect(() => {
-    checkAdminStatus();
-    fetchProjects();
+    const init = async () => {
+      await checkAdminStatus();
+      setAdminChecked(true);
+    };
+    init();
     fetchFavorites();
     fetchMaterialCatalog();
 
@@ -131,6 +141,12 @@ const Projects = () => {
       supabase.removeChannel(channel);
     };
   }, []);
+
+  useEffect(() => {
+    if (adminChecked) {
+      fetchProjects();
+    }
+  }, [adminChecked]);
 
   const checkAdminStatus = async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -173,15 +189,39 @@ const Projects = () => {
   };
 
   const fetchProjects = async () => {
-    const { data, error } = await supabase
-      .from("projects")
-      .select("*")
-      .order("created_at", { ascending: false });
+    let projectData: any[] = [];
 
-    if (error) {
-      setLoading(false);
-      return;
+    if (isAdmin) {
+      // Admins see all projects
+      const { data, error } = await supabase
+        .from("projects")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (error) { setLoading(false); return; }
+      projectData = data || [];
+    } else {
+      // Non-admins: only projects they have access to
+      const { data: accessData } = await supabase
+        .from("project_access")
+        .select("project_id")
+        .eq("user_id", currentUserId!);
+      const accessIds = (accessData || []).map(a => (a as any).project_id);
+      if (accessIds.length === 0) {
+        setProjects([]);
+        setLoading(false);
+        return;
+      }
+      const { data, error } = await supabase
+        .from("projects")
+        .select("*")
+        .in("id", accessIds)
+        .order("created_at", { ascending: false });
+      if (error) { setLoading(false); return; }
+      projectData = data || [];
     }
+
+    const data = projectData;
+    const error = null;
 
     // Fetch file counts for each project
     const projectsWithCounts = await Promise.all(
@@ -246,6 +286,11 @@ const Projects = () => {
         budget: newProject.budget ? parseFloat(newProject.budget) : null,
         start_datum: newProject.start_datum || null,
         end_datum: newProject.end_datum || null,
+        kunde_telefon: newProject.kunde_telefon.trim() || null,
+        kunde_email: newProject.kunde_email.trim() || null,
+        erreichbarkeit: newProject.erreichbarkeit.trim() || null,
+        besonderheiten: newProject.besonderheiten.trim() || null,
+        hinweise: newProject.hinweise.trim() || null,
       });
 
     if (error) {
@@ -259,7 +304,7 @@ const Projects = () => {
         title: "Erfolg",
         description: "Projekt wurde erstellt",
       });
-      setNewProject({ name: "", beschreibung: "", adresse: "", plz: "", bauherr: "", bauherr_kontakt: "", bauleiter: "", budget: "", start_datum: "", end_datum: "" });
+      setNewProject({ name: "", beschreibung: "", adresse: "", plz: "", bauherr: "", bauherr_kontakt: "", bauleiter: "", budget: "", start_datum: "", end_datum: "", kunde_telefon: "", kunde_email: "", erreichbarkeit: "", besonderheiten: "", hinweise: "" });
       setShowNewDialog(false);
       fetchProjects();
     }
@@ -462,6 +507,7 @@ const Projects = () => {
               />
             </div>
             <Dialog open={showNewDialog} onOpenChange={setShowNewDialog}>
+              {isAdmin && (
               <DialogTrigger asChild>
                 <Button size="sm" className="gap-1 sm:gap-2">
                   <Plus className="h-3 w-3 sm:h-4 sm:w-4" />
@@ -469,6 +515,7 @@ const Projects = () => {
                   <span className="sm:hidden">Neu</span>
                 </Button>
               </DialogTrigger>
+              )}
               <DialogContent className="max-w-sm sm:max-w-md">
                 <DialogHeader>
                   <DialogTitle>Neues Projekt erstellen</DialogTitle>
@@ -571,6 +618,51 @@ const Projects = () => {
                       />
                     </div>
                   </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                      <Label>Kunde Telefon</Label>
+                      <Input
+                        value={newProject.kunde_telefon}
+                        onChange={(e) => setNewProject({ ...newProject, kunde_telefon: e.target.value })}
+                        placeholder="Tel. des Kunden"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Kunde E-Mail</Label>
+                      <Input
+                        type="email"
+                        value={newProject.kunde_email}
+                        onChange={(e) => setNewProject({ ...newProject, kunde_email: e.target.value })}
+                        placeholder="E-Mail des Kunden"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Erreichbarkeit</Label>
+                    <Input
+                      value={newProject.erreichbarkeit}
+                      onChange={(e) => setNewProject({ ...newProject, erreichbarkeit: e.target.value })}
+                      placeholder="z.B. Mo-Fr 8-16 Uhr"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Besonderheiten</Label>
+                    <Textarea
+                      value={newProject.besonderheiten}
+                      onChange={(e) => setNewProject({ ...newProject, besonderheiten: e.target.value })}
+                      placeholder="Besonderheiten des Projekts..."
+                      className="min-h-16"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Hinweise zur Baustelle</Label>
+                    <Textarea
+                      value={newProject.hinweise}
+                      onChange={(e) => setNewProject({ ...newProject, hinweise: e.target.value })}
+                      placeholder="Zufahrt, Parkmöglichkeiten, etc."
+                      className="min-h-16"
+                    />
+                  </div>
                   <Button onClick={handleCreateProject} className="w-full">
                     Projekt erstellen
                   </Button>
@@ -630,13 +722,13 @@ const Projects = () => {
                 return aFav - bFav;
               })
               .map((project) => (
-            <Card 
-              key={project.id} 
-              className="border-2 hover:shadow-lg transition-all cursor-pointer"
+            <Card
+              key={project.id}
+              className={`border-2 hover:shadow-lg transition-all cursor-pointer ${favoriteIds.has(project.id) ? "border-red-500 bg-red-50 dark:bg-red-950/20" : ""}`}
               onClick={() => navigate(`/projects/${project.id}`)}
-              
+
             >
-              <CardHeader className="bg-primary/5 pb-3 sm:pb-4">
+              <CardHeader className={`pb-3 sm:pb-4 ${favoriteIds.has(project.id) ? "bg-red-100/50 dark:bg-red-950/30" : "bg-primary/5"}`}>
                 <div className="flex flex-col sm:flex-row sm:justify-between gap-3">
                   <div className="flex gap-2 sm:gap-3">
                     <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
@@ -676,7 +768,7 @@ const Projects = () => {
                       className="p-1 hover:scale-110 transition-transform"
                       title={favoriteIds.has(project.id) ? "Favorit entfernen" : "Als Favorit markieren"}
                     >
-                      <Star className={`h-5 w-5 ${favoriteIds.has(project.id) ? "fill-yellow-400 text-yellow-400" : "text-muted-foreground"}`} />
+                      <Star className={`h-5 w-5 ${favoriteIds.has(project.id) ? "fill-red-500 text-red-500" : "text-muted-foreground"}`} />
                     </button>
                     <Badge
                       variant={project.status === "aktiv" ? "default" : "secondary"}
@@ -827,12 +919,14 @@ const Projects = () => {
                 <FolderOpen className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
                 <p className="text-lg font-semibold mb-2">Keine aktiven Projekte</p>
                 <p className="text-sm text-muted-foreground mb-4">
-                  Erstelle dein erstes Projekt
+                  {isAdmin ? "Erstelle dein erstes Projekt" : "Du hast noch keinen Zugriff auf Projekte"}
                 </p>
-                <Button onClick={() => setShowNewDialog(true)}>
-                  <Plus className="w-4 h-4 mr-2" />
-                  Neues Projekt
-                </Button>
+                {isAdmin && (
+                  <Button onClick={() => setShowNewDialog(true)}>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Neues Projekt
+                  </Button>
+                )}
               </CardContent>
             </Card>
           )}

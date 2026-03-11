@@ -66,6 +66,7 @@ const Dashboard = () => {
 
     if (notif.type === "lohnzettel_upload") navigate("/my-documents");
     else if (notif.type === "krankmeldung_upload") navigate("/employees");
+    else if (notif.type === "chat_message" && notif.metadata?.project_id) navigate(`/projects/${notif.metadata.project_id}/chat`);
   };
 
   const dismissNotification = async (e: React.MouseEvent, notifId: string) => {

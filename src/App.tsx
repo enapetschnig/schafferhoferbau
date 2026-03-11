@@ -36,7 +36,11 @@ import ScheduleBoard from "./pages/ScheduleBoard";
 import Invoices from "./pages/Invoices";
 import InvoiceDetail from "./pages/InvoiceDetail";
 import DocumentLibrary from "./pages/DocumentLibrary";
+import ProjectChatPage from "./pages/ProjectChatPage";
+import CompanyChatPage from "./pages/CompanyChatPage";
 import NotFound from "./pages/NotFound";
+import { ProtectedRoute } from "./components/ProtectedRoute";
+import { usePushNotifications } from "./hooks/usePushNotifications";
 
 const queryClient = new QueryClient();
 
@@ -45,6 +49,20 @@ function AppContent() {
     showInstallDialog,
     handleInstallDialogClose,
   } = useOnboarding();
+
+  // Request push notification permission after login
+  const { permission: pushPermission, requestPermission: requestPush } = usePushNotifications();
+
+  useEffect(() => {
+    if (pushPermission === "default") {
+      // Ask for push permission after a short delay (after login)
+      const timer = setTimeout(async () => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) requestPush();
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [pushPermission]);
 
   // Ensure user profile exists (for users created via Cloud dashboard)
   useEffect(() => {
@@ -104,29 +122,36 @@ function AppContent() {
         <Route path="/" element={<Index />} />
         <Route path="/auth" element={<Auth />} />
         <Route path="/time-tracking" element={<TimeTracking />} />
-        <Route path="/projects" element={<Projects />} />
-        <Route path="/projects/:projectId" element={<ProjectOverview />} />
-        <Route path="/projects/:projectId/:type" element={<ProjectDetail />} />
-        <Route path="/projects/:projectId/materials" element={<MaterialList />} />
+        {/* Ab Facharbeiter */}
+        <Route path="/projects" element={<ProtectedRoute minRole="facharbeiter"><Projects /></ProtectedRoute>} />
+        <Route path="/projects/:projectId" element={<ProtectedRoute minRole="facharbeiter"><ProjectOverview /></ProtectedRoute>} />
+        <Route path="/projects/:projectId/chat" element={<ProtectedRoute minRole="facharbeiter"><ProjectChatPage /></ProtectedRoute>} />
+        <Route path="/projects/:projectId/:type" element={<ProtectedRoute minRole="facharbeiter"><ProjectDetail /></ProtectedRoute>} />
+        <Route path="/projects/:projectId/materials" element={<ProtectedRoute minRole="facharbeiter"><MaterialList /></ProtectedRoute>} />
+        {/* Alle eingeloggten */}
+        <Route path="/company-chat" element={<CompanyChatPage />} />
         <Route path="/my-hours" element={<MyHours />} />
         <Route path="/my-documents" element={<MyDocuments />} />
-        <Route path="/reports" element={<Reports />} />
-        <Route path="/admin" element={<Admin />} />
-        <Route path="/hours-report" element={<HoursReport />} />
-        <Route path="/employees" element={<Employees />} />
+        {/* Ab Vorarbeiter */}
+        <Route path="/reports" element={<ProtectedRoute minRole="vorarbeiter"><Reports /></ProtectedRoute>} />
+        <Route path="/disturbances" element={<ProtectedRoute minRole="vorarbeiter"><Disturbances /></ProtectedRoute>} />
+        <Route path="/disturbances/:id" element={<ProtectedRoute minRole="vorarbeiter"><DisturbanceDetail /></ProtectedRoute>} />
+        <Route path="/bad-weather" element={<ProtectedRoute minRole="vorarbeiter"><BadWeather /></ProtectedRoute>} />
+        <Route path="/daily-reports" element={<ProtectedRoute minRole="vorarbeiter"><DailyReports /></ProtectedRoute>} />
+        <Route path="/daily-reports/:id" element={<ProtectedRoute minRole="vorarbeiter"><DailyReportDetail /></ProtectedRoute>} />
+        <Route path="/documents" element={<ProtectedRoute minRole="vorarbeiter"><DocumentLibrary /></ProtectedRoute>} />
+        {/* Nur Admin */}
+        <Route path="/admin" element={<ProtectedRoute minRole="admin"><Admin /></ProtectedRoute>} />
+        <Route path="/hours-report" element={<ProtectedRoute minRole="admin"><HoursReport /></ProtectedRoute>} />
+        <Route path="/employees" element={<ProtectedRoute minRole="admin"><Employees /></ProtectedRoute>} />
+        <Route path="/legal-work-time" element={<ProtectedRoute minRole="admin"><LegalWorkTimeReport /></ProtectedRoute>} />
+        <Route path="/equipment" element={<ProtectedRoute minRole="admin"><EquipmentPage /></ProtectedRoute>} />
+        <Route path="/equipment/:id" element={<ProtectedRoute minRole="admin"><EquipmentDetail /></ProtectedRoute>} />
+        <Route path="/schedule" element={<ProtectedRoute minRole="admin"><ScheduleBoard /></ProtectedRoute>} />
+        <Route path="/invoices" element={<ProtectedRoute minRole="admin"><Invoices /></ProtectedRoute>} />
+        <Route path="/invoices/:id" element={<ProtectedRoute minRole="admin"><InvoiceDetail /></ProtectedRoute>} />
+        {/* Sonstige */}
         <Route path="/notepad" element={<Notepad />} />
-        <Route path="/disturbances" element={<Disturbances />} />
-        <Route path="/disturbances/:id" element={<DisturbanceDetail />} />
-        <Route path="/bad-weather" element={<BadWeather />} />
-        <Route path="/daily-reports" element={<DailyReports />} />
-        <Route path="/daily-reports/:id" element={<DailyReportDetail />} />
-        <Route path="/legal-work-time" element={<LegalWorkTimeReport />} />
-        <Route path="/equipment" element={<EquipmentPage />} />
-        <Route path="/equipment/:id" element={<EquipmentDetail />} />
-        <Route path="/schedule" element={<ScheduleBoard />} />
-        <Route path="/invoices" element={<Invoices />} />
-        <Route path="/invoices/:id" element={<InvoiceDetail />} />
-        <Route path="/documents" element={<DocumentLibrary />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
 

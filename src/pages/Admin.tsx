@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, Shield, User as UserIcon, Send, Mail, Phone, MapPin, Shirt, FileText, Clock, Trash2, Settings, Save, Calendar, Package, Plus } from "lucide-react";
+import { ArrowLeft, Shield, User as UserIcon, UserPlus, Send, Mail, Phone, MapPin, Shirt, FileText, Clock, Trash2, Settings, Save, Calendar, Package, Plus } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
@@ -103,6 +103,9 @@ export default function Admin() {
   const [regiereportEmail, setRegiereportEmail] = useState("");
   const [savingSettings, setSavingSettings] = useState(false);
   const [loadingSettings, setLoadingSettings] = useState(true);
+
+  // Pending user activation states
+  const [pendingKategorie, setPendingKategorie] = useState<Record<string, string>>({});
 
   // Material catalog states
   const [materials, setMaterials] = useState<{ id: string; name: string; einheit: string }[]>([]);
@@ -305,6 +308,58 @@ export default function Admin() {
 
     // If activated, jump to the user in the "Registrierte Benutzer" list
     if (activate) scrollToRegisteredUser(userId);
+  };
+
+  const handleActivateWithRole = async (userId: string) => {
+    const kategorie = pendingKategorie[userId] || "facharbeiter";
+
+    // 1. Activate user
+    const { error: activateError } = await supabase
+      .from("profiles")
+      .update({ is_active: true })
+      .eq("id", userId);
+
+    if (activateError) {
+      toast({ variant: "destructive", title: "Fehler", description: activateError.message });
+      return;
+    }
+
+    // 2. Create/update employee with kategorie
+    const profile = profiles.find(p => p.id === userId);
+    const { data: existingEmp } = await supabase
+      .from("employees")
+      .select("id")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (existingEmp) {
+      await supabase.from("employees").update({ kategorie }).eq("id", existingEmp.id);
+    } else {
+      await supabase.from("employees").insert({
+        user_id: userId,
+        vorname: profile?.vorname || "",
+        nachname: profile?.nachname || "",
+        kategorie,
+      });
+    }
+
+    // 3. Notify user
+    const { data: { user } } = await supabase.auth.getUser();
+    await supabase.from("notifications").insert({
+      user_id: userId,
+      created_by: user?.id,
+      type: "account_activated",
+      title: "Konto freigeschaltet",
+      message: "Dein Konto wurde vom Administrator freigeschaltet. Du kannst die App jetzt nutzen.",
+      metadata: {},
+    });
+
+    // 4. Update UI
+    setProfiles(prev => prev.map(p => p.id === userId ? { ...p, is_active: true } : p));
+    toast({ title: "Mitarbeiter freigeschaltet", description: `${profile?.vorname} ${profile?.nachname} kann sich jetzt anmelden.` });
+    fetchUsers({ silent: true });
+    fetchEmployees();
+    scrollToRegisteredUser(userId);
   };
 
   const exportUserTimeEntries = async (userId: string, userName: string): Promise<boolean> => {
@@ -746,35 +801,35 @@ export default function Admin() {
       </header>
 
       <main className="container mx-auto px-3 sm:px-4 lg:px-6 py-4 sm:py-6 lg:py-8 space-y-8">
-        {/* ===== WARTENDE AKTIVIERUNGEN (vorerst ausgeblendet) ===== */}
-        {false && profiles.filter(p => !p.is_active).length > 0 && (
+        {/* ===== NEUE MITARBEITER FREISCHALTEN ===== */}
+        {profiles.filter(p => !p.is_active).length > 0 && (
           <section>
             <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
-              Wartende Aktivierungen
-              <span className="bg-destructive text-destructive-foreground text-sm px-2 py-1 rounded-full">
+              <UserPlus className="h-6 w-6 text-orange-600" />
+              Neue Mitarbeiter freischalten
+              <span className="bg-orange-500 text-white text-sm px-2.5 py-0.5 rounded-full">
                 {profiles.filter(p => !p.is_active).length}
               </span>
             </h2>
-            
-            <Card className="mb-6 border-destructive/50">
+
+            <Card className="mb-6 border-orange-400/50 bg-orange-50/50 dark:bg-orange-950/10">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <UserIcon className="h-5 w-5 text-destructive" />
-                  Neue Registrierungen
+                  <UserIcon className="h-5 w-5 text-orange-600" />
+                  Wartende Registrierungen
                 </CardTitle>
                 <CardDescription>
-                  Diese Benutzer haben sich registriert und warten auf Freischaltung
+                  Diese Mitarbeiter haben sich registriert und warten auf Freischaltung. Weise eine Rolle zu und aktiviere den Zugang.
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
                   {profiles.filter(p => !p.is_active).map((profile) => (
-                    <div key={profile.id} className="flex items-center justify-between p-4 rounded-lg border bg-card">
+                    <div key={profile.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-lg border bg-card">
                       <div className="flex items-center gap-3">
                         <Avatar>
-                          <AvatarFallback className="bg-destructive/10 text-destructive">
-                            {profile.vorname[0]}
-                            {profile.nachname[0]}
+                          <AvatarFallback className="bg-orange-100 text-orange-700">
+                            {profile.vorname?.[0] || "?"}{profile.nachname?.[0] || "?"}
                           </AvatarFallback>
                         </Avatar>
                         <div>
@@ -786,9 +841,29 @@ export default function Admin() {
                           </p>
                         </div>
                       </div>
-                      <Button onClick={() => handleActivateUser(profile.id, true)}>
-                        Aktivieren
-                      </Button>
+                      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                        <Select
+                          value={pendingKategorie[profile.id] || "facharbeiter"}
+                          onValueChange={(val) => setPendingKategorie(prev => ({ ...prev, [profile.id]: val }))}
+                        >
+                          <SelectTrigger className="w-full sm:w-[160px]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="lehrling">Lehrling</SelectItem>
+                            <SelectItem value="facharbeiter">Facharbeiter</SelectItem>
+                            <SelectItem value="vorarbeiter">Vorarbeiter</SelectItem>
+                            <SelectItem value="extern">Extern</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          className="bg-green-600 hover:bg-green-700 text-white"
+                          onClick={() => handleActivateWithRole(profile.id)}
+                        >
+                          <UserPlus className="h-4 w-4 mr-2" />
+                          Freischalten
+                        </Button>
+                      </div>
                     </div>
                   ))}
                 </div>

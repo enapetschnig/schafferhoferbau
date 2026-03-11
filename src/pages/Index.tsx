@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Session, User } from "@supabase/supabase-js";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Clock, FolderKanban, Users, BarChart3, LogOut, FileText, Camera, ArrowRight, Info, User as UserIcon, Zap, Receipt, Bell, X, CloudRain, ClipboardList, Scale, Wrench, CalendarDays, BookOpen } from "lucide-react";
+import { Clock, FolderKanban, Users, BarChart3, LogOut, FileText, Camera, ArrowRight, Info, User as UserIcon, UserPlus, Zap, Receipt, Bell, X, CloudRain, ClipboardList, Scale, Wrench, CalendarDays, BookOpen, Star, MapPin, Megaphone, MessageCircle, ChevronLeft } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useOnboarding } from "@/contexts/OnboardingContext";
 import {
@@ -16,6 +16,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import ChangePasswordDialog from "@/components/ChangePasswordDialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 type Project = {
   id: string;
@@ -59,8 +60,27 @@ export default function Index() {
   const [isActivated, setIsActivated] = useState<boolean | null>(null);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [missingHoursDate, setMissingHoursDate] = useState<string | null>(null);
-  const [isExternal, setIsExternal] = useState(false);
+  const [kategorie, setKategorie] = useState<string | null>(null);
+  const [favoriteProjects, setFavoriteProjects] = useState<{ id: string; name: string; adresse: string | null }[]>([]);
+  const [pendingCount, setPendingCount] = useState(0);
+  const [showChatDialog, setShowChatDialog] = useState(false);
+  const [chatDialogMode, setChatDialogMode] = useState<"select" | "project">("select");
+  const [allProjects, setAllProjects] = useState<Project[]>([]);
   const { handleRestartInstallGuide } = useOnboarding();
+
+  // Role-based visibility helper
+  const ROLE_LEVEL: Record<string, number> = {
+    extern: 0, lehrling: 1, facharbeiter: 2, vorarbeiter: 3, admin: 4,
+  };
+  const getEffectiveRole = () => {
+    if (userRole === "administrator") return "admin";
+    if (!kategorie) return "facharbeiter";
+    if (kategorie === "extern") return "extern";
+    return kategorie;
+  };
+  const roleLevel = ROLE_LEVEL[getEffectiveRole()] ?? 2;
+  const canSee = (minRole: string) => roleLevel >= (ROLE_LEVEL[minRole] ?? 0);
+  const isExternal = kategorie === "extern";
 
   const checkMissingHours = async (userId: string) => {
     const today = new Date();
@@ -99,6 +119,21 @@ export default function Index() {
     if (data) {
       setProjects(data);
     }
+  };
+
+  const fetchFavoriteProjects = async (userId: string) => {
+    const { data: favData } = await supabase
+      .from("project_favorites")
+      .select("project_id")
+      .eq("user_id", userId);
+    if (!favData || favData.length === 0) { setFavoriteProjects([]); return; }
+    const ids = favData.map(f => f.project_id);
+    const { data: projData } = await supabase
+      .from("projects")
+      .select("id, name, adresse")
+      .in("id", ids)
+      .eq("status", "aktiv");
+    setFavoriteProjects(projData || []);
   };
 
   const fetchNotifications = async (userId: string) => {
@@ -174,13 +209,37 @@ export default function Index() {
 
     const role = roleData?.role ?? null;
     setUserRole(role);
-    setIsExternal(employeeData?.is_external === true || employeeData?.kategorie === "extern");
+    setKategorie(employeeData?.kategorie || null);
+
+    const fetchPendingUsers = async () => {
+      if (role === "administrator") {
+        const { count } = await supabase
+          .from("profiles")
+          .select("*", { count: "exact", head: true })
+          .eq("is_active", false);
+        setPendingCount(count || 0);
+      }
+    };
+
+    const fetchAllProjectsForAdmin = async () => {
+      if (role === "administrator") {
+        const { data } = await supabase
+          .from("projects")
+          .select("id, name, status, updated_at")
+          .eq("status", "aktiv")
+          .order("name");
+        if (data) setAllProjects(data);
+      }
+    };
 
     await Promise.all([
       fetchProjects(),
       fetchRecentEntries(userId, role),
       fetchNotifications(userId),
       checkMissingHours(userId),
+      fetchFavoriteProjects(userId),
+      fetchPendingUsers(),
+      fetchAllProjectsForAdmin(),
     ]);
 
     setLoading(false);
@@ -300,8 +359,11 @@ export default function Index() {
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
         <div className="text-center space-y-4 max-w-md">
           <img src="/schafferhofer-logo.svg" alt="Schafferhofer Bau" className="h-20 mx-auto" />
-          <h1 className="text-xl font-bold">Konto deaktiviert</h1>
-          <p className="text-muted-foreground">Ihr Konto wurde deaktiviert. Bitte wenden Sie sich an den Administrator.</p>
+          <h1 className="text-xl font-bold">Konto noch nicht freigeschaltet</h1>
+          <p className="text-muted-foreground">
+            Dein Konto muss vom Administrator freigeschaltet werden, bevor du die App nutzen kannst.
+            Du wirst benachrichtigt, sobald dein Zugang aktiviert wurde.
+          </p>
           <Button variant="outline" onClick={() => supabase.auth.signOut()}>Abmelden</Button>
         </div>
       </div>
@@ -369,6 +431,25 @@ export default function Index() {
           </p>
         </div>
 
+        {/* Pending Activations Banner (Admin only) */}
+        {isAdmin && pendingCount > 0 && (
+          <div
+            className="mb-4 flex items-center gap-3 rounded-lg border-2 border-orange-400 bg-orange-50 dark:bg-orange-950/20 p-3 cursor-pointer hover:bg-orange-100 dark:hover:bg-orange-950/30 transition-colors"
+            onClick={() => navigate("/admin")}
+          >
+            <UserPlus className="h-6 w-6 text-orange-600 shrink-0" />
+            <div className="flex-1">
+              <p className="font-semibold text-sm text-orange-800 dark:text-orange-200">
+                {pendingCount} neue{pendingCount === 1 ? "r" : ""} Mitarbeiter warte{pendingCount === 1 ? "t" : "n"} auf Freischaltung
+              </p>
+              <p className="text-xs text-orange-700 dark:text-orange-300">
+                Jetzt freischalten und Rolle zuweisen
+              </p>
+            </div>
+            <ArrowRight className="h-5 w-5 text-orange-600 shrink-0" />
+          </div>
+        )}
+
         {/* Notifications Banner */}
         {notifications.length > 0 && (
           <div className="mb-4 space-y-2">
@@ -380,6 +461,9 @@ export default function Index() {
                   handleDismissNotification(notif.id);
                   if (notif.type === "krankmeldung_upload") navigate("/admin");
                   if (notif.type === "lohnzettel_upload") navigate("/my-documents");
+                  if (notif.type === "broadcast_message") navigate("/company-chat");
+                  if (notif.type === "chat_message") navigate("/company-chat");
+                  if (notif.type === "account_activated") window.location.reload();
                 }}
               >
                 <Bell className="h-5 w-5 text-primary shrink-0" />
@@ -420,6 +504,40 @@ export default function Index() {
           </div>
         )}
 
+        {/* Favoriten-Projekte */}
+        {favoriteProjects.length > 0 && (
+          <div className="mb-6">
+            <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
+              <Star className="h-5 w-5 fill-red-500 text-red-500" />
+              Meine Favoriten
+            </h2>
+            <div className="grid gap-2 sm:grid-cols-3">
+              {favoriteProjects.map(p => (
+                <Card
+                  key={p.id}
+                  className="cursor-pointer border-red-500 bg-red-50 dark:bg-red-950/20 hover:shadow-lg transition-all"
+                  onClick={() => navigate(`/projects/${p.id}`)}
+                >
+                  <CardContent className="p-3 sm:p-4">
+                    <div className="flex items-center gap-2">
+                      <Star className="h-4 w-4 fill-red-500 text-red-500 shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        <p className="font-semibold text-sm truncate">{p.name}</p>
+                        {p.adresse && (
+                          <p className="text-xs text-muted-foreground truncate flex items-center gap-1">
+                            <MapPin className="h-3 w-3 shrink-0" /> {p.adresse}
+                          </p>
+                        )}
+                      </div>
+                      <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Main Actions Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 lg:gap-6">
           {/* Zeiterfassung - Für alle */}
@@ -441,8 +559,97 @@ export default function Index() {
             </CardContent>
           </Card>
 
-          {/* Projekte - Für alle außer Externe */}
-          {!isExternal && (
+          {/* Chat - Admin: Dialog; Nicht-Admin: direkt Firmen-Chat */}
+          <Card
+            className="cursor-pointer hover:shadow-lg transition-all hover:border-green-500/50"
+            onClick={() => {
+              if (isAdmin) {
+                setChatDialogMode("select");
+                setShowChatDialog(true);
+              } else {
+                navigate("/company-chat");
+              }
+            }}
+          >
+            <CardHeader className="space-y-2 pb-3">
+              <div className="h-12 w-12 rounded-lg bg-green-500/10 flex items-center justify-center">
+                {isAdmin ? <MessageCircle className="h-6 w-6 text-green-600" /> : <Megaphone className="h-6 w-6 text-green-600" />}
+              </div>
+              <CardTitle className="text-lg sm:text-xl">{isAdmin ? "Chat starten" : "Firmen-Chat"}</CardTitle>
+              <CardDescription className="text-sm">
+                {isAdmin ? "Firmen-Chat oder Projekt-Chat starten" : "Nachrichten & Infos vom Chef"}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button className="w-full" size="sm" variant="outline">{isAdmin ? "Chat starten" : "Chat öffnen"}</Button>
+            </CardContent>
+          </Card>
+
+          {/* Chat starten Dialog (Admin) */}
+          <Dialog open={showChatDialog} onOpenChange={(open) => { setShowChatDialog(open); if (!open) setChatDialogMode("select"); }}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  {chatDialogMode === "project" && (
+                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0 mr-1" onClick={() => setChatDialogMode("select")}>
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                  )}
+                  {chatDialogMode === "select" ? "Chat starten" : "Projekt auswählen"}
+                </DialogTitle>
+              </DialogHeader>
+
+              {chatDialogMode === "select" ? (
+                <div className="grid grid-cols-2 gap-3 pt-2">
+                  <Card
+                    className="cursor-pointer hover:shadow-md transition-all hover:border-green-500/50 border-2"
+                    onClick={() => { setShowChatDialog(false); navigate("/company-chat"); }}
+                  >
+                    <CardContent className="p-4 text-center space-y-2">
+                      <div className="h-12 w-12 rounded-lg bg-green-500/10 flex items-center justify-center mx-auto">
+                        <Megaphone className="h-6 w-6 text-green-600" />
+                      </div>
+                      <p className="font-semibold text-sm">Firmen-Chat</p>
+                      <p className="text-xs text-muted-foreground">An Mitarbeiter senden</p>
+                    </CardContent>
+                  </Card>
+                  <Card
+                    className="cursor-pointer hover:shadow-md transition-all hover:border-blue-500/50 border-2"
+                    onClick={() => setChatDialogMode("project")}
+                  >
+                    <CardContent className="p-4 text-center space-y-2">
+                      <div className="h-12 w-12 rounded-lg bg-blue-500/10 flex items-center justify-center mx-auto">
+                        <FolderKanban className="h-6 w-6 text-blue-600" />
+                      </div>
+                      <p className="font-semibold text-sm">Projekt-Chat</p>
+                      <p className="text-xs text-muted-foreground">In einem Projekt</p>
+                    </CardContent>
+                  </Card>
+                </div>
+              ) : (
+                <div className="space-y-1 max-h-80 overflow-y-auto pt-2">
+                  {allProjects.length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-4">Keine aktiven Projekte</p>
+                  ) : (
+                    allProjects.map((project) => (
+                      <div
+                        key={project.id}
+                        className="flex items-center gap-3 p-3 rounded-lg hover:bg-muted cursor-pointer transition-colors"
+                        onClick={() => { setShowChatDialog(false); navigate(`/projects/${project.id}/chat`); }}
+                      >
+                        <FolderKanban className="h-4 w-4 text-muted-foreground shrink-0" />
+                        <span className="text-sm font-medium flex-1 truncate">{project.name}</span>
+                        <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </DialogContent>
+          </Dialog>
+
+          {/* Projekte - Ab Facharbeiter */}
+          {canSee("facharbeiter") && (
           <Card
             className="cursor-pointer hover:shadow-lg transition-all hover:border-primary/50"
             onClick={() => navigate("/projects")}
@@ -481,8 +688,8 @@ export default function Index() {
             </CardContent>
           </Card>
 
-          {/* Regieberichte - Für alle außer Externe */}
-          {!isExternal && (
+          {/* Regieberichte - Ab Vorarbeiter */}
+          {canSee("vorarbeiter") && (
           <Card
             className="cursor-pointer hover:shadow-lg transition-all hover:border-primary/50"
             onClick={() => navigate("/disturbances")}
@@ -502,8 +709,8 @@ export default function Index() {
           </Card>
           )}
 
-          {/* Schlechtwetter - Für alle außer Externe */}
-          {!isExternal && (
+          {/* Schlechtwetter - Ab Vorarbeiter */}
+          {canSee("vorarbeiter") && (
           <Card
             className="cursor-pointer hover:shadow-lg transition-all hover:border-primary/50"
             onClick={() => navigate("/bad-weather")}
@@ -523,8 +730,8 @@ export default function Index() {
           </Card>
           )}
 
-          {/* Tagesberichte - Für alle außer Externe */}
-          {!isExternal && (
+          {/* Tagesberichte - Ab Vorarbeiter */}
+          {canSee("vorarbeiter") && (
           <Card
             className="cursor-pointer hover:shadow-lg transition-all hover:border-primary/50"
             onClick={() => navigate("/daily-reports")}
@@ -544,8 +751,8 @@ export default function Index() {
           </Card>
           )}
 
-          {/* Meine Dokumente - Für Mitarbeiter (nicht Externe) */}
-          {!isAdmin && !isExternal && (
+          {/* Meine Dokumente - Ab Lehrling, nicht für Admin (hat eigenen Bereich) */}
+          {canSee("lehrling") && !isAdmin && (
             <Card 
               className="cursor-pointer hover:shadow-lg transition-all hover:border-primary/50" 
               onClick={() => navigate("/my-documents")}
@@ -566,8 +773,8 @@ export default function Index() {
           )}
 
 
-          {/* Dokumentenbibliothek - Für alle außer Externe */}
-          {!isExternal && (
+          {/* Dokumentenbibliothek - Ab Vorarbeiter */}
+          {canSee("vorarbeiter") && (
           <Card
             className="cursor-pointer hover:shadow-lg transition-all hover:border-primary/50"
             onClick={() => navigate("/documents")}

@@ -67,6 +67,7 @@ export default function Employees() {
   const [formData, setFormData] = useState<Partial<Employee>>({});
   const [newEmployee, setNewEmployee] = useState({ vorname: "", nachname: "", email: "", kategorie: "facharbeiter" });
   const [showSizesDialog, setShowSizesDialog] = useState(false);
+  const [profileActiveMap, setProfileActiveMap] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     checkAdminAccess();
@@ -103,8 +104,41 @@ export default function Employees() {
       toast({ title: "Fehler", description: error.message, variant: "destructive" });
     } else {
       setEmployees(data || []);
+      // Fetch profile activation status for employees with user_id
+      const userIds = (data || []).filter(e => e.user_id).map(e => e.user_id!);
+      if (userIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from("profiles")
+          .select("id, is_active")
+          .in("id", userIds);
+        const map: Record<string, boolean> = {};
+        (profiles || []).forEach(p => { map[p.id] = p.is_active !== false; });
+        setProfileActiveMap(map);
+      }
     }
     setLoading(false);
+  };
+
+  const handleToggleActive = async (employee: Employee) => {
+    if (!employee.user_id) return;
+    const currentActive = profileActiveMap[employee.user_id] !== false;
+    const newActive = !currentActive;
+
+    const { error } = await supabase
+      .from("profiles")
+      .update({ is_active: newActive })
+      .eq("id", employee.user_id);
+
+    if (error) {
+      toast({ title: "Fehler", description: error.message, variant: "destructive" });
+      return;
+    }
+
+    setProfileActiveMap(prev => ({ ...prev, [employee.user_id!]: newActive }));
+    toast({
+      title: newActive ? "Mitarbeiter aktiviert" : "Mitarbeiter gesperrt",
+      description: `${employee.vorname} ${employee.nachname} wurde ${newActive ? "aktiviert" : "gesperrt"}.`
+    });
   };
 
   const handleCreateEmployee = async (e: React.FormEvent) => {
@@ -210,12 +244,15 @@ export default function Employees() {
                 </Avatar>
                 {emp.vorname} {emp.nachname}
               </CardTitle>
-              <CardDescription className="flex items-center gap-2">
+              <CardDescription className="flex items-center gap-2 flex-wrap">
                 {emp.position || "Mitarbeiter"}
                 {emp.kategorie && (
                   <Badge variant={emp.kategorie === "extern" ? "outline" : "secondary"} className="text-xs">
                     {KATEGORIE_LABELS[emp.kategorie] || emp.kategorie}
                   </Badge>
+                )}
+                {emp.user_id && profileActiveMap[emp.user_id] === false && (
+                  <Badge variant="destructive" className="text-xs">Gesperrt</Badge>
                 )}
               </CardDescription>
             </CardHeader>
@@ -249,9 +286,20 @@ export default function Employees() {
       <Dialog open={!!selectedEmployee} onOpenChange={() => setSelectedEmployee(null)}>
         <DialogContent className="max-w-5xl max-h-[90vh]">
           <DialogHeader>
-            <DialogTitle>
-              {selectedEmployee?.vorname} {selectedEmployee?.nachname}
-            </DialogTitle>
+            <div className="flex items-center justify-between">
+              <DialogTitle>
+                {selectedEmployee?.vorname} {selectedEmployee?.nachname}
+              </DialogTitle>
+              {selectedEmployee?.user_id && (
+                <Button
+                  variant={profileActiveMap[selectedEmployee.user_id] === false ? "default" : "destructive"}
+                  size="sm"
+                  onClick={() => handleToggleActive(selectedEmployee)}
+                >
+                  {profileActiveMap[selectedEmployee.user_id] === false ? "Aktivieren" : "Sperren"}
+                </Button>
+              )}
+            </div>
           </DialogHeader>
 
           <Tabs defaultValue="stammdaten">
