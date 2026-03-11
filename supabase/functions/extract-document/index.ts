@@ -19,32 +19,12 @@ serve(async (req) => {
       );
     }
 
-    const { imageBase64, pages, mediaType } = await req.json();
+    const { imageBase64, mediaType } = await req.json();
 
-    // Baue Content-Array: eine image_url pro Seite (PDF) oder eine für Einzelbilder
-    let imageBlocks: any[];
-    if (pages && Array.isArray(pages) && pages.length > 0) {
-      // PDF: jede Seite als eigenes Bild
-      imageBlocks = pages.map((p: string) => ({
-        type: "image_url",
-        image_url: { url: `data:image/jpeg;base64,${p}` },
-      }));
-    } else if (imageBase64 && typeof mediaType === "string" && mediaType.startsWith("image/")) {
-      // Einzelnes Foto (JPG, PNG, etc.)
-      imageBlocks = [{ type: "image_url", image_url: { url: `data:${mediaType};base64,${imageBase64}` } }];
-    } else {
-      // Weder pages noch imageBase64 — kein verarbeitbarer Inhalt
+    if (!imageBase64 || typeof mediaType !== "string" || !mediaType.startsWith("image/")) {
       return new Response(
-        JSON.stringify({
-          lieferant: null,
-          datum: null,
-          belegnummer: null,
-          betrag: null,
-          preistyp: "unbekannt",
-          positionen: [],
-          qualitaet: "nicht_bild",
-        }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        JSON.stringify({ error: "imageBase64 (image/*) required" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
@@ -87,7 +67,10 @@ STRIKTE REGELN — KEINE AUSNAHMEN:
           {
             role: "user",
             content: [
-              ...imageBlocks,
+              {
+                type: "image_url",
+                image_url: { url: `data:${mediaType};base64,${imageBase64}` },
+              },
               { type: "text", text: PROMPT },
             ],
           },

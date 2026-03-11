@@ -106,7 +106,7 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess }: Documen
     handleFileSelected(file);
   };
 
-  const prepareImageForAI = (file: File): Promise<{ base64: string; mimeType: string; pages?: string[] }> =>
+  const prepareImageForAI = (file: File): Promise<{ base64: string; mimeType: string }> =>
     new Promise((resolve, reject) => {
       const QUALITY = 0.85;
 
@@ -125,14 +125,14 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess }: Documen
       };
 
       if (file.type === "application/pdf") {
-        // Jede Seite einzeln als JPEG rendern — GPT bekommt alle Seiten als separate Bilder
+        // Alle Seiten zu einem kombinierten JPEG — max 1400×5000px, quality 0.75
         const reader = new FileReader();
         reader.onerror = reject;
         reader.onload = async (e) => {
           try {
             const data = new Uint8Array(e.target!.result as ArrayBuffer);
             const pdf = await pdfjsLib.getDocument({ data }).promise;
-            const pages: string[] = [];
+            const pageCanvases: HTMLCanvasElement[] = [];
             for (let i = 1; i <= pdf.numPages; i++) {
               const page = await pdf.getPage(i);
               const viewport = page.getViewport({ scale: 1.5 });
@@ -140,9 +140,24 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess }: Documen
               canvas.width = viewport.width;
               canvas.height = viewport.height;
               await page.render({ canvasContext: canvas.getContext("2d")!, viewport }).promise;
-              pages.push(canvas.toDataURL("image/jpeg", 0.85).split(",")[1] || "");
+              pageCanvases.push(canvas);
             }
-            resolve({ base64: "", mimeType: "image/jpeg", pages });
+            const totalW = pageCanvases[0].width;
+            const totalH = pageCanvases.reduce((s, c) => s + c.height, 0);
+            const combined = document.createElement("canvas");
+            combined.width = totalW;
+            combined.height = totalH;
+            const ctx = combined.getContext("2d")!;
+            let y = 0;
+            for (const pc of pageCanvases) { ctx.drawImage(pc, 0, y); y += pc.height; }
+            let w = combined.width, h = combined.height;
+            if (w > 1400) { h = Math.round(h * 1400 / w); w = 1400; }
+            if (h > 5000) { w = Math.round(w * 5000 / h); h = 5000; }
+            const out = document.createElement("canvas");
+            out.width = w; out.height = h;
+            out.getContext("2d")!.drawImage(combined, 0, 0, w, h);
+            const dataUrl = out.toDataURL("image/jpeg", 0.75);
+            resolve({ base64: dataUrl.split(",")[1] || "", mimeType: "image/jpeg" });
           } catch (err) { reject(err); }
         };
         reader.readAsArrayBuffer(file);
@@ -185,15 +200,12 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess }: Documen
 
       setUploadedUrl(urlData.publicUrl);
 
-      // 2. Prepare image for AI: PDFs als Seiten-Array, Bilder als einzelne base64
-      const prepared = await prepareImageForAI(imageFile);
-      const invokeBody = prepared.pages?.length
-        ? { pages: prepared.pages, mediaType: prepared.mimeType }
-        : { imageBase64: prepared.base64, mediaType: prepared.mimeType };
+      // 2. Prepare image for AI (PDF → kombiniertes JPEG, Bilder resized)
+      const { base64, mimeType } = await prepareImageForAI(imageFile);
 
       // 3. Call AI extraction (SDK handles auth automatically)
       const { data, error: fnError } = await supabase.functions.invoke("extract-document", {
-        body: invokeBody,
+        body: { imageBase64: base64, mediaType: mimeType },
       });
 
       if (fnError) {
