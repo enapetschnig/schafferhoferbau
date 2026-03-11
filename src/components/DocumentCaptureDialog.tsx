@@ -9,6 +9,10 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { SignaturePad } from "@/components/SignaturePad";
 import { Upload, Loader2, AlertTriangle, CheckCircle2, Trash2, FileText } from "lucide-react";
+import * as pdfjsLib from "pdfjs-dist";
+import pdfjsWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
 
 type DocType = "lieferschein" | "lagerlieferschein" | "rechnung";
 
@@ -102,16 +106,80 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess }: Documen
     handleFileSelected(file);
   };
 
-  const toBase64 = (file: File): Promise<string> =>
+  const prepareImageForAI = (file: File): Promise<{ base64: string; mimeType: string }> =>
     new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const result = reader.result as string;
-        // readAsDataURL returns "data:image/jpeg;base64,XXXX" — extract only the base64 part
-        resolve(result.split(",")[1] || "");
+      const QUALITY = 0.85;
+
+      const resizeAndExport = (src: HTMLCanvasElement | HTMLImageElement, maxW: number, maxH: number) => {
+        let w = "naturalWidth" in src ? src.naturalWidth : src.width;
+        let h = "naturalHeight" in src ? src.naturalHeight : src.height;
+        if (w > maxW) { h = Math.round((h * maxW) / w); w = maxW; }
+        if (h > maxH) { w = Math.round((w * maxH) / h); h = maxH; }
+        const out = document.createElement("canvas");
+        out.width = w; out.height = h;
+        const ctx = out.getContext("2d");
+        if (!ctx) { reject(new Error("Canvas not supported")); return; }
+        ctx.drawImage(src, 0, 0, w, h);
+        const dataUrl = out.toDataURL("image/jpeg", QUALITY);
+        resolve({ base64: dataUrl.split(",")[1] || "", mimeType: "image/jpeg" });
       };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
+
+      if (file.type === "application/pdf") {
+        const reader = new FileReader();
+        reader.onerror = reject;
+        reader.onload = async (e) => {
+          try {
+            const data = new Uint8Array(e.target!.result as ArrayBuffer);
+            const pdf = await pdfjsLib.getDocument({ data }).promise;
+            const scale = 1.5; // Reduziert von 2.0 — hält Payload unter 6MB (Supabase-Limit)
+            const maxPages = Math.min(pdf.numPages, 4); // Max 4 Seiten
+            const pageCanvases: HTMLCanvasElement[] = [];
+            for (let i = 1; i <= maxPages; i++) {
+              const page = await pdf.getPage(i);
+              const viewport = page.getViewport({ scale });
+              const canvas = document.createElement("canvas");
+              canvas.width = viewport.width;
+              canvas.height = viewport.height;
+              await page.render({ canvasContext: canvas.getContext("2d")!, viewport }).promise;
+              pageCanvases.push(canvas);
+            }
+            const totalW = pageCanvases[0].width;
+            const totalH = pageCanvases.reduce((sum, c) => sum + c.height, 0);
+            const combined = document.createElement("canvas");
+            combined.width = totalW;
+            combined.height = totalH;
+            const ctx = combined.getContext("2d")!;
+            let y = 0;
+            for (const pc of pageCanvases) {
+              ctx.drawImage(pc, 0, y);
+              y += pc.height;
+            }
+            // PDF: max 1200×4000px, quality 0.70 → ~1.5–3MB Base64, weit unter 6MB-Limit
+            let w = combined.width, h = combined.height;
+            if (w > 1200) { h = Math.round(h * 1200 / w); w = 1200; }
+            if (h > 4000) { w = Math.round(w * 4000 / h); h = 4000; }
+            const out = document.createElement("canvas");
+            out.width = w; out.height = h;
+            const octx = out.getContext("2d");
+            if (!octx) { reject(new Error("Canvas not supported")); return; }
+            octx.drawImage(combined, 0, 0, w, h);
+            const dataUrl = out.toDataURL("image/jpeg", 0.70);
+            resolve({ base64: dataUrl.split(",")[1] || "", mimeType: "image/jpeg" });
+          } catch (err) { reject(err); }
+        };
+        reader.readAsArrayBuffer(file);
+      } else {
+        // Image (JPEG, PNG, HEIC etc.): max 1500×1500px
+        const reader = new FileReader();
+        reader.onerror = reject;
+        reader.onload = (e) => {
+          const img = new Image();
+          img.onerror = reject;
+          img.onload = () => resizeAndExport(img, 1500, 1500);
+          img.src = e.target!.result as string;
+        };
+        reader.readAsDataURL(file);
+      }
     });
 
   const handleUploadAndExtract = async () => {
@@ -139,22 +207,34 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess }: Documen
 
       setUploadedUrl(urlData.publicUrl);
 
-      // 2. For non-image files (PDF, DOC, etc.): skip AI, go straight to manual review
-      const isImage = imageFile.type.startsWith("image/");
-      if (!isImage) {
-        setStep("review");
-        return;
-      }
+      // 2. Prepare image for AI: compress images, render PDFs to JPEG via PDF.js
+      const { base64, mimeType } = await prepareImageForAI(imageFile);
 
-      // 3. Convert image to base64 in browser
-      const imageBase64 = await toBase64(imageFile);
-
-      // 4. Call AI extraction with base64 (no URL fetch needed in edge function)
-      const { data, error } = await supabase.functions.invoke("extract-document", {
-        body: { imageBase64, mediaType: imageFile.type },
+      // 3. Call AI extraction with compressed JPEG base64
+      // Use direct fetch (not supabase.functions.invoke) to access error response body
+      const { data: { session } } = await supabase.auth.getSession();
+      const fnUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/extract-document`;
+      const fnResponse = await fetch(fnUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session?.access_token}`,
+          "apikey": import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+        },
+        body: JSON.stringify({ imageBase64: base64, mediaType: mimeType }),
       });
 
-      if (error) throw error;
+      if (!fnResponse.ok) {
+        let errMsg = `Edge Function Fehler ${fnResponse.status}`;
+        try {
+          const body = await fnResponse.json();
+          if (body?.error) errMsg = body.error;
+          if (body?.details) errMsg += " — " + body.details;
+        } catch {}
+        throw new Error(errMsg);
+      }
+
+      const data = await fnResponse.json();
 
       const result: ExtractedData = {
         lieferant: data?.lieferant || null,

@@ -282,8 +282,6 @@ export function WarehouseDeliveryNoteDialog({ open, onOpenChange, onSaved }: Pro
           });
 
           // Update denormalized stock
-          await supabase.rpc("", {}).catch(() => {});
-          // Direct update since no RPC exists
           const { data: prod } = await supabase
             .from("warehouse_products")
             .select("current_stock")

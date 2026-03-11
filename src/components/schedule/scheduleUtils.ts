@@ -1,6 +1,27 @@
 import { isSameDay, isWithinInterval, parseISO } from "date-fns";
 import type { Assignment, LeaveRequest, CompanyHoliday } from "./scheduleTypes";
 
+export const EMPLOYEE_COLORS = [
+  { bg: "bg-red-100",     text: "text-red-800",     border: "border-red-300"     },
+  { bg: "bg-rose-100",    text: "text-rose-800",    border: "border-rose-300"    },
+  { bg: "bg-pink-100",    text: "text-pink-800",    border: "border-pink-300"    },
+  { bg: "bg-fuchsia-100", text: "text-fuchsia-800", border: "border-fuchsia-300" },
+  { bg: "bg-red-200",     text: "text-red-900",     border: "border-red-400"     },
+  { bg: "bg-rose-200",    text: "text-rose-900",    border: "border-rose-400"    },
+  { bg: "bg-pink-200",    text: "text-pink-900",    border: "border-pink-400"    },
+  { bg: "bg-orange-100",  text: "text-orange-800",  border: "border-orange-300"  },
+  { bg: "bg-red-50",      text: "text-red-700",     border: "border-red-200"     },
+  { bg: "bg-fuchsia-200", text: "text-fuchsia-900", border: "border-fuchsia-400" },
+];
+
+export function getEmployeeColor(profileId: string) {
+  let hash = 0;
+  for (let i = 0; i < profileId.length; i++) {
+    hash = ((hash << 5) - hash + profileId.charCodeAt(i)) | 0;
+  }
+  return EMPLOYEE_COLORS[Math.abs(hash) % EMPLOYEE_COLORS.length];
+}
+
 export const PROJECT_COLORS = [
   { bg: "bg-blue-100", text: "text-blue-800", border: "border-blue-300", fill: "#dbeafe" },
   { bg: "bg-green-100", text: "text-green-800", border: "border-green-300", fill: "#dcfce7" },

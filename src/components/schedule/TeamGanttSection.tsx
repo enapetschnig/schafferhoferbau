@@ -5,6 +5,7 @@ import {
   getAssignmentForDay,
   isOnLeave,
   isCompanyHoliday,
+  getEmployeeColor,
 } from "./scheduleUtils";
 import type {
   Profile,
@@ -59,7 +60,9 @@ export function TeamGanttSection({
       </button>
 
       {!collapsed &&
-        profiles.map((profile) => (
+        profiles.map((profile) => {
+          const empColor = getEmployeeColor(profile.id);
+          return (
           <div
             key={profile.id}
             className="grid border-t"
@@ -68,7 +71,7 @@ export function TeamGanttSection({
             }}
           >
             {/* Label */}
-            <div className="p-2 border-r text-sm font-medium truncate sticky left-0 bg-card z-10 flex items-center">
+            <div className={`p-2 border-r text-sm font-medium truncate sticky left-0 z-10 flex items-center ${empColor.bg} ${empColor.text}`}>
               {profile.vorname} {profile.nachname}
             </div>
 
@@ -126,6 +129,7 @@ export function TeamGanttSection({
                     <GanttBar
                       projectId={assignment.project_id}
                       label={projectName || "–"}
+                      colorOverride={empColor}
                       onClick={
                         editable && onCellClick
                           ? () => onCellClick(profile.id, day)
@@ -145,7 +149,8 @@ export function TeamGanttSection({
               );
             })}
           </div>
-        ))}
+        );
+        })}
 
       {!collapsed && profiles.length === 0 && (
         <div className="px-3 py-4 text-sm text-muted-foreground text-center">

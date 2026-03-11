@@ -247,10 +247,11 @@ export default function Index() {
       }
     }
 
-    // 6. Company chat channels — one preview per channel
+    // 6. Company chat channels — one preview per channel (active only)
     const { data: channels } = await supabase
       .from("chat_channels")
       .select("id, name")
+      .eq("is_archived", false)
       .order("created_at", { ascending: true });
 
     for (const channel of channels || []) {
@@ -365,7 +366,10 @@ export default function Index() {
 
   const handleDeleteChannel = async (channelId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    await supabase.from("chat_channels").delete().eq("id", channelId);
+    await supabase
+      .from("chat_channels")
+      .update({ is_archived: true, archived_at: new Date().toISOString() })
+      .eq("id", channelId);
     setChatPreviews((prev) => prev.filter((p) => p.channelId !== channelId));
   };
 

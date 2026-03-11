@@ -14,6 +14,72 @@ import { DocumentDetailDialog, type IncomingDocument } from "@/components/Docume
 import { Download, Upload, Filter, FileText, Check, AlertTriangle, XCircle, Loader2 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import * as XLSX from "xlsx-js-style";
+import * as pdfjsLib from "pdfjs-dist";
+import pdfjsWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
+
+const prepareFileForAI = (file: File): Promise<{ base64: string; mimeType: string }> =>
+  new Promise((resolve, reject) => {
+    if (file.type === "application/pdf") {
+      const reader = new FileReader();
+      reader.onerror = reject;
+      reader.onload = async (e) => {
+        try {
+          const data = new Uint8Array(e.target!.result as ArrayBuffer);
+          const pdf = await pdfjsLib.getDocument({ data }).promise;
+          const scale = 1.5;
+          const maxPages = Math.min(pdf.numPages, 4);
+          const pageCanvases: HTMLCanvasElement[] = [];
+          for (let i = 1; i <= maxPages; i++) {
+            const page = await pdf.getPage(i);
+            const viewport = page.getViewport({ scale });
+            const canvas = document.createElement("canvas");
+            canvas.width = viewport.width;
+            canvas.height = viewport.height;
+            await page.render({ canvasContext: canvas.getContext("2d")!, viewport }).promise;
+            pageCanvases.push(canvas);
+          }
+          const totalW = pageCanvases[0].width;
+          const totalH = pageCanvases.reduce((sum, c) => sum + c.height, 0);
+          const combined = document.createElement("canvas");
+          combined.width = totalW;
+          combined.height = totalH;
+          const ctx = combined.getContext("2d")!;
+          let y = 0;
+          for (const pc of pageCanvases) { ctx.drawImage(pc, 0, y); y += pc.height; }
+          let w = combined.width, h = combined.height;
+          if (w > 1200) { h = Math.round(h * 1200 / w); w = 1200; }
+          if (h > 4000) { w = Math.round(w * 4000 / h); h = 4000; }
+          const out = document.createElement("canvas");
+          out.width = w; out.height = h;
+          out.getContext("2d")!.drawImage(combined, 0, 0, w, h);
+          const dataUrl = out.toDataURL("image/jpeg", 0.70);
+          resolve({ base64: dataUrl.split(",")[1] || "", mimeType: "image/jpeg" });
+        } catch (err) { reject(err); }
+      };
+      reader.readAsArrayBuffer(file);
+    } else {
+      const reader = new FileReader();
+      reader.onerror = reject;
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onerror = reject;
+        img.onload = () => {
+          let w = img.naturalWidth, h = img.naturalHeight;
+          if (w > 1500) { h = Math.round(h * 1500 / w); w = 1500; }
+          if (h > 1500) { w = Math.round(w * 1500 / h); h = 1500; }
+          const out = document.createElement("canvas");
+          out.width = w; out.height = h;
+          out.getContext("2d")!.drawImage(img, 0, 0, w, h);
+          const dataUrl = out.toDataURL("image/jpeg", 0.85);
+          resolve({ base64: dataUrl.split(",")[1] || "", mimeType: "image/jpeg" });
+        };
+        img.src = e.target!.result as string;
+      };
+      reader.readAsDataURL(file);
+    }
+  });
 
 const monthNames = [
   "Jänner", "Februar", "März", "April", "Mai", "Juni",
@@ -290,12 +356,33 @@ export default function IncomingInvoices() {
         .from("incoming-documents")
         .getPublicUrl(filePath);
 
-      // Call extract-document edge function
-      const { data, error } = await supabase.functions.invoke("extract-document", {
-        body: { imageUrl: urlData.publicUrl },
+      // Prepare file as base64 for AI (PDF → JPEG via canvas, images resized)
+      const { base64, mimeType } = await prepareFileForAI(uploadFile);
+
+      // Call extract-document edge function via direct fetch for proper error reporting
+      const { data: { session } } = await supabase.auth.getSession();
+      const fnUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/extract-document`;
+      const fnResponse = await fetch(fnUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session?.access_token}`,
+          "apikey": import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+        },
+        body: JSON.stringify({ imageBase64: base64, mediaType: mimeType }),
       });
 
-      if (error) throw error;
+      if (!fnResponse.ok) {
+        let errMsg = `Edge Function Fehler ${fnResponse.status}`;
+        try {
+          const body = await fnResponse.json();
+          if (body?.error) errMsg = body.error;
+          if (body?.details) errMsg += " — " + body.details;
+        } catch {}
+        throw new Error(errMsg);
+      }
+
+      const data = await fnResponse.json();
 
       setExtracted(data);
       setEditLieferant(data.lieferant || "");

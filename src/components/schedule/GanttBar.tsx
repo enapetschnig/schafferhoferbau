@@ -6,6 +6,7 @@ interface Props {
   variant?: "project" | "leave" | "holiday";
   onClick?: () => void;
   badge?: string | number;
+  colorOverride?: { bg: string; text: string; border: string };
 }
 
 export function GanttBar({
@@ -14,6 +15,7 @@ export function GanttBar({
   variant = "project",
   onClick,
   badge,
+  colorOverride,
 }: Props) {
   const baseClasses =
     "rounded-md px-2 py-1 text-xs font-medium truncate min-h-[32px] flex items-center gap-1 transition-opacity";
@@ -34,7 +36,7 @@ export function GanttBar({
     );
   }
 
-  const color = projectId ? getProjectColor(projectId) : null;
+  const color = colorOverride ?? (projectId ? getProjectColor(projectId) : null);
   return (
     <div
       className={`${baseClasses} ${

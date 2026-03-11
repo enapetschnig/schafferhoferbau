@@ -55,6 +55,10 @@ export function WarehouseDeliveryNotesTab({ isAdmin }: Props) {
     const endYear = month === 11 ? year + 1 : year;
     const endDate = `${endYear}-${String(endMonth + 1).padStart(2, "0")}-01`;
 
+    // Load project names locally to avoid race condition with projects state
+    const { data: projData } = await supabase.from("projects").select("id, name");
+    const projectMap = Object.fromEntries((projData || []).map((p) => [p.id, p.name]));
+
     let query = supabase
       .from("warehouse_delivery_notes")
       .select("*")
@@ -76,23 +80,23 @@ export function WarehouseDeliveryNotesTab({ isAdmin }: Props) {
     for (const note of data) {
       const enrichedNote = note as unknown as WarehouseDeliveryNote;
 
-      // Get project names
+      // Get project names from local map (no race condition)
       if (note.source_project_id) {
-        const proj = projects.find((p) => p.id === note.source_project_id);
-        enrichedNote.source_project_name = proj?.name || "–";
+        enrichedNote.source_project_name = projectMap[note.source_project_id] || "–";
       }
       if (note.target_project_id) {
-        const proj = projects.find((p) => p.id === note.target_project_id);
-        enrichedNote.target_project_name = proj?.name || "–";
+        enrichedNote.target_project_name = projectMap[note.target_project_id] || "–";
       }
 
-      // Get employee name
+      // Get employee name (vorname + nachname, not "name")
       const { data: emp } = await supabase
         .from("employees")
-        .select("name")
+        .select("vorname, nachname")
         .eq("user_id", note.user_id)
         .maybeSingle();
-      enrichedNote.employee_name = emp?.name || "–";
+      enrichedNote.employee_name = emp
+        ? `${emp.vorname || ""} ${emp.nachname || ""}`.trim() || "–"
+        : "–";
 
       // Get items
       const { data: items } = await supabase

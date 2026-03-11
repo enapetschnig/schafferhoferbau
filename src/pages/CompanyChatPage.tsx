@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { ArrowLeft, Plus, X, MessageSquare, Users, User as UserIcon } from "lucide-react";
+import { ArrowLeft, Plus, X, MessageSquare, Users, User as UserIcon, Archive, ArchiveRestore, Trash2, ChevronDown, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,6 +17,8 @@ type ChatChannel = {
   target_user_id: string | null;
   created_by: string;
   created_at: string;
+  is_archived: boolean;
+  archived_at: string | null;
 };
 
 type Employee = {
@@ -41,8 +43,11 @@ export default function CompanyChatPage() {
   const [userId, setUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // All visible channels from DB
+  // All visible active channels from DB
   const [channels, setChannels] = useState<ChatChannel[]>([]);
+  // Archived channels (admin only)
+  const [archivedChannels, setArchivedChannels] = useState<ChatChannel[]>([]);
+  const [showArchive, setShowArchive] = useState(false);
   // IDs of currently open tabs (persisted in localStorage)
   const [openTabIds, setOpenTabIds] = useState<string[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
@@ -78,14 +83,25 @@ export default function CompanyChatPage() {
       const restoredTabs: string[] = storedTabs ? JSON.parse(storedTabs) : [];
       setOpenTabIds(restoredTabs);
 
-      // Load visible channels
+      // Load active channels
       const { data: chData } = await supabase
         .from("chat_channels")
         .select("*")
+        .eq("is_archived", false)
         .order("created_at", { ascending: true });
 
       const loaded: ChatChannel[] = (chData || []) as ChatChannel[];
       setChannels(loaded);
+
+      // Load archived channels (admin only)
+      if (admin) {
+        const { data: archData } = await supabase
+          .from("chat_channels")
+          .select("*")
+          .eq("is_archived", true)
+          .order("archived_at", { ascending: false });
+        setArchivedChannels((archData || []) as ChatChannel[]);
+      }
 
       // Determine active tab: URL param > first restored tab > first channel
       const urlTab = searchParams.get("tab");
@@ -150,11 +166,40 @@ export default function CompanyChatPage() {
       )
       .on(
         "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "chat_channels" },
+        (payload) => {
+          const updated = payload.new as ChatChannel;
+          if (updated.is_archived) {
+            // Channel was archived: remove from active, add to archived list
+            setChannels((prev) => prev.filter((c) => c.id !== updated.id));
+            setArchivedChannels((prev) => {
+              if (prev.some((c) => c.id === updated.id)) return prev;
+              return [updated, ...prev];
+            });
+            setOpenTabIds((prev) => {
+              const newTabs = prev.filter((id) => id !== updated.id);
+              localStorage.setItem(`company-chat-tabs-${userId}`, JSON.stringify(newTabs));
+              return newTabs;
+            });
+            setActiveTabId((prev) => (prev === updated.id ? null : prev));
+          } else {
+            // Channel was restored: add back to active, remove from archived
+            setArchivedChannels((prev) => prev.filter((c) => c.id !== updated.id));
+            setChannels((prev) => {
+              if (prev.some((c) => c.id === updated.id)) return prev;
+              return [...prev, updated].sort((a, b) => a.created_at.localeCompare(b.created_at));
+            });
+          }
+        }
+      )
+      .on(
+        "postgres_changes",
         { event: "DELETE", schema: "public", table: "chat_channels" },
         (payload) => {
           const deletedId = (payload.old as any)?.id;
           if (!deletedId) return;
           setChannels((prev) => prev.filter((c) => c.id !== deletedId));
+          setArchivedChannels((prev) => prev.filter((c) => c.id !== deletedId));
           setOpenTabIds((prev) => {
             const updated = prev.filter((id) => id !== deletedId);
             localStorage.setItem(`company-chat-tabs-${userId}`, JSON.stringify(updated));
@@ -188,6 +233,27 @@ export default function CompanyChatPage() {
     if (activeTabId === channelId) {
       setActiveTabId(updated.length > 0 ? updated[updated.length - 1] : null);
     }
+  };
+
+  const handleArchiveChannel = async (channelId: string) => {
+    await supabase
+      .from("chat_channels")
+      .update({ is_archived: true, archived_at: new Date().toISOString() })
+      .eq("id", channelId);
+    // Realtime UPDATE listener will update local state
+  };
+
+  const handleRestoreChannel = async (channelId: string) => {
+    await supabase
+      .from("chat_channels")
+      .update({ is_archived: false, archived_at: null })
+      .eq("id", channelId);
+    // Realtime UPDATE listener will update local state
+  };
+
+  const handleDeleteChannelPermanently = async (channelId: string) => {
+    await supabase.from("chat_channels").delete().eq("id", channelId);
+    setArchivedChannels((prev) => prev.filter((c) => c.id !== channelId));
   };
 
   // Create new channel
@@ -326,6 +392,18 @@ export default function CompanyChatPage() {
                 >
                   <X className="h-3 w-3" />
                 </span>
+                {isAdmin && (
+                  <span
+                    className={`rounded-full p-0.5 hover:bg-black/10 transition-colors ${
+                      activeTabId === channel.id ? "hover:bg-white/20" : ""
+                    }`}
+                    onClick={(e) => { e.stopPropagation(); handleArchiveChannel(channel.id); }}
+                    role="button"
+                    title="Chat archivieren"
+                  >
+                    <Archive className="h-3 w-3" />
+                  </span>
+                )}
               </button>
             ))}
 
@@ -381,6 +459,50 @@ export default function CompanyChatPage() {
           </div>
         )}
       </div>
+
+      {/* Archived Channels (Admin only) */}
+      {isAdmin && archivedChannels.length > 0 && (
+        <div className="border-t bg-card">
+          <div className="container mx-auto px-3 sm:px-4 lg:px-6">
+            <button
+              className="w-full flex items-center gap-2 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+              onClick={() => setShowArchive(!showArchive)}
+            >
+              {showArchive ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+              <Archive className="h-4 w-4" />
+              <span>Archivierte Chats ({archivedChannels.length})</span>
+            </button>
+            {showArchive && (
+              <div className="pb-3 space-y-1">
+                {archivedChannels.map((ch) => (
+                  <div key={ch.id} className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-muted/50">
+                    <span className="flex-1 text-sm text-muted-foreground truncate">{ch.name}</span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => handleRestoreChannel(ch.id)}
+                      title="Wiederherstellen"
+                    >
+                      <ArchiveRestore className="h-3.5 w-3.5 mr-1" />
+                      Wiederherstellen
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 px-2 text-xs text-destructive hover:text-destructive"
+                      onClick={() => handleDeleteChannelPermanently(ch.id)}
+                      title="Endgültig löschen"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* New Channel Dialog */}
       <Dialog open={showNewChannelDialog} onOpenChange={setShowNewChannelDialog}>
