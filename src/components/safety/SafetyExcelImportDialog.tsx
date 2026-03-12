@@ -24,6 +24,19 @@ interface Props {
   onImport: (items: ChecklistItem[]) => void;
 }
 
+// Convert all cell values to plain strings to ensure JSON-serializability
+function sanitizeRows(rows: Record<string, unknown>[]): Record<string, string>[] {
+  return rows.map(row => {
+    const clean: Record<string, string> = {};
+    for (const [key, val] of Object.entries(row)) {
+      if (val !== null && val !== undefined) {
+        clean[String(key)] = String(val).trim();
+      }
+    }
+    return clean;
+  }).filter(row => Object.values(row).some(v => v.length > 0));
+}
+
 export function SafetyExcelImportDialog({ open, onOpenChange, onImport }: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [rows, setRows] = useState<EditableRow[]>([]);
@@ -40,6 +53,7 @@ export function SafetyExcelImportDialog({ open, onOpenChange, onImport }: Props)
     if (!file) return;
     setFileName(file.name);
     setRows([]);
+    e.target.value = "";
 
     const buffer = await file.arrayBuffer();
     const wb = XLSX.read(buffer, { type: "array" });
@@ -51,19 +65,27 @@ export function SafetyExcelImportDialog({ open, onOpenChange, onImport }: Props)
       return;
     }
 
-    // Automatically trigger AI import
+    // Sanitize: convert all values to plain strings, limit to 200 rows
+    const sanitized = sanitizeRows(json).slice(0, 200);
+
     setAiLoading(true);
     const { data, error } = await supabase.functions.invoke("parse-safety-checklist", {
-      body: { rows: json },
+      body: { rows: sanitized },
     });
     setAiLoading(false);
 
-    if (error || !data?.items) {
-      toast({ variant: "destructive", title: "KI-Analyse fehlgeschlagen", description: error?.message || data?.error || "Bitte erneut versuchen." });
+    if (error) {
+      toast({ variant: "destructive", title: "KI-Analyse fehlgeschlagen", description: error.message });
       return;
     }
+
     if (data?.error) {
       toast({ variant: "destructive", title: "KI-Analyse fehlgeschlagen", description: data.error });
+      return;
+    }
+
+    if (!data?.items || !Array.isArray(data.items)) {
+      toast({ variant: "destructive", title: "KI-Analyse fehlgeschlagen", description: "Unerwartetes Antwortformat." });
       return;
     }
 
@@ -120,13 +142,11 @@ export function SafetyExcelImportDialog({ open, onOpenChange, onImport }: Props)
         </DialogHeader>
 
         {aiLoading ? (
-          /* Loading state */
           <div className="flex flex-col items-center justify-center py-12 gap-3">
             <Loader2 className="w-8 h-8 animate-spin text-primary" />
             <p className="text-sm text-muted-foreground">KI analysiert <strong>{fileName}</strong>…</p>
           </div>
         ) : rows.length === 0 ? (
-          /* Step 1: File upload */
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
               Excel hochladen — die KI erkennt die Prüfpunkte automatisch, egal wie die Spalten heißen
@@ -148,7 +168,6 @@ export function SafetyExcelImportDialog({ open, onOpenChange, onImport }: Props)
             />
           </div>
         ) : (
-          /* Step 2: Editable preview */
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <p className="text-sm text-muted-foreground">
