@@ -23,7 +23,6 @@ type DailyReport = {
   status: string;
   created_at: string;
   projects: { name: string; plz: string | null } | null;
-  profiles: { vorname: string; nachname: string } | null;
 };
 
 const WETTER_ICONS: Record<string, string> = {
@@ -48,7 +47,7 @@ export default function DailyReports() {
     setLoading(true);
     let query = supabase
       .from("daily_reports")
-      .select("*, projects(name, plz), profiles:user_id(vorname, nachname)")
+      .select("*, projects(name, plz)")
       .order("datum", { ascending: false });
 
     if (filterType !== "alle") {

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ChevronDown, ChevronRight, Users } from "lucide-react";
 import { GanttBar } from "./GanttBar";
 import {
@@ -24,6 +24,7 @@ interface Props {
   days: Date[];
   canEditProject: (projectId: string) => boolean;
   onCellClick?: (userId: string, date: Date) => void;
+  onRangeSelect?: (userId: string, days: Date[]) => void;
 }
 
 export function TeamGanttSection({
@@ -35,10 +36,34 @@ export function TeamGanttSection({
   days,
   canEditProject,
   onCellClick,
+  onRangeSelect,
 }: Props) {
   const [collapsed, setCollapsed] = useState(false);
+  const [dragUserId, setDragUserId] = useState<string | null>(null);
+  const [dragStartIdx, setDragStartIdx] = useState<number | null>(null);
+  const [dragEndIdx, setDragEndIdx] = useState<number | null>(null);
 
   const projectMap = Object.fromEntries(projects.map((p) => [p.id, p.name]));
+
+  useEffect(() => {
+    const onMouseUp = () => {
+      if (dragUserId !== null && dragStartIdx !== null && dragEndIdx !== null) {
+        const lo = Math.min(dragStartIdx, dragEndIdx);
+        const hi = Math.max(dragStartIdx, dragEndIdx);
+        const selectedDays = days.slice(lo, hi + 1);
+        if (selectedDays.length === 1 && onCellClick) {
+          onCellClick(dragUserId, selectedDays[0]);
+        } else if (selectedDays.length > 1 && onRangeSelect) {
+          onRangeSelect(dragUserId, selectedDays);
+        }
+      }
+      setDragUserId(null);
+      setDragStartIdx(null);
+      setDragEndIdx(null);
+    };
+    window.addEventListener("mouseup", onMouseUp);
+    return () => window.removeEventListener("mouseup", onMouseUp);
+  }, [dragUserId, dragStartIdx, dragEndIdx, days, onCellClick, onRangeSelect]);
 
   return (
     <div className="border-b">
@@ -76,7 +101,7 @@ export function TeamGanttSection({
             </div>
 
             {/* Day cells */}
-            {days.map((day) => {
+            {days.map((day, dayIdx) => {
               const holiday = isCompanyHoliday(holidays, day);
               const leave = isOnLeave(leaveRequests, profile.id, day);
               const assignment = getAssignmentForDay(
@@ -91,19 +116,37 @@ export function TeamGanttSection({
                 ? canEditProject(assignment.project_id)
                 : true;
 
+              const isDragSelected =
+                dragUserId === profile.id &&
+                dragStartIdx !== null &&
+                dragEndIdx !== null &&
+                dayIdx >= Math.min(dragStartIdx, dragEndIdx) &&
+                dayIdx <= Math.max(dragStartIdx, dragEndIdx);
+
               return (
                 <div
                   key={day.toISOString()}
-                  className={`p-0.5 border-r min-h-[40px] ${
+                  className={`p-0.5 border-r min-h-[40px] select-none ${
                     holiday ? "bg-gray-100" : ""
                   } ${
                     !editable && !holiday && !leave
                       ? "opacity-60"
                       : ""
+                  } ${
+                    isDragSelected && !holiday && !leave
+                      ? "bg-blue-100 ring-1 ring-inset ring-blue-400"
+                      : ""
                   }`}
-                  onClick={() => {
-                    if (!holiday && !leave && editable && onCellClick) {
-                      onCellClick(profile.id, day);
+                  onMouseDown={() => {
+                    if (!holiday && !leave && editable && (onCellClick || onRangeSelect)) {
+                      setDragUserId(profile.id);
+                      setDragStartIdx(dayIdx);
+                      setDragEndIdx(dayIdx);
+                    }
+                  }}
+                  onMouseEnter={() => {
+                    if (dragUserId === profile.id) {
+                      setDragEndIdx(dayIdx);
                     }
                   }}
                 >
@@ -130,16 +173,11 @@ export function TeamGanttSection({
                       projectId={assignment.project_id}
                       label={projectName || "–"}
                       colorOverride={empColor}
-                      onClick={
-                        editable && onCellClick
-                          ? () => onCellClick(profile.id, day)
-                          : undefined
-                      }
                     />
                   ) : (
                     <div
                       className={`min-h-[32px] rounded-md border border-dashed border-muted-foreground/20 ${
-                        onCellClick && editable
+                        (onCellClick || onRangeSelect) && editable
                           ? "cursor-pointer hover:bg-muted/30"
                           : ""
                       }`}

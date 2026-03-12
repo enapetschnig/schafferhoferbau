@@ -67,6 +67,7 @@ export default function ScheduleBoard() {
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [popoverUserId, setPopoverUserId] = useState<string | null>(null);
   const [popoverDate, setPopoverDate] = useState<Date | null>(null);
+  const [popoverDays, setPopoverDays] = useState<Date[]>([]);
 
   // Day detail sheet state
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -284,6 +285,14 @@ export default function ScheduleBoard() {
   const handleCellClick = (cellUserId: string, date: Date) => {
     setPopoverUserId(cellUserId);
     setPopoverDate(date);
+    setPopoverDays([]);
+    setPopoverOpen(true);
+  };
+
+  const handleRangeSelect = (uid: string, selectedDays: Date[]) => {
+    setPopoverUserId(uid);
+    setPopoverDate(selectedDays[0]);
+    setPopoverDays(selectedDays);
     setPopoverOpen(true);
   };
 
@@ -392,6 +401,9 @@ export default function ScheduleBoard() {
                 onCellClick={
                   isAdmin || isVorarbeiter ? handleCellClick : undefined
                 }
+                onRangeSelect={
+                  isAdmin || isVorarbeiter ? handleRangeSelect : undefined
+                }
               />
             </div>
           </>
@@ -412,9 +424,15 @@ export default function ScheduleBoard() {
         onOpenChange={setPopoverOpen}
         profile={popoverProfile}
         date={popoverDate}
+        days={popoverDays.length > 1 ? popoverDays : undefined}
         assignment={popoverAssignment || null}
         projects={projects}
-        onAssign={handleAssign}
+        onAssign={async (uid, date, projectId, notizen) => {
+          const daysToAssign = popoverDays.length > 1 ? popoverDays : [date];
+          for (const d of daysToAssign) {
+            await handleAssign(uid, d, projectId, notizen);
+          }
+        }}
         onRemove={handleRemove}
       />
 

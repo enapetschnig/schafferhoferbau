@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Session, User } from "@supabase/supabase-js";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Clock, FolderKanban, Users, BarChart3, LogOut, FileText, Camera, ArrowRight, Info, User as UserIcon, UserPlus, Zap, Receipt, CloudRain, ClipboardList, Wrench, CalendarDays, BookOpen, Star, MapPin, Megaphone, MessageCircle, ChevronLeft, Package, ShieldCheck, Plus, X } from "lucide-react";
+import { Clock, FolderKanban, Users, BarChart3, LogOut, FileText, Camera, ArrowRight, Info, User as UserIcon, UserPlus, Zap, Receipt, CloudRain, ClipboardList, Wrench, CalendarDays, BookOpen, Star, MapPin, Megaphone, MessageCircle, ChevronLeft, Package, ShieldCheck, Plus, X, Bell } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useOnboarding } from "@/contexts/OnboardingContext";
 import {
@@ -22,6 +22,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { WeeklyAssignmentWidget } from "@/components/dashboard/WeeklyAssignmentWidget";
+import { usePushNotifications } from "@/hooks/usePushNotifications";
 
 type Project = {
   id: string;
@@ -92,6 +93,7 @@ export default function Index() {
   const [newChCreating, setNewChCreating] = useState(false);
   const [chatEmployees, setChatEmployees] = useState<{ user_id: string; vorname: string; nachname: string }[]>([]);
   const { handleRestartInstallGuide } = useOnboarding();
+  const { permission: pushPermission, requestPermission: requestPush } = usePushNotifications();
 
   // Role-based visibility helper
   const ROLE_LEVEL: Record<string, number> = {
@@ -562,29 +564,36 @@ export default function Index() {
       )
       .subscribe();
 
-    // Realtime subscription for chat previews
-    const chatChannel = supabase
-      .channel("dashboard-chat")
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "project_messages" }, () => {
-        if (user) fetchChatPreviews(user.id, userRole === "administrator");
-      })
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "broadcast_messages" }, () => {
-        if (user) fetchChatPreviews(user.id, userRole === "administrator");
-      })
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "chat_channels" }, () => {
-        if (user) fetchChatPreviews(user.id, userRole === "administrator");
-      })
-      .subscribe();
-
     return () => {
       isMounted = false;
       subscription.unsubscribe();
       supabase.removeChannel(projectsChannel);
       supabase.removeChannel(entriesChannel);
-      supabase.removeChannel(chatChannel);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigate]);
+
+  // Separate realtime subscription for chat previews (fixes stale closure)
+  useEffect(() => {
+    if (!user) return;
+    const userId = user.id;
+    const admin = userRole === "administrator";
+
+    const chatChannel = supabase
+      .channel("dashboard-chat")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "project_messages" }, () => {
+        fetchChatPreviews(userId, admin);
+      })
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "broadcast_messages" }, () => {
+        fetchChatPreviews(userId, admin);
+      })
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "chat_channels" }, () => {
+        fetchChatPreviews(userId, admin);
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(chatChannel); };
+  }, [user?.id, userRole]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut({ scope: "local" });
@@ -657,6 +666,23 @@ export default function Index() {
                   <span>App zum Startbildschirm hinzufügen</span>
                 </DropdownMenuItem>
                 
+                <DropdownMenuSeparator />
+
+                <DropdownMenuItem
+                  onClick={async () => {
+                    if (pushPermission === "granted") {
+                      toast({ title: "Push-Benachrichtigungen", description: "Bereits aktiviert ✓" });
+                    } else if (pushPermission === "denied") {
+                      toast({ title: "Hinweis", description: "Push wurde vom Browser blockiert. Bitte in den Browser-Einstellungen aktivieren." });
+                    } else {
+                      await requestPush();
+                    }
+                  }}
+                >
+                  <Bell className="mr-2 h-4 w-4" />
+                  <span>{pushPermission === "granted" ? "Push aktiv ✓" : "Push aktivieren"}</span>
+                </DropdownMenuItem>
+
                 <DropdownMenuSeparator />
 
                 <ChangePasswordDialog />
@@ -764,9 +790,11 @@ export default function Index() {
                 <CardTitle className="text-lg flex items-center gap-2">
                   <MessageCircle className="h-5 w-5 text-green-600" /> Chats
                 </CardTitle>
-                <Button variant="outline" size="sm" onClick={() => { setChatDialogMode("select"); setShowChatDialog(true); }}>
-                  <Plus className="h-4 w-4 mr-1" /> Chat öffnen
-                </Button>
+                {isAdmin && (
+                  <Button variant="outline" size="sm" onClick={() => { setChatDialogMode("select"); setShowChatDialog(true); }}>
+                    <Plus className="h-4 w-4 mr-1" /> Chat öffnen
+                  </Button>
+                )}
               </div>
             </CardHeader>
             <CardContent className="p-0">
@@ -817,7 +845,7 @@ export default function Index() {
               ))}
             </CardContent>
           </Card>
-        ) : (
+        ) : isAdmin ? (
           <div
             className="mb-6 flex items-center gap-4 rounded-xl border-2 border-green-400 bg-green-50 dark:bg-green-950/20 p-4 cursor-pointer hover:bg-green-100 dark:hover:bg-green-950/30 transition-colors shadow-sm"
             onClick={() => {
@@ -836,7 +864,7 @@ export default function Index() {
             </div>
             <ArrowRight className="h-5 w-5 text-green-600 shrink-0" />
           </div>
-        )}
+        ) : null}
 
         {/* Chat starten Dialog */}
         <Dialog open={showChatDialog} onOpenChange={(open) => {

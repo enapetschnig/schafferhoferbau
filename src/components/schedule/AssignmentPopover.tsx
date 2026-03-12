@@ -25,6 +25,7 @@ interface Props {
   onOpenChange: (open: boolean) => void;
   profile: Profile | null;
   date: Date | null;
+  days?: Date[];
   assignment: Assignment | null;
   projects: Project[];
   onAssign: (userId: string, date: Date, projectId: string, notizen?: string) => void;
@@ -36,6 +37,7 @@ export function AssignmentPopover({
   onOpenChange,
   profile,
   date,
+  days,
   assignment,
   projects,
   onAssign,
@@ -43,6 +45,8 @@ export function AssignmentPopover({
 }: Props) {
   const [selectedProject, setSelectedProject] = useState(assignment?.project_id || "");
   const [notizen, setNotizen] = useState(assignment?.notizen || "");
+
+  const isRangeMode = days && days.length > 1;
 
   useEffect(() => {
     setSelectedProject(assignment?.project_id || "");
@@ -53,9 +57,19 @@ export function AssignmentPopover({
 
   const handleSave = () => {
     if (!selectedProject) return;
-    onAssign(profile.id, date, selectedProject, notizen || undefined);
+    if (isRangeMode) {
+      for (const d of days) {
+        onAssign(profile.id, d, selectedProject, notizen || undefined);
+      }
+    } else {
+      onAssign(profile.id, date, selectedProject, notizen || undefined);
+    }
     onOpenChange(false);
   };
+
+  const dateLabel = isRangeMode
+    ? `${days.length} Tage: ${format(days[0], "EE dd.MM.", { locale: de })} – ${format(days[days.length - 1], "EE dd.MM.", { locale: de })}`
+    : format(date, "EEEE, dd. MMMM yyyy", { locale: de });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -64,9 +78,7 @@ export function AssignmentPopover({
           <DialogTitle className="text-base">
             {profile.vorname} {profile.nachname}
           </DialogTitle>
-          <p className="text-sm text-muted-foreground">
-            {format(date, "EEEE, dd. MMMM yyyy", { locale: de })}
-          </p>
+          <p className="text-sm text-muted-foreground">{dateLabel}</p>
         </DialogHeader>
 
         <div className="space-y-3 pt-2">
@@ -91,7 +103,7 @@ export function AssignmentPopover({
             className="text-sm resize-none"
           />
 
-          {assignment && (
+          {assignment && !isRangeMode && (
             <Button
               variant="destructive"
               size="sm"
@@ -113,7 +125,7 @@ export function AssignmentPopover({
             onClick={handleSave}
             disabled={!selectedProject}
           >
-            Speichern
+            {isRangeMode ? `${days.length} Tage zuweisen` : "Speichern"}
           </Button>
         </DialogFooter>
       </DialogContent>

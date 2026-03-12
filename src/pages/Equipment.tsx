@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { Plus, Wrench, Search, AlertTriangle, Camera, Receipt, X, Download } from "lucide-react";
 import * as XLSX from "xlsx-js-style";
 import { Button } from "@/components/ui/button";
@@ -49,6 +49,7 @@ const ZUSTAND_COLORS: Record<string, string> = {
 
 export default function EquipmentPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useToast();
   const [items, setItems] = useState<Equipment[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -85,7 +86,17 @@ export default function EquipmentPage() {
     setIsAdmin(roleData?.role === "administrator");
 
     const { data } = await supabase.from("equipment").select("*").order("name");
-    if (data) setItems(data as any);
+    if (data) {
+      setItems(data as any);
+      // Auto-open edit dialog if navigated from detail page
+      const editId = (location.state as any)?.editId;
+      if (editId) {
+        const target = (data as Equipment[]).find((i) => i.id === editId);
+        if (target) openEdit(target);
+        // Clear the state so refreshes don't re-open
+        window.history.replaceState({}, "");
+      }
+    }
 
     const { data: proj } = await supabase.from("projects").select("id, name").eq("status", "aktiv").order("name");
     if (proj) setProjects(proj);

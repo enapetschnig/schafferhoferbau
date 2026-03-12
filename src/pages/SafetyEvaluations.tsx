@@ -157,6 +157,16 @@ export default function SafetyEvaluations() {
         metadata: { evaluation_id: data.id },
       }));
       await supabase.from("notifications").insert(notifs);
+
+      // Push-Benachrichtigung senden
+      supabase.functions.invoke("send-push", {
+        body: {
+          user_ids: selectedEmployees,
+          title: "Neue Sicherheitsunterweisung",
+          body: `${TYP_LABELS[form.typ]}: ${form.titel.trim()} — bitte unterschreiben`,
+          url: "/my-safety",
+        },
+      });
     }
 
     toast({ title: "Evaluierung erstellt" });

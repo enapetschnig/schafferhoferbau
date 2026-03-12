@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Pencil, Trash2, ArrowRightLeft, AlertTriangle, Camera, Receipt } from "lucide-react";
+import { ArrowLeft, Pencil, Trash2, ArrowRightLeft, AlertTriangle, Camera, Receipt, CheckCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -45,6 +46,12 @@ export default function EquipmentDetail() {
   const [projectMap, setProjectMap] = useState<Record<string, string>>({});
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  // Wartung dialog
+  const [showWartung, setShowWartung] = useState(false);
+  const [wartungDurchgefuehrtAm, setWartungDurchgefuehrtAm] = useState("");
+  const [naechsteWartungNeu, setNaechsteWartungNeu] = useState("");
+  const [savingWartung, setSavingWartung] = useState(false);
 
   // Transfer dialog
   const [showTransfer, setShowTransfer] = useState(false);
@@ -103,6 +110,22 @@ export default function EquipmentDetail() {
       fetchData();
     }
     setTransferring(false);
+  };
+
+  const handleWartungDurchgefuehrt = async () => {
+    setSavingWartung(true);
+    const { error } = await supabase
+      .from("equipment")
+      .update({ naechste_wartung: naechsteWartungNeu || null })
+      .eq("id", id);
+    if (error) {
+      toast({ variant: "destructive", title: "Fehler", description: error.message });
+    } else {
+      toast({ title: "Wartung erfasst", description: naechsteWartungNeu ? `Nächste Wartung: ${new Date(naechsteWartungNeu).toLocaleDateString("de-AT")}` : undefined });
+      setShowWartung(false);
+      fetchData();
+    }
+    setSavingWartung(false);
   };
 
   const handleDelete = async () => {
@@ -201,9 +224,30 @@ export default function EquipmentDetail() {
             <Button variant="outline" size="sm" onClick={() => { setTransferTyp(item.standort_typ === "lager" ? "baustelle" : "lager"); setShowTransfer(true); }}>
               <ArrowRightLeft className="w-4 h-4 mr-1" /> Umlagern
             </Button>
-            <Button variant="outline" size="sm" onClick={() => navigate(`/equipment`)}>
+            <Button variant="outline" size="sm" onClick={() => navigate("/equipment", { state: { editId: id } })}>
               <Pencil className="w-4 h-4 mr-1" /> Bearbeiten
             </Button>
+            {(item.naechste_wartung || item.wartungsintervall_monate) && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-green-700 border-green-400 hover:bg-green-50"
+                onClick={() => {
+                  const today = new Date().toISOString().split("T")[0];
+                  setWartungDurchgefuehrtAm(today);
+                  if (item.wartungsintervall_monate) {
+                    const next = new Date();
+                    next.setMonth(next.getMonth() + item.wartungsintervall_monate);
+                    setNaechsteWartungNeu(next.toISOString().split("T")[0]);
+                  } else {
+                    setNaechsteWartungNeu("");
+                  }
+                  setShowWartung(true);
+                }}
+              >
+                <CheckCircle className="w-4 h-4 mr-1" /> Wartung durchgeführt
+              </Button>
+            )}
             <Button variant="destructive" size="sm" onClick={handleDelete}>
               <Trash2 className="w-4 h-4 mr-1" /> Löschen
             </Button>
@@ -241,6 +285,44 @@ export default function EquipmentDetail() {
           </Card>
         )}
       </div>
+
+      {/* Wartung Dialog */}
+      <Dialog open={showWartung} onOpenChange={setShowWartung}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Wartung durchgeführt</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Wartung durchgeführt am</Label>
+              <Input
+                type="date"
+                value={wartungDurchgefuehrtAm}
+                onChange={(e) => setWartungDurchgefuehrtAm(e.target.value)}
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label>Nächste Wartung</Label>
+              <Input
+                type="date"
+                value={naechsteWartungNeu}
+                onChange={(e) => setNaechsteWartungNeu(e.target.value)}
+                className="mt-1"
+              />
+              {item?.wartungsintervall_monate && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Automatisch berechnet: {item.wartungsintervall_monate} Monate ab heute
+                </p>
+              )}
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowWartung(false)}>Abbrechen</Button>
+              <Button onClick={handleWartungDurchgefuehrt} disabled={savingWartung}>
+                {savingWartung ? "Speichere..." : "Speichern"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Transfer Dialog */}
       <Dialog open={showTransfer} onOpenChange={setShowTransfer}>

@@ -2,16 +2,16 @@ import { isSameDay, isWithinInterval, parseISO } from "date-fns";
 import type { Assignment, LeaveRequest, CompanyHoliday } from "./scheduleTypes";
 
 export const EMPLOYEE_COLORS = [
-  { bg: "bg-red-100",     text: "text-red-800",     border: "border-red-300"     },
-  { bg: "bg-rose-100",    text: "text-rose-800",    border: "border-rose-300"    },
-  { bg: "bg-pink-100",    text: "text-pink-800",    border: "border-pink-300"    },
-  { bg: "bg-fuchsia-100", text: "text-fuchsia-800", border: "border-fuchsia-300" },
-  { bg: "bg-red-200",     text: "text-red-900",     border: "border-red-400"     },
-  { bg: "bg-rose-200",    text: "text-rose-900",    border: "border-rose-400"    },
-  { bg: "bg-pink-200",    text: "text-pink-900",    border: "border-pink-400"    },
-  { bg: "bg-orange-100",  text: "text-orange-800",  border: "border-orange-300"  },
-  { bg: "bg-red-50",      text: "text-red-700",     border: "border-red-200"     },
-  { bg: "bg-fuchsia-200", text: "text-fuchsia-900", border: "border-fuchsia-400" },
+  { bg: "bg-blue-500",    text: "text-white", border: "border-blue-600"    },
+  { bg: "bg-emerald-500", text: "text-white", border: "border-emerald-600" },
+  { bg: "bg-violet-500",  text: "text-white", border: "border-violet-600"  },
+  { bg: "bg-amber-500",   text: "text-white", border: "border-amber-600"   },
+  { bg: "bg-rose-500",    text: "text-white", border: "border-rose-600"    },
+  { bg: "bg-cyan-600",    text: "text-white", border: "border-cyan-700"    },
+  { bg: "bg-orange-500",  text: "text-white", border: "border-orange-600"  },
+  { bg: "bg-indigo-500",  text: "text-white", border: "border-indigo-600"  },
+  { bg: "bg-teal-500",    text: "text-white", border: "border-teal-600"    },
+  { bg: "bg-pink-500",    text: "text-white", border: "border-pink-600"    },
 ];
 
 export function getEmployeeColor(profileId: string) {
@@ -23,14 +23,14 @@ export function getEmployeeColor(profileId: string) {
 }
 
 export const PROJECT_COLORS = [
-  { bg: "bg-blue-100", text: "text-blue-800", border: "border-blue-300", fill: "#dbeafe" },
-  { bg: "bg-green-100", text: "text-green-800", border: "border-green-300", fill: "#dcfce7" },
-  { bg: "bg-amber-100", text: "text-amber-800", border: "border-amber-300", fill: "#fef3c7" },
-  { bg: "bg-purple-100", text: "text-purple-800", border: "border-purple-300", fill: "#f3e8ff" },
-  { bg: "bg-rose-100", text: "text-rose-800", border: "border-rose-300", fill: "#ffe4e6" },
-  { bg: "bg-cyan-100", text: "text-cyan-800", border: "border-cyan-300", fill: "#cffafe" },
-  { bg: "bg-orange-100", text: "text-orange-800", border: "border-orange-300", fill: "#ffedd5" },
-  { bg: "bg-indigo-100", text: "text-indigo-800", border: "border-indigo-300", fill: "#e0e7ff" },
+  { bg: "bg-blue-100",    text: "text-blue-900",    border: "border-blue-500",    fill: "#93c5fd" },
+  { bg: "bg-emerald-100", text: "text-emerald-900", border: "border-emerald-500", fill: "#6ee7b7" },
+  { bg: "bg-amber-200",   text: "text-amber-900",   border: "border-amber-500",   fill: "#fcd34d" },
+  { bg: "bg-violet-100",  text: "text-violet-900",  border: "border-violet-500",  fill: "#c4b5fd" },
+  { bg: "bg-rose-100",    text: "text-rose-900",    border: "border-rose-500",    fill: "#fda4af" },
+  { bg: "bg-cyan-100",    text: "text-cyan-900",    border: "border-cyan-500",    fill: "#67e8f9" },
+  { bg: "bg-orange-100",  text: "text-orange-900",  border: "border-orange-500",  fill: "#fdba74" },
+  { bg: "bg-indigo-100",  text: "text-indigo-900",  border: "border-indigo-500",  fill: "#a5b4fc" },
 ];
 
 export function getProjectColorIndex(projectId: string): number {
