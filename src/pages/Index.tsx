@@ -1139,28 +1139,6 @@ export default function Index() {
           </Card>
           )}
 
-          {/* Regiearbeiten */}
-          {menuVisible("regiearbeiten") && (
-          <Card
-            className="cursor-pointer hover:shadow-lg transition-all hover:border-primary/50"
-            onClick={() => navigate("/disturbances")}
-          >
-            <CardHeader className="space-y-2 pb-3 relative">
-              {isAdmin && <span className="absolute top-3 right-3 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground border">Alle</span>}
-              <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center">
-                <Zap className="h-6 w-6 text-primary" />
-              </div>
-              <CardTitle className="text-lg sm:text-xl">Regiearbeiten</CardTitle>
-              <CardDescription className="text-sm">
-                Service-Einsätze dokumentieren
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button className="w-full" size="sm" variant="outline">Regiearbeiten öffnen</Button>
-            </CardContent>
-          </Card>
-          )}
-
           {/* Tagesberichte */}
           {menuVisible("tagesberichte") && (
           <Card

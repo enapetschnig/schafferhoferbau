@@ -170,9 +170,14 @@ export default function HoursReport() {
   const fetchProfiles = async () => {
     const [{ data }, { data: externalData }] = await Promise.all([
       supabase.from("profiles").select("id, vorname, nachname, is_active").eq("is_active", true),
-      supabase.from("employees").select("user_id, is_external").eq("is_external", true),
+      supabase.from("employees").select("user_id, is_external, kategorie"),
     ]);
-    const externalIds = new Set((externalData || []).map(e => e.user_id).filter(Boolean));
+    const externalIds = new Set(
+      (externalData || [])
+        .filter(e => e.is_external || e.kategorie === "extern")
+        .map(e => e.user_id)
+        .filter(Boolean)
+    );
 
     if (data) {
       const profileMap: Record<string, Profile> = {};

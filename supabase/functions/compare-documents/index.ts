@@ -72,27 +72,27 @@ Severity-Regeln:
 - "warning": Moderate Abweichung (Betragsabweichung 1-5%, Mengenabweichung)
 - "info": Kleinere Hinweise (Schreibweise leicht anders, fehlende Nummern)`;
 
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
-        "x-api-key": Deno.env.get("ANTHROPIC_API_KEY") || "",
+        "Authorization": `Bearer ${Deno.env.get("OPENAI_API_KEY")}`,
         "Content-Type": "application/json",
-        "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 1024,
+        model: "gpt-4o-mini",
         messages: [{ role: "user", content: prompt }],
+        max_tokens: 1024,
+        response_format: { type: "json_object" },
       }),
     });
 
     if (!response.ok) {
       const err = await response.text();
-      throw new Error(`Anthropic API error: ${err}`);
+      throw new Error(`OpenAI API error: ${err}`);
     }
 
     const aiResult = await response.json();
-    const text = aiResult.content?.[0]?.text || "{}";
+    const text = aiResult.choices?.[0]?.message?.content || "{}";
 
     let parsed;
     try {

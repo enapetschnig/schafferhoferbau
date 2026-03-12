@@ -245,10 +245,21 @@ export default function IncomingInvoices() {
     }
 
     if (lsData) {
+      const lsUserIds = [...new Set(lsData.map((d: any) => d.user_id))];
+      const { data: lsEmpData } = await supabase
+        .from("employees")
+        .select("user_id, vorname, nachname")
+        .in("user_id", lsUserIds);
+      const lsNameMap: Record<string, string> = {};
+      lsEmpData?.forEach((e: any) => {
+        if (e.user_id) lsNameMap[e.user_id] = `${e.vorname} ${e.nachname}`.trim();
+      });
+
       setLieferscheine(
         lsData.map((d: any) => ({
           ...d,
           project_name: d.projects?.name || "–",
+          employee_name: lsNameMap[d.user_id] || null,
         }))
       );
     }
@@ -957,7 +968,9 @@ export default function IncomingInvoices() {
                       <SelectContent>
                         {lieferscheine.map((ls) => (
                           <SelectItem key={ls.id} value={ls.id}>
-                            {ls.lieferant || "Unbekannt"} — {ls.dokument_nummer || ls.id.slice(0, 8)} {ls.betrag != null ? `(€ ${Number(ls.betrag).toFixed(2)})` : ""}
+                            {ls.lieferant
+                              ? `${ls.lieferant} — ${ls.dokument_nummer || ls.id.slice(0, 8)} ${ls.betrag != null ? `(€ ${Number(ls.betrag).toFixed(2)})` : ""}`
+                              : `Hochgeladen von ${ls.employee_name || "Unbekannt"} am ${new Date(ls.created_at).toLocaleDateString("de-AT")}`}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -972,7 +985,9 @@ export default function IncomingInvoices() {
                       <SelectContent>
                         {invoices.map((re) => (
                           <SelectItem key={re.id} value={re.id}>
-                            {re.lieferant || "Unbekannt"} — {re.dokument_nummer || re.id.slice(0, 8)} {re.betrag != null ? `(€ ${Number(re.betrag).toFixed(2)})` : ""}
+                            {re.lieferant
+                              ? `${re.lieferant} — ${re.dokument_nummer || re.id.slice(0, 8)} ${re.betrag != null ? `(€ ${Number(re.betrag).toFixed(2)})` : ""}`
+                              : `Hochgeladen von ${re.employee_name || "Unbekannt"} am ${new Date(re.created_at).toLocaleDateString("de-AT")}`}
                           </SelectItem>
                         ))}
                       </SelectContent>

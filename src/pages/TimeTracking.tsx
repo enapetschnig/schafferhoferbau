@@ -803,6 +803,7 @@ const TimeTracking = () => {
       if (insertError) {
         hasError = true;
         console.error("Error creating time entry:", insertError);
+        toast({ variant: "destructive", title: "Fehler beim Speichern", description: insertError.message });
         continue;
       }
 
