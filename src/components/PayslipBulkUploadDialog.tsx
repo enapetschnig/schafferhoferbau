@@ -15,7 +15,6 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs
 
 type Employee = {
   user_id: string;
-  name: string;
   vorname: string;
   nachname: string;
 };
@@ -79,7 +78,7 @@ export function PayslipBulkUploadDialog({ open, onOpenChange }: Props) {
       // 1. Fetch employees
       const { data: empData } = await supabase
         .from("employees")
-        .select("user_id, name, vorname, nachname")
+        .select("user_id, vorname, nachname")
         .not("user_id", "is", null);
 
       if (!empData || empData.length === 0) {
@@ -107,7 +106,6 @@ export function PayslipBulkUploadDialog({ open, onOpenChange }: Props) {
         body: {
           pdfText: pageTexts,
           employees: empData.map((e) => ({
-            name: e.name,
             vorname: e.vorname,
             nachname: e.nachname,
             user_id: e.user_id,

@@ -37,8 +37,8 @@ serve(async (req) => {
 
     // Build employee list for the prompt
     const employeeList = employees
-      .map((e: { vorname: string; nachname: string; user_id: string; name: string }) =>
-        `- "${e.vorname} ${e.nachname}" (auch "${e.name}") → user_id: "${e.user_id}"`
+      .map((e: { vorname: string; nachname: string; user_id: string }) =>
+        `- "${e.vorname} ${e.nachname}" → user_id: "${e.user_id}"`
       )
       .join("\n");
 
