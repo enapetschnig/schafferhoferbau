@@ -34,7 +34,8 @@ interface Props {
 export function PayslipBulkUploadDialog({ open, onOpenChange }: Props) {
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
-  const pdfDocRef = useRef<pdfjsLib.PDFDocumentProxy | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const pdfDocRef = useRef<any>(null);
 
   const [step, setStep] = useState(1);
   const [pdfFile, setPdfFile] = useState<File | null>(null);
