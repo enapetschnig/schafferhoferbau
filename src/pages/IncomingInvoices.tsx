@@ -155,6 +155,7 @@ export default function IncomingInvoices() {
   const [editDatum, setEditDatum] = useState("");
   const [editBelegnummer, setEditBelegnummer] = useState("");
   const [editBetrag, setEditBetrag] = useState("");
+  const [editBetragNetto, setEditBetragNetto] = useState("");
   const [editProjectId, setEditProjectId] = useState("");
   const [editPositionen, setEditPositionen] = useState<{ material: string; menge: string; einheit: string; einzelpreis: string; gesamtpreis: string }[]>([]);
   const [saving, setSaving] = useState(false);
@@ -400,13 +401,14 @@ export default function IncomingInvoices() {
       setEditLieferant(data.lieferant || "");
       setEditDatum(data.datum || "");
       setEditBelegnummer(data.belegnummer || "");
-      setEditBetrag(data.betrag != null ? String(data.betrag) : "");
+      setEditBetrag(data.betragBrutto != null ? String(data.betragBrutto) : (data.betrag != null ? String(data.betrag) : ""));
+      setEditBetragNetto(data.betragNetto != null ? String(data.betragNetto) : "");
       setEditPositionen((data.positionen || []).map((p: any) => ({
         material: p.material || "",
         menge: p.menge != null ? String(p.menge) : "",
         einheit: p.einheit || "",
-        einzelpreis: (p.einzelpreis ?? p.preis) != null ? String(p.einzelpreis ?? p.preis) : "",
-        gesamtpreis: (p.gesamtpreis ?? p.gesamtbetrag) != null ? String(p.gesamtpreis ?? p.gesamtbetrag) : "",
+        einzelpreis: (p.einzelpreisNetto ?? p.einzelpreis ?? p.preis) != null ? String(p.einzelpreisNetto ?? p.einzelpreis ?? p.preis) : "",
+        gesamtpreis: (p.gesamtpreisNetto ?? p.gesamtpreis ?? p.gesamtbetrag) != null ? String(p.gesamtpreisNetto ?? p.gesamtpreis ?? p.gesamtbetrag) : "",
       })));
     } catch (err: unknown) {
       toast({ variant: "destructive", title: "Extraktion fehlgeschlagen", description: (err as Error).message });
@@ -448,6 +450,7 @@ export default function IncomingInvoices() {
         dokument_datum: editDatum || null,
         dokument_nummer: editBelegnummer || null,
         betrag: editBetrag ? parseFloat(editBetrag) : null,
+        betrag_netto: editBetragNetto ? parseFloat(editBetragNetto) : null,
         positionen: editPositionen.map(p => ({
           material: p.material,
           menge: p.menge,
@@ -469,6 +472,7 @@ export default function IncomingInvoices() {
       setEditDatum("");
       setEditBelegnummer("");
       setEditBetrag("");
+      setEditBetragNetto("");
       setEditProjectId("");
       setEditPositionen([]);
 
@@ -724,11 +728,16 @@ export default function IncomingInvoices() {
                             <Input value={editBelegnummer} onChange={(e) => setEditBelegnummer(e.target.value)} />
                           </div>
                           <div className="space-y-2">
-                            <div className="flex items-center gap-2">
-                              <Label>Betrag (&euro;)</Label>
-                              {extracted.preistyp === "brutto" && <span className="text-xs text-muted-foreground">(Brutto inkl. MwSt.)</span>}
-                              {extracted.preistyp === "netto" && <span className="text-xs text-muted-foreground">(Netto exkl. MwSt.)</span>}
-                            </div>
+                            <Label>Betrag Netto (€)</Label>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              value={editBetragNetto}
+                              onChange={(e) => setEditBetragNetto(e.target.value)}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Betrag Brutto (€)</Label>
                             <Input
                               type="number"
                               step="0.01"
@@ -768,8 +777,8 @@ export default function IncomingInvoices() {
                                   <TableHead>Material</TableHead>
                                   <TableHead className="w-16">Menge</TableHead>
                                   <TableHead className="w-16">Einheit</TableHead>
-                                  <TableHead className="w-24">Einzelpreis (€)</TableHead>
-                                  <TableHead className="w-24">Gesamt (€)</TableHead>
+                                  <TableHead className="w-24">Einzelpreis (€ netto)</TableHead>
+                                  <TableHead className="w-24">Gesamt (€ netto)</TableHead>
                                   <TableHead className="w-8"></TableHead>
                                 </TableRow>
                               </TableHeader>
