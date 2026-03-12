@@ -16,7 +16,8 @@ interface Props {
   weekStart: Date;
   onWeekChange: (date: Date) => void;
   mode: ScheduleMode;
-  onModeChange: (mode: ScheduleMode) => void;
+  onModeChange?: (mode: ScheduleMode) => void;
+  title?: string;
   children?: React.ReactNode;
 }
 
@@ -25,6 +26,7 @@ export function ScheduleHeader({
   onWeekChange,
   mode,
   onModeChange,
+  title,
   children,
 }: Props) {
   const weekEnd = addDays(weekStart, 4);
@@ -34,7 +36,7 @@ export function ScheduleHeader({
       <div>
         <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-2">
           <CalendarDays className="h-7 w-7" />
-          Plantafel
+          {title ?? "Plantafel"}
         </h1>
         <p className="text-sm text-muted-foreground">
           Zeit- und Ressourcenplanung
@@ -43,19 +45,21 @@ export function ScheduleHeader({
 
       <div className="flex flex-wrap items-center gap-2">
         {/* Mode toggle */}
-        <Tabs
-          value={mode}
-          onValueChange={(v) => onModeChange(v as ScheduleMode)}
-        >
-          <TabsList className="h-9">
-            <TabsTrigger value="week" className="text-xs px-3">
-              Woche
-            </TabsTrigger>
-            <TabsTrigger value="year" className="text-xs px-3">
-              Jahr
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
+        {onModeChange && (
+          <Tabs
+            value={mode}
+            onValueChange={(v) => onModeChange(v as ScheduleMode)}
+          >
+            <TabsList className="h-9">
+              <TabsTrigger value="week" className="text-xs px-3">
+                Woche
+              </TabsTrigger>
+              <TabsTrigger value="year" className="text-xs px-3">
+                Jahr
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+        )}
 
         {/* Week navigation */}
         {mode === "week" && (

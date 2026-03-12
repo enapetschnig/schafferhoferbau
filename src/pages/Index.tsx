@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Session, User } from "@supabase/supabase-js";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Clock, FolderKanban, Users, BarChart3, LogOut, FileText, Camera, ArrowRight, Info, User as UserIcon, UserPlus, Zap, Receipt, CloudRain, ClipboardList, Wrench, CalendarDays, BookOpen, Star, MapPin, Megaphone, MessageCircle, ChevronLeft, Package, ShieldCheck, Plus, X, Bell } from "lucide-react";
+import { Clock, FolderKanban, Users, BarChart3, LogOut, FileText, Camera, ArrowRight, Info, User as UserIcon, UserPlus, Zap, Receipt, CloudRain, ClipboardList, Wrench, CalendarDays, BookOpen, Star, MapPin, Megaphone, MessageCircle, ChevronLeft, Package, ShieldCheck, ShieldAlert, Plus, X, Bell } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useOnboarding } from "@/contexts/OnboardingContext";
 import {
@@ -81,6 +81,7 @@ export default function Index() {
   const [kategorie, setKategorie] = useState<string | null>(null);
   const [favoriteProjects, setFavoriteProjects] = useState<{ id: string; name: string; adresse: string | null }[]>([]);
   const [pendingCount, setPendingCount] = useState(0);
+  const [pendingSafetyCount, setPendingSafetyCount] = useState(0);
   const [showChatDialog, setShowChatDialog] = useState(false);
   const [chatDialogMode, setChatDialogMode] = useState<"select" | "project" | "company">("select");
   const [allProjects, setAllProjects] = useState<Project[]>([]);
@@ -497,6 +498,16 @@ export default function Index() {
       }
     };
 
+    const fetchPendingSafety = async () => {
+      const [{ data: assigned }, { data: signed }] = await Promise.all([
+        supabase.from("safety_evaluation_employees").select("evaluation_id").eq("user_id", userId),
+        supabase.from("safety_evaluation_signatures").select("evaluation_id").eq("user_id", userId),
+      ]);
+      const signedIds = (signed || []).map((s: any) => s.evaluation_id);
+      const count = (assigned || []).filter((a: any) => !signedIds.includes(a.evaluation_id)).length;
+      setPendingSafetyCount(count);
+    };
+
     await Promise.all([
       fetchProjects(),
       fetchRecentEntries(userId, role),
@@ -505,6 +516,7 @@ export default function Index() {
       fetchPendingUsers(),
       fetchAllProjectsForChat(),
       fetchChatPreviews(userId, role === "administrator"),
+      fetchPendingSafety(),
     ]);
 
     setLoading(false);
@@ -760,6 +772,27 @@ export default function Index() {
               </p>
             </div>
             <ArrowRight className="h-4 w-4 text-yellow-600 shrink-0" />
+          </div>
+        )}
+
+        {/* Ausstehende Sicherheitsunterweisungen */}
+        {pendingSafetyCount > 0 && (
+          <div
+            className="mb-4 flex items-center gap-4 rounded-xl border-2 border-orange-400 bg-orange-50 dark:bg-orange-950/20 p-4 cursor-pointer hover:bg-orange-100 dark:hover:bg-orange-950/30 transition-colors"
+            onClick={() => navigate("/my-safety")}
+          >
+            <div className="h-12 w-12 rounded-lg bg-orange-500/20 flex items-center justify-center shrink-0">
+              <ShieldAlert className="h-6 w-6 text-orange-600" />
+            </div>
+            <div className="flex-1">
+              <p className="font-semibold text-orange-900 dark:text-orange-100">
+                {pendingSafetyCount} ausstehende Unterweisung{pendingSafetyCount > 1 ? "en" : ""}
+              </p>
+              <p className="text-sm text-orange-700 dark:text-orange-300">
+                Bitte Checkliste ausfüllen und unterschreiben
+              </p>
+            </div>
+            <ArrowRight className="h-5 w-5 text-orange-600 shrink-0" />
           </div>
         )}
 

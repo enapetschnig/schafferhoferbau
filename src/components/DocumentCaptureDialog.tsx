@@ -225,7 +225,7 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess }: Documen
 
       // 3. Call AI extraction (SDK handles auth automatically)
       const { data, error: fnError } = await supabase.functions.invoke("extract-document", {
-        body: invokeBody,
+        body: { ...invokeBody, docType },
       });
 
       if (fnError) {
@@ -238,13 +238,22 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess }: Documen
         throw new Error(errMsg);
       }
 
+      const rawPositionen: any[] = Array.isArray(data?.["Positionen"]) ? data["Positionen"] : [];
+      const bruttoRaw = data?.["Betrag Brutto (€)"];
       const result: ExtractedData = {
-        lieferant: data?.lieferant || null,
-        datum: data?.datum || null,
-        belegnummer: data?.belegnummer || null,
-        betrag: data?.betrag != null ? Number(data.betrag) : null,
-        positionen: Array.isArray(data?.positionen) ? data.positionen : [],
-        qualitaet: data?.qualitaet || "mittel",
+        lieferant: data?.["Lieferant"] || null,
+        datum: data?.["Datum"] || null,
+        belegnummer: data?.["Belegnummer"] || null,
+        betrag: bruttoRaw != null && bruttoRaw !== "nicht gefunden" && bruttoRaw !== ""
+          ? Number(bruttoRaw) : null,
+        positionen: rawPositionen.map((p: any) => ({
+          material: p["Material"] ?? "",
+          menge: p["Menge"] != null ? String(p["Menge"]) : "",
+          einheit: p["Einheit"] ?? "",
+          preis: p["Einzelpreis (€ netto)"] != null && p["Einzelpreis (€ netto)"] !== ""
+            ? String(p["Einzelpreis (€ netto)"]) : null,
+        })),
+        qualitaet: "mittel",
       };
 
       setExtracted(result);

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { PageHeader } from "@/components/PageHeader";
+import { EmployeeEvaluationSheet } from "@/components/safety/EmployeeEvaluationSheet";
 
 type SignedEvaluation = {
   evaluation_id: string;
@@ -31,6 +32,7 @@ export default function MySafety() {
   const [signed, setSigned] = useState<SignedEvaluation[]>([]);
   const [pending, setPending] = useState<PendingEvaluation[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedEvalId, setSelectedEvalId] = useState<string | null>(null);
   const currentYear = new Date().getFullYear();
 
   useEffect(() => {
@@ -166,9 +168,9 @@ export default function MySafety() {
                     </div>
                     <Button
                       size="sm"
-                      onClick={() => navigate(`/safety-evaluations/${p.evaluation_id}`)}
+                      onClick={() => setSelectedEvalId(p.evaluation_id)}
                     >
-                      Unterschreiben
+                      Ausfüllen & Unterschreiben
                     </Button>
                   </div>
                 ))}
@@ -273,6 +275,13 @@ export default function MySafety() {
           </TabsContent>
         </Tabs>
       </div>
+
+      <EmployeeEvaluationSheet
+        evaluationId={selectedEvalId}
+        open={!!selectedEvalId}
+        onOpenChange={(open) => { if (!open) setSelectedEvalId(null); }}
+        onDone={() => { setSelectedEvalId(null); fetchData(); }}
+      />
     </div>
   );
 }

@@ -6,6 +6,7 @@ export function useSchedulePermissions() {
   const [userId, setUserId] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
   const [isVorarbeiter, setIsVorarbeiter] = useState(false);
+  const [isExtern, setIsExtern] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -34,6 +35,7 @@ export function useSchedulePermissions() {
 
       setIsAdmin(roleData?.role === "administrator");
       setIsVorarbeiter(empData?.kategorie === "vorarbeiter");
+      setIsExtern(empData?.kategorie === "extern");
       setLoading(false);
     };
     check();
@@ -57,6 +59,7 @@ export function useSchedulePermissions() {
     userId,
     isAdmin,
     isVorarbeiter,
+    isExtern,
     canEditProject,
     canManageHolidays,
     loading,

@@ -5,7 +5,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const BASE_PROMPT = `Du bist ein präziser Parser für Lieferantenrechnungen eines Unternehmens.
+const RECHNUNG_PROMPT = `Du bist ein präziser Parser für Lieferantenrechnungen eines Unternehmens.
 
 Die hochgeladene Datei ist eine Rechnung eines Lieferanten.
 Die Rechnung enthält hauptsächlich Produktpositionen (Material) und manchmal auch Arbeitspositionen.
@@ -102,6 +102,74 @@ Falls etwas nicht passt, füge ein optionales Feld "Warnung" mit einer kurzen Er
 
 Arbeite langsam und überprüfe alle Zahlen sorgfältig.`;
 
+const LIEFERSCHEIN_PROMPT = `Du bist ein präziser Parser für Lieferscheine eines Bauunternehmens.
+
+Die hochgeladene Datei ist ein Lieferschein eines Lieferanten (Materiallieferung auf eine Baustelle).
+
+Deine Aufgabe ist es, alle relevanten Daten exakt zu extrahieren.
+
+WICHTIG:
+- Erfinde niemals Werte
+- Wenn ein Feld nicht eindeutig ist → schreibe "nicht gefunden"
+- Zahlen immer exakt aus dem Lieferschein übernehmen
+- Dezimalzahlen mit Punkt schreiben (z.B. 10145.29)
+
+------------------------------------
+
+1. LIEFERSCHEINDATEN EXTRAHIEREN
+
+Extrahiere folgende Felder:
+
+Lieferant (Name des Lieferers/der Firma)
+Datum (Lieferdatum)
+Belegnummer (Lieferscheinnummer)
+
+------------------------------------
+
+2. POSITIONEN EXTRAHIEREN
+
+Extrahiere jede einzelne gelieferte Position.
+
+Für jede Position extrahiere:
+
+Material (Bezeichnung/Beschreibung des gelieferten Materials)
+Menge
+Einheit (z.B. Stk, kg, m, m², Palette, Pkg)
+Einzelpreis (€ netto) — falls angegeben, sonst leer lassen
+Gesamt (€ netto) — falls angegeben, sonst leer lassen
+
+WICHTIG:
+
+- Extrahiere ALLE Positionen — vollständige Liste ist das oberste Ziel
+- Verwende exakt die Bezeichnungen aus dem Lieferschein
+- Mengen dürfen nicht gerundet werden
+- Beschreibungen (Material-Feld) auf maximal 100 Zeichen kürzen — Kerninformation behalten
+- Du hast ein begrenztes Ausgabelimit: priorisiere VOLLSTÄNDIGKEIT aller Positionen
+- Verwende kompaktes JSON (keine unnötigen Leerzeichen in String-Werten)
+
+------------------------------------
+
+3. AUSGABEFORMAT
+
+Die Ausgabe muss exakt der folgenden Struktur entsprechen (NUR JSON, kein Markdown, kein Text davor oder danach):
+
+{
+  "Lieferant": "",
+  "Datum": "",
+  "Belegnummer": "",
+  "Positionen": [
+    {
+      "Material": "",
+      "Menge": "",
+      "Einheit": "",
+      "Einzelpreis (€ netto)": "",
+      "Gesamt (€ netto)": ""
+    }
+  ]
+}
+
+Arbeite langsam und überprüfe alle Werte sorgfältig.`;
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -116,7 +184,10 @@ serve(async (req) => {
       );
     }
 
-    const { imageBase64, mediaType, pdfText } = await req.json();
+    const { imageBase64, mediaType, pdfText, docType } = await req.json();
+
+    const isLieferschein = docType === "lieferschein" || docType === "lagerlieferschein";
+    const activePrompt = isLieferschein ? LIEFERSCHEIN_PROMPT : RECHNUNG_PROMPT;
 
     let messages: any[];
 
@@ -124,11 +195,11 @@ serve(async (req) => {
       // PDF mit eingebettetem Textlayer — direkt als Text an GPT
       // Limit to 40000 chars to avoid exceeding context window
       const truncatedText = pdfText.slice(0, 40000);
-      const prompt = `${BASE_PROMPT}
+      const prompt = `${activePrompt}
 
 ------------------------------------
 
-Hier ist der extrahierte Text der Rechnung:
+Hier ist der extrahierte Text des Dokuments:
 
 ${truncatedText}`;
 
@@ -136,11 +207,11 @@ ${truncatedText}`;
 
     } else if (imageBase64 && typeof mediaType === "string" && mediaType.startsWith("image/")) {
       // Foto (JPG, PNG) oder gescannte PDF ohne Textlayer → Vision (OCR)
-      const prompt = `${BASE_PROMPT}
+      const prompt = `${activePrompt}
 
 ------------------------------------
 
-Lies den Text der Rechnung buchstabengenau vom Bild ab.`;
+Lies den Text des Dokuments buchstabengenau vom Bild ab.`;
 
       messages = [{
         role: "user",

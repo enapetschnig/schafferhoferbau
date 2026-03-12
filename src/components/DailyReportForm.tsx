@@ -28,6 +28,7 @@ interface DailyReportFormProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess: () => void;
+  defaultProjectId?: string;
   editData?: {
     id: string;
     project_id: string;
@@ -42,13 +43,13 @@ interface DailyReportFormProps {
   } | null;
 }
 
-export function DailyReportForm({ open, onOpenChange, onSuccess, editData }: DailyReportFormProps) {
+export function DailyReportForm({ open, onOpenChange, onSuccess, defaultProjectId, editData }: DailyReportFormProps) {
   const { toast } = useToast();
   const navigate = useNavigate();
   const [saving, setSaving] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
 
-  const [projectId, setProjectId] = useState("");
+  const [projectId, setProjectId] = useState(editData?.project_id ?? defaultProjectId ?? "");
   const [reportType, setReportType] = useState<"tagesbericht" | "zwischenbericht">("tagesbericht");
   const [datum, setDatum] = useState(format(new Date(), "yyyy-MM-dd"));
   const [temperaturMin, setTemperaturMin] = useState<number | null>(null);

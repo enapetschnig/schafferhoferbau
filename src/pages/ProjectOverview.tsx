@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, FileText, FileCheck, Camera, ImagePlus, Lock, Plus, MapPin, Users, Copy, Pencil, Trash2, Phone, Mail, Shield, MessageCircle, ClipboardCheck } from "lucide-react";
+import { ArrowLeft, FileText, FileCheck, Camera, ImagePlus, Lock, Plus, MapPin, Users, Copy, Pencil, Trash2, Phone, Mail, Shield, MessageCircle } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -71,6 +71,8 @@ const ProjectOverview = () => {
       adminOnly: true,
     },
   ]);
+
+  const [dailyReportCount, setDailyReportCount] = useState(0);
 
   // Contacts state
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -249,6 +251,12 @@ const ProjectOverview = () => {
         besonderheiten: d.besonderheiten, hinweise: d.hinweise,
       });
     }
+
+    const { count } = await supabase
+      .from("daily_reports")
+      .select("id", { count: "exact", head: true })
+      .eq("project_id", projectId);
+    setDailyReportCount(count ?? 0);
   };
 
   const fetchContacts = async () => {
@@ -592,34 +600,18 @@ const ProjectOverview = () => {
             </Card>
           ))}
 
-          {/* Bestellungen */}
+          {/* Tagesberichte */}
           <Card
             className="cursor-pointer hover:shadow-lg transition-shadow"
-            onClick={() => navigate(`/projects/${projectId}/orders`)}
+            onClick={() => navigate(`/daily-reports?project=${projectId}`)}
           >
             <CardHeader>
               <div className="flex items-center justify-between">
-                <div className="text-primary"><ClipboardCheck className="h-8 w-8" /></div>
+                <div className="text-primary"><FileText className="h-8 w-8" /></div>
+                <div className="text-2xl font-bold">{dailyReportCount}</div>
               </div>
-              <CardTitle className="text-xl">Bestellungen</CardTitle>
-              <CardDescription>Bestellungen verwalten & Lieferungen abhaken</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button variant="outline" className="w-full">Öffnen</Button>
-            </CardContent>
-          </Card>
-
-          {/* Lieferscheine */}
-          <Card
-            className="cursor-pointer hover:shadow-lg transition-shadow"
-            onClick={() => navigate(`/incoming-documents?project=${projectId}`)}
-          >
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div className="text-primary"><FileCheck className="h-8 w-8" /></div>
-              </div>
-              <CardTitle className="text-xl">Lieferscheine</CardTitle>
-              <CardDescription>Lieferscheine & Rechnungen erfassen</CardDescription>
+              <CardTitle className="text-xl">Tagesberichte</CardTitle>
+              <CardDescription>Tages- und Zwischenberichte für dieses Projekt</CardDescription>
             </CardHeader>
             <CardContent>
               <Button variant="outline" className="w-full">Öffnen</Button>

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Plus, FileText, Filter } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -39,6 +39,8 @@ const STATUS_COLORS: Record<string, string> = {
 export default function DailyReports() {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const [searchParams] = useSearchParams();
+  const projectFilter = searchParams.get("project");
   const [reports, setReports] = useState<DailyReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -52,6 +54,9 @@ export default function DailyReports() {
       .select("*, projects(name, plz)")
       .order("datum", { ascending: false });
 
+    if (projectFilter) {
+      query = query.eq("project_id", projectFilter);
+    }
     if (filterType !== "alle") {
       query = query.eq("report_type", filterType);
     }
@@ -65,7 +70,7 @@ export default function DailyReports() {
     }
     if (data) setReports(data as any);
     setLoading(false);
-  }, [filterType, filterStatus]);
+  }, [filterType, filterStatus, projectFilter]);
 
   useEffect(() => {
     fetchReports();
@@ -73,7 +78,7 @@ export default function DailyReports() {
 
   return (
     <div className="container mx-auto p-4 max-w-4xl">
-      <PageHeader title="Tagesberichte" />
+      <PageHeader title="Tagesberichte" backPath={projectFilter ? `/projects/${projectFilter}` : undefined} />
 
       <div className="flex flex-wrap justify-between items-center gap-3 mb-6">
         <div className="flex gap-2">
@@ -159,6 +164,7 @@ export default function DailyReports() {
         open={showForm}
         onOpenChange={setShowForm}
         onSuccess={fetchReports}
+        defaultProjectId={projectFilter ?? undefined}
       />
     </div>
   );

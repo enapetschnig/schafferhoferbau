@@ -53,10 +53,13 @@ export default function ScheduleBoard() {
     userId,
     isAdmin,
     isVorarbeiter,
+    isExtern,
     canEditProject,
     canManageHolidays,
     loading: permLoading,
   } = useSchedulePermissions();
+
+  const isExternView = isExtern && !isAdmin && !isVorarbeiter;
 
   const weekDays = Array.from({ length: 5 }, (_, i) => addDays(weekStart, i));
   const weekEnd = addDays(weekStart, 4);
@@ -75,10 +78,10 @@ export default function ScheduleBoard() {
   const [sheetDatum, setSheetDatum] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!permLoading && !isAdmin && !isVorarbeiter) {
+    if (!permLoading && !isAdmin && !isVorarbeiter && !isExtern) {
       navigate("/");
     }
-  }, [permLoading, isAdmin, isVorarbeiter, navigate]);
+  }, [permLoading, isAdmin, isVorarbeiter, isExtern, navigate]);
 
   useEffect(() => {
     if (!permLoading) {
@@ -346,8 +349,9 @@ export default function ScheduleBoard() {
         <ScheduleHeader
           weekStart={weekStart}
           onWeekChange={setWeekStart}
-          mode={mode}
-          onModeChange={setMode}
+          mode={isExternView ? "week" : mode}
+          onModeChange={isExternView ? undefined : setMode}
+          title={isExternView ? "Meine Einteilung" : undefined}
         >
           {canManageHolidays && (
             <CompanyHolidayManager
@@ -381,17 +385,19 @@ export default function ScheduleBoard() {
             {/* Gantt Grid */}
             <div className="border rounded-lg overflow-x-auto">
               <GanttTimeline days={weekDays} holidays={companyHolidays} />
-              <ProjectGanttSection
-                projects={projects}
-                assignments={assignments}
-                days={weekDays}
-                holidays={companyHolidays}
-                onProjectDayClick={
-                  isAdmin || isVorarbeiter ? handleProjectDayClick : undefined
-                }
-              />
+              {!isExternView && (
+                <ProjectGanttSection
+                  projects={projects}
+                  assignments={assignments}
+                  days={weekDays}
+                  holidays={companyHolidays}
+                  onProjectDayClick={
+                    isAdmin || isVorarbeiter ? handleProjectDayClick : undefined
+                  }
+                />
+              )}
               <TeamGanttSection
-                profiles={profiles}
+                profiles={isExternView ? profiles.filter((p) => p.id === userId) : profiles}
                 projects={projects}
                 assignments={assignments}
                 leaveRequests={leaveRequests}

@@ -143,12 +143,14 @@ export function DocumentDetailDialog({ document, open, onOpenChange, isAdmin, on
                     : "–"}
                 </p>
               </div>
-              <div>
-                <p className="text-muted-foreground">Betrag</p>
-                <p className="font-medium">
-                  {document.betrag != null ? `€ ${Number(document.betrag).toFixed(2)}` : "–"}
-                </p>
-              </div>
+              {(isAdmin || document.typ !== "rechnung") && (
+                <div>
+                  <p className="text-muted-foreground">Betrag</p>
+                  <p className="font-medium">
+                    {document.betrag != null ? `€ ${Number(document.betrag).toFixed(2)}` : "–"}
+                  </p>
+                </div>
+              )}
               <div>
                 <p className="text-muted-foreground">Projekt</p>
                 <p className="font-medium">{document.project_name || "–"}</p>

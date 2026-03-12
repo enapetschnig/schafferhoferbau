@@ -128,9 +128,6 @@ export default function IncomingDocuments() {
   // Stats
   const offeneLieferscheine = documents.filter(d => d.status === "offen" && (d.typ === "lieferschein" || d.typ === "lagerlieferschein")).length;
   const offeneRechnungen = documents.filter(d => d.status === "offen" && d.typ === "rechnung").length;
-  const offeneSumme = documents
-    .filter(d => d.status === "offen" && d.betrag)
-    .reduce((sum, d) => sum + Number(d.betrag), 0);
 
   const exportToExcel = () => {
     const rows: (string | number)[][] = [
@@ -147,14 +144,14 @@ export default function IncomingDocuments() {
         doc.lieferant || "–",
         doc.dokument_nummer || "–",
         doc.project_name || "–",
-        doc.betrag != null ? Number(doc.betrag) : 0,
+        doc.typ !== "rechnung" && doc.betrag != null ? Number(doc.betrag) : 0,
         STATUS_LABELS[doc.status]?.label || doc.status,
         doc.employee_name || "–",
       ]);
     }
 
     rows.push([]);
-    rows.push(["", "", "", "", "GESAMT", filtered.reduce((s, d) => s + (d.betrag ? Number(d.betrag) : 0), 0), "", ""]);
+    rows.push(["", "", "", "", "GESAMT", filtered.reduce((s, d) => s + (d.typ !== "rechnung" && d.betrag ? Number(d.betrag) : 0), 0), "", ""]);
 
     const ws = XLSX.utils.aoa_to_sheet(rows);
     ws["!cols"] = [{ wch: 12 }, { wch: 18 }, { wch: 25 }, { wch: 15 }, { wch: 25 }, { wch: 12 }, { wch: 12 }, { wch: 20 }];
@@ -182,12 +179,6 @@ export default function IncomingDocuments() {
             <CardHeader className="pb-2">
               <CardDescription>Offene Rechnungen</CardDescription>
               <CardTitle className="text-2xl">{offeneRechnungen}</CardTitle>
-            </CardHeader>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardDescription>Offene Summe</CardDescription>
-              <CardTitle className="text-2xl">€ {offeneSumme.toFixed(2)}</CardTitle>
             </CardHeader>
           </Card>
         </div>
@@ -318,7 +309,7 @@ export default function IncomingDocuments() {
                           <TableCell className="hidden md:table-cell">{doc.project_name}</TableCell>
                           <TableCell className="hidden sm:table-cell font-mono text-xs">{doc.dokument_nummer || "–"}</TableCell>
                           <TableCell className="text-right font-medium">
-                            {doc.betrag != null ? `€ ${Number(doc.betrag).toFixed(2)}` : "–"}
+                            {doc.typ !== "rechnung" && doc.betrag != null ? `€ ${Number(doc.betrag).toFixed(2)}` : "–"}
                           </TableCell>
                           <TableCell>
                             <Badge className={statusInfo.color + " text-xs"}>{statusInfo.label}</Badge>
@@ -346,7 +337,7 @@ export default function IncomingDocuments() {
         document={selectedDoc}
         open={showDetailDialog}
         onOpenChange={setShowDetailDialog}
-        isAdmin={true}
+        isAdmin={false}
         onUpdate={() => { fetchDocuments(); setShowDetailDialog(false); }}
       />
     </div>
