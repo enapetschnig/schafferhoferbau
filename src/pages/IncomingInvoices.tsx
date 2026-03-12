@@ -540,7 +540,11 @@ export default function IncomingInvoices() {
           },
         },
       });
-      if (error) throw error;
+      if (error) {
+        // data contains the parsed error body from the function (e.g. { error: "OpenAI API error: ..." })
+        const detail = (data as any)?.error || error.message;
+        throw new Error(detail);
+      }
       setAbgleichAnalyse(data);
     } catch (err: unknown) {
       toast({ variant: "destructive", title: "Analyse fehlgeschlagen", description: (err as Error).message });
