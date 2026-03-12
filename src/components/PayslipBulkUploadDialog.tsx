@@ -66,7 +66,7 @@ export function PayslipBulkUploadDialog({ open, onOpenChange }: Props) {
     setPdfBytes(buffer);
 
     // Get page count
-    const pdfDoc = await pdfjsLib.getDocument({ data: new Uint8Array(buffer) }).promise;
+    const pdfDoc = await pdfjsLib.getDocument({ data: new Uint8Array(buffer.slice(0)) }).promise;
     setTotalPages(pdfDoc.numPages);
   };
 
@@ -94,7 +94,7 @@ export function PayslipBulkUploadDialog({ open, onOpenChange }: Props) {
       setEmployees(empData as Employee[]);
 
       // 2. Extract text from each page
-      const pdfDoc = await pdfjsLib.getDocument({ data: new Uint8Array(pdfBytes) }).promise;
+      const pdfDoc = await pdfjsLib.getDocument({ data: new Uint8Array(pdfBytes.slice(0)) }).promise;
       const pageTexts: string[] = [];
 
       for (let i = 1; i <= pdfDoc.numPages; i++) {
@@ -152,7 +152,7 @@ export function PayslipBulkUploadDialog({ open, onOpenChange }: Props) {
       const total = validAssignments.length;
       let done = 0;
 
-      const sourcePdf = await PDFDocument.load(pdfBytes);
+      const sourcePdf = await PDFDocument.load(pdfBytes.slice(0));
       const notifiedUserIds: string[] = [];
 
       for (const assignment of validAssignments) {
