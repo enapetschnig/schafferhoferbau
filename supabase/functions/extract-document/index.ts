@@ -44,12 +44,13 @@ Strukturiere diesen Text und antworte NUR mit einem validen JSON-Objekt (kein Ma
 }
 
 STRIKTE REGELN — KEINE AUSNAHMEN:
+- "lieferant": BUCHSTABENGENAU den Firmennamen des Absenders übernehmen — exakt so wie im Briefkopf, Stempel oder Absender-Bereich des Dokuments geschrieben. Das ist die Firma, die die Rechnung ausgestellt hat. Kein Paraphrasieren, keine Abkürzungen erfinden, keine Übersetzung.
 - "material": BUCHSTABENGENAU aus dem Text übernehmen — kein Paraphrasieren, keine Übersetzung, keine Zusammenfassung. Exakt so wie im Dokument geschrieben.
 - "positionen": JEDE einzelne Position aus dem Text — lückenlos, von Seite 1 bis zur letzten Seite. Nichts weglassen.
 - "einzelpreis": Preis pro Einheit als reine Zahl (kein €-Zeichen, keine Einheit).
 - "gesamtpreis": Gesamtpreis der Position als reine Zahl. Falls im Text vorhanden, diesen Wert nehmen.
-- "betragNetto": Suche im Dokument nach einem Label wie "Nettobetrag", "Netto-Gesamtsumme", "Zwischensumme", "Summe exkl. MwSt.", "Warenwert" o.ä. und lies den danebenstehenden Wert aus. NICHT selber berechnen. Nicht vorhanden → null.
-- "betragBrutto": Suche nach "Gesamtsumme", "Rechnungsbetrag", "Endbetrag", "Bruttobetrag", "Betrag inkl. MwSt.", "Zu zahlen", "Total" o.ä. und lies den danebenstehenden Wert aus. NICHT selber berechnen. Das ist der finale zu zahlende Betrag.
+- "betragNetto": Lies den Wert, der im Dokument direkt neben/unter einem Label wie "Nettobetrag", "Warenwert", "Betrag exkl. MwSt.", "Zwischensumme", "Summe netto", "Netto-Gesamtsumme" steht. Das ist der Gesamtbetrag OHNE MwSt., wie er auf der Rechnung ausgewiesen ist. NICHT selber berechnen — nur ablesen. Nicht vorhanden → null.
+- "betragBrutto": Lies den Wert, der neben/unter einem Label wie "Gesamtsumme", "Rechnungsbetrag", "Endbetrag", "Bruttobetrag", "Betrag inkl. MwSt.", "Zu zahlen", "Total" steht. Das ist der finale zu zahlende Betrag inkl. MwSt. NICHT selber berechnen — nur ablesen.
 - Alle Zahlen ohne Währungszeichen und ohne Einheiten. Nicht erkennbare Felder → null.`;
 
       messages = [{ role: "user", content: prompt }];
@@ -73,12 +74,13 @@ Antworte NUR mit einem validen JSON-Objekt (kein Markdown, kein Text davor oder 
 }
 
 STRIKTE REGELN — KEINE AUSNAHMEN:
+- "lieferant": BUCHSTABENGENAU den Firmennamen des Absenders abschreiben — exakt so wie im Briefkopf, Stempel oder Absender-Bereich des Dokuments. Das ist die Firma, die die Rechnung ausgestellt hat. NICHT umformulieren, keine Abkürzungen erfinden.
 - "material": BUCHSTABENGENAU abschreiben wie es im Dokument steht. NICHT umformulieren. NICHT übersetzen. NICHT paraphrasieren. Erfinde KEINE Namen.
 - "positionen": Jede einzelne Zeile/Position — lückenlos, alle Seiten. Nichts weglassen.
 - "einzelpreis": Preis pro Einheit als reine Zahl (kein €-Zeichen).
 - "gesamtpreis": Menge × Einzelpreis als reine Zahl. Falls im Dokument angegeben, diesen Wert nehmen.
-- "betragNetto": Suche nach einem Label wie "Nettobetrag", "Zwischensumme", "Summe exkl. MwSt.", "Warenwert" o.ä. und lies den danebenstehenden Wert aus. NICHT selber berechnen. Nicht vorhanden → null.
-- "betragBrutto": Suche nach "Gesamtsumme", "Rechnungsbetrag", "Endbetrag", "Bruttobetrag", "Zu zahlen", "Total" o.ä. und lies den danebenstehenden Wert aus. NICHT selber berechnen. Das ist der finale zu zahlende Betrag.
+- "betragNetto": Lies den Wert, der im Dokument direkt neben/unter einem Label wie "Nettobetrag", "Warenwert", "Betrag exkl. MwSt.", "Zwischensumme", "Summe netto" steht. Das ist der Gesamtbetrag OHNE MwSt. NICHT selber berechnen — nur ablesen. Nicht vorhanden → null.
+- "betragBrutto": Lies den Wert, der neben/unter "Gesamtsumme", "Rechnungsbetrag", "Endbetrag", "Bruttobetrag", "Zu zahlen", "Total" steht. Das ist der finale zu zahlende Betrag inkl. MwSt. NICHT selber berechnen — nur ablesen.
 - "qualitaet": "gut" = klar lesbar | "mittel" = teilweise lesbar | "schlecht" = kaum lesbar.
 - Felder nicht erkennbar → null.`;
 
