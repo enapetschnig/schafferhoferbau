@@ -19,16 +19,33 @@ import pdfjsWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
 
-const prepareFileForAI = (file: File): Promise<{ base64: string; mimeType: string }> =>
+const prepareFileForAI = (file: File): Promise<{ base64: string; mimeType: string; pdfText?: string }> =>
   new Promise((resolve, reject) => {
     if (file.type === "application/pdf") {
-      // Alle Seiten zu einem kombinierten JPEG — max 1400×5000px, quality 0.75 → ~1.5-2.5MB
       const reader = new FileReader();
       reader.onerror = reject;
       reader.onload = async (e) => {
         try {
           const data = new Uint8Array(e.target!.result as ArrayBuffer);
           const pdf = await pdfjsLib.getDocument({ data }).promise;
+
+          // Zuerst Textlayer versuchen (eingebetteter Text = perfekte Extraktion)
+          const pageTexts: string[] = [];
+          for (let i = 1; i <= pdf.numPages; i++) {
+            const page = await pdf.getPage(i);
+            const textContent = await page.getTextContent();
+            const pageText = textContent.items.map((item: any) => item.str).join(" ");
+            pageTexts.push(`--- Seite ${i} ---\n${pageText}`);
+          }
+          const fullText = pageTexts.join("\n\n");
+
+          if (fullText.trim().length > 100) {
+            // PDF hat Textlayer → als Text senden (wie ChatGPT, 100% genau)
+            resolve({ base64: "", mimeType: "application/pdf", pdfText: fullText });
+            return;
+          }
+
+          // Kein Textlayer (gescannte PDF) → Fallback: kombiniertes JPEG
           const pageCanvases: HTMLCanvasElement[] = [];
           for (let i = 1; i <= pdf.numPages; i++) {
             const page = await pdf.getPage(i);
@@ -358,12 +375,15 @@ export default function IncomingInvoices() {
         .from("incoming-documents")
         .getPublicUrl(filePath);
 
-      // Prepare file for AI (PDF → kombiniertes JPEG, Bilder resized)
-      const { base64, mimeType } = await prepareFileForAI(uploadFile);
+      // Prepare file for AI: PDF mit Textlayer → pdfText, sonst JPEG
+      const prepared = await prepareFileForAI(uploadFile);
+      const invokeBody = prepared.pdfText
+        ? { pdfText: prepared.pdfText }
+        : { imageBase64: prepared.base64, mediaType: prepared.mimeType };
 
       // Call extract-document edge function (SDK handles auth automatically)
       const { data, error: fnError } = await supabase.functions.invoke("extract-document", {
-        body: { imageBase64: base64, mediaType: mimeType },
+        body: invokeBody,
       });
 
       if (fnError) {
