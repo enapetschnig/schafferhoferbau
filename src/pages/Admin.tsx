@@ -5,7 +5,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, Shield, User as UserIcon, UserPlus, Send, Mail, Phone, MapPin, Shirt, FileText, Clock, Trash2, Settings, Save, Calendar, Package, Plus, Upload } from "lucide-react";
+import { ArrowLeft, Shield, User as UserIcon, UserPlus, Send, Mail, Phone, MapPin, Shirt, FileText, Clock, Trash2, Settings, Save, Calendar, Menu, Plus, Upload } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
@@ -68,6 +69,7 @@ interface Employee {
   schuhgroesse: string | null;
   notizen: string | null;
   land: string | null;
+  kategorie?: string | null;
 }
 
 export default function Admin() {
@@ -109,11 +111,9 @@ export default function Admin() {
   // Pending user activation states
   const [pendingKategorie, setPendingKategorie] = useState<Record<string, string>>({});
 
-  // Material catalog states
-  const [materials, setMaterials] = useState<{ id: string; name: string; einheit: string }[]>([]);
-  const [newMaterialName, setNewMaterialName] = useState("");
-  const [newMaterialUnit, setNewMaterialUnit] = useState("Stück");
-  const [addingMaterial, setAddingMaterial] = useState(false);
+  // Menu settings state
+  const [menuSettings, setMenuSettings] = useState<Record<string, Record<string, boolean>>>({});
+  const [savingMenuSettings, setSavingMenuSettings] = useState(false);
 
   const fetchAppSettings = useCallback(async () => {
     setLoadingSettings(true);
@@ -136,37 +136,31 @@ export default function Admin() {
     }
   }, []);
 
-  const fetchMaterials = useCallback(async () => {
-    const { data, error } = await supabase
-      .from("materials")
-      .select("id, name, einheit")
-      .order("name");
-    if (!error && data) setMaterials(data);
+  const fetchMenuSettings = useCallback(async () => {
+    const { data, error } = await supabase.from("role_menu_settings").select("role, menu_key, visible");
+    if (error) {
+      console.error("Error fetching menu settings:", error);
+      return;
+    }
+    const map: Record<string, Record<string, boolean>> = {};
+    (data ?? []).forEach(row => {
+      if (!map[row.role]) map[row.role] = {};
+      map[row.role][row.menu_key] = row.visible;
+    });
+    setMenuSettings(map);
   }, []);
 
-  const addMaterial = async () => {
-    if (!newMaterialName.trim()) return;
-    setAddingMaterial(true);
-    const { error } = await supabase
-      .from("materials")
-      .insert({ name: newMaterialName.trim(), einheit: newMaterialUnit });
+  const saveMenuSettings = async () => {
+    setSavingMenuSettings(true);
+    const rows = Object.entries(menuSettings).flatMap(([role, keys]) =>
+      Object.entries(keys).map(([menu_key, visible]) => ({ role, menu_key, visible }))
+    );
+    const { error } = await supabase.from("role_menu_settings").upsert(rows, { onConflict: "role,menu_key" });
+    setSavingMenuSettings(false);
     if (error) {
       toast({ variant: "destructive", title: "Fehler", description: error.message });
     } else {
-      setNewMaterialName("");
-      setNewMaterialUnit("Stück");
-      fetchMaterials();
-      toast({ title: "Material hinzugefügt" });
-    }
-    setAddingMaterial(false);
-  };
-
-  const deleteMaterial = async (id: string) => {
-    const { error } = await supabase.from("materials").delete().eq("id", id);
-    if (error) {
-      toast({ variant: "destructive", title: "Fehler", description: error.message });
-    } else {
-      fetchMaterials();
+      toast({ title: "Menü-Einstellungen gespeichert" });
     }
   };
 
@@ -213,8 +207,8 @@ export default function Admin() {
     fetchEmployees();
     fetchSickNotes();
     fetchAppSettings();
-    fetchMaterials();
-  }, [fetchAppSettings, fetchMaterials]);
+    fetchMenuSettings();
+  }, [fetchAppSettings, fetchMenuSettings]);
 
   const checkAdminAccess = async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -631,25 +625,38 @@ export default function Admin() {
     }
   };
 
-  const handleRoleChange = async (userId: string, newRole: "administrator" | "mitarbeiter") => {
-    const { error } = await supabase
+  const getEffectiveRoleFor = (userId: string) =>
+    userRoles[userId] === "administrator"
+      ? "administrator"
+      : (employees.find(e => e.user_id === userId)?.kategorie ?? "facharbeiter");
+
+  const handleRoleChange = async (userId: string, newEffectiveRole: string) => {
+    const systemRole = newEffectiveRole === "administrator" ? "administrator" : "mitarbeiter";
+
+    const { error: roleError } = await supabase
       .from("user_roles")
-      .update({ role: newRole })
+      .update({ role: systemRole })
       .eq("user_id", userId);
 
-    if (error) {
-      toast({
-        variant: "destructive",
-        title: "Fehler",
-        description: error.message,
-      });
-    } else {
-      toast({
-        title: "Erfolg",
-        description: "Rolle wurde geändert.",
-      });
-      setUserRoles((prev) => ({ ...prev, [userId]: newRole }));
+    if (roleError) {
+      toast({ variant: "destructive", title: "Fehler", description: roleError.message });
+      return;
     }
+
+    if (systemRole === "mitarbeiter") {
+      const { error: empError } = await supabase
+        .from("employees")
+        .update({ kategorie: newEffectiveRole })
+        .eq("user_id", userId);
+      if (empError) {
+        toast({ variant: "destructive", title: "Fehler", description: empError.message });
+        return;
+      }
+    }
+
+    toast({ title: "Erfolg", description: "Rolle wurde geändert." });
+    setUserRoles((prev) => ({ ...prev, [userId]: systemRole }));
+    fetchEmployees();
   };
 
   const ensureEmployeeForUser = async (userId: string) => {
@@ -982,22 +989,25 @@ export default function Admin() {
                         <p className="font-medium">
                           {profile.vorname} {profile.nachname}
                         </p>
-                        <p className="text-sm text-muted-foreground">
-                          {userRoles[profile.id] === "administrator" ? "Administrator" : "Mitarbeiter"}
+                        <p className="text-sm text-muted-foreground capitalize">
+                          {getEffectiveRoleFor(profile.id) === "administrator" ? "Administrator" : getEffectiveRoleFor(profile.id)}
                         </p>
                       </div>
                     </div>
                     <div className="flex flex-col sm:flex-row sm:items-center gap-2">
                       <Select
-                        value={userRoles[profile.id]}
-                        onValueChange={(val) => handleRoleChange(profile.id, val as "administrator" | "mitarbeiter")}
+                        value={getEffectiveRoleFor(profile.id)}
+                        onValueChange={(val) => handleRoleChange(profile.id, val)}
                       >
                         <SelectTrigger className="w-full sm:w-[200px]">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="administrator">Administrator</SelectItem>
-                          <SelectItem value="mitarbeiter">Mitarbeiter</SelectItem>
+                          <SelectItem value="vorarbeiter">Vorarbeiter</SelectItem>
+                          <SelectItem value="facharbeiter">Facharbeiter</SelectItem>
+                          <SelectItem value="lehrling">Lehrling</SelectItem>
+                          <SelectItem value="extern">Extern</SelectItem>
                         </SelectContent>
                       </Select>
 
@@ -1145,78 +1155,6 @@ export default function Admin() {
           <LeaveManagement profiles={profiles.filter(p => p.is_active)} />
         </section>
 
-        {/* ===== MATERIALKATALOG ===== */}
-        <section>
-          <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
-            <Package className="h-6 w-6" />
-            Materialkatalog
-          </h2>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Materialien verwalten</CardTitle>
-              <CardDescription>
-                Materialien, die Mitarbeiter bei der Zeitbuchung zuordnen können
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Materialname"
-                  value={newMaterialName}
-                  onChange={(e) => setNewMaterialName(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && addMaterial()}
-                  className="flex-1"
-                />
-                <Select value={newMaterialUnit} onValueChange={setNewMaterialUnit}>
-                  <SelectTrigger className="w-[120px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Stück">Stück</SelectItem>
-                    <SelectItem value="kg">kg</SelectItem>
-                    <SelectItem value="m²">m²</SelectItem>
-                    <SelectItem value="m">m</SelectItem>
-                    <SelectItem value="Liter">Liter</SelectItem>
-                    <SelectItem value="Sack">Sack</SelectItem>
-                    <SelectItem value="Palette">Palette</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Button onClick={addMaterial} disabled={addingMaterial || !newMaterialName.trim()}>
-                  <Plus className="h-4 w-4 mr-1" />
-                  Hinzufügen
-                </Button>
-              </div>
-
-              <Separator />
-
-              {materials.length === 0 ? (
-                <p className="text-muted-foreground text-center py-4">
-                  Noch keine Materialien angelegt
-                </p>
-              ) : (
-                <div className="space-y-2">
-                  {materials.map((mat) => (
-                    <div key={mat.id} className="flex items-center justify-between p-3 rounded-lg border">
-                      <div>
-                        <span className="font-medium">{mat.name}</span>
-                        <span className="text-muted-foreground ml-2 text-sm">({mat.einheit})</span>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => deleteMaterial(mat.id)}
-                      >
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </section>
-
         {/* Zeitkonto vorerst deaktiviert */}
         {false && (
         <section>
@@ -1227,6 +1165,96 @@ export default function Admin() {
           <TimeAccountManagement profiles={profiles.filter(p => p.is_active)} />
         </section>
         )}
+
+        {/* ===== MENÜ-EINSTELLUNGEN ===== */}
+        <section>
+          <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
+            <Menu className="h-6 w-6" />
+            Menü-Einstellungen
+          </h2>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Sichtbarkeit pro Rolle</CardTitle>
+              <CardDescription>
+                Lege fest, welche Menüpunkte jede Rolle im Dashboard sieht
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {(() => {
+                const ROLES = [
+                  { key: "extern", label: "Extern" },
+                  { key: "lehrling", label: "Lehrling" },
+                  { key: "facharbeiter", label: "Facharbeiter" },
+                  { key: "vorarbeiter", label: "Vorarbeiter" },
+                  { key: "admin", label: "Admin" },
+                ];
+                const MENU_ITEMS = [
+                  { key: "zeiterfassung", label: "Zeiterfassung" },
+                  { key: "projekte", label: "Projekte" },
+                  { key: "meine_stunden", label: "Meine Stunden" },
+                  { key: "regiearbeiten", label: "Regiearbeiten" },
+                  { key: "tagesberichte", label: "Tagesberichte" },
+                  { key: "meine_dokumente", label: "Meine Dokumente" },
+                  { key: "dokumentenbibliothek", label: "Dokumentenbibliothek" },
+                  { key: "stundenubersicht", label: "Stundenübersicht" },
+                  { key: "plantafel", label: "Plantafel" },
+                  { key: "gerateverwaltung", label: "Geräteverwaltung" },
+                  { key: "eingangsrechnungen", label: "Eingangsrechnungen" },
+                  { key: "evaluierungen", label: "Evaluierungen" },
+                  { key: "arbeitsschutz", label: "Arbeitsschutz" },
+                  { key: "lieferscheine", label: "Lieferscheine" },
+                  { key: "lagerverwaltung", label: "Lagerverwaltung" },
+                  { key: "admin_bereich", label: "Admin-Bereich" },
+                ];
+                return (
+                  <Tabs defaultValue="facharbeiter">
+                    <TabsList className="flex flex-wrap h-auto gap-1 mb-4">
+                      {ROLES.map(r => (
+                        <TabsTrigger key={r.key} value={r.key}>{r.label}</TabsTrigger>
+                      ))}
+                    </TabsList>
+                    {ROLES.map(role => (
+                      <TabsContent key={role.key} value={role.key}>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {MENU_ITEMS.map(item => (
+                            <div key={item.key} className="flex items-center gap-3 p-3 rounded-lg border">
+                              <Checkbox
+                                id={`${role.key}-${item.key}`}
+                                checked={menuSettings[role.key]?.[item.key] ?? true}
+                                onCheckedChange={(checked) => {
+                                  setMenuSettings(prev => ({
+                                    ...prev,
+                                    [role.key]: {
+                                      ...(prev[role.key] ?? {}),
+                                      [item.key]: !!checked,
+                                    },
+                                  }));
+                                }}
+                              />
+                              <label
+                                htmlFor={`${role.key}-${item.key}`}
+                                className="text-sm font-medium cursor-pointer select-none"
+                              >
+                                {item.label}
+                              </label>
+                            </div>
+                          ))}
+                        </div>
+                      </TabsContent>
+                    ))}
+                    <div className="flex justify-end mt-4">
+                      <Button onClick={saveMenuSettings} disabled={savingMenuSettings}>
+                        <Save className="h-4 w-4 mr-2" />
+                        {savingMenuSettings ? "Speichert..." : "Einstellungen speichern"}
+                      </Button>
+                    </div>
+                  </Tabs>
+                );
+              })()}
+            </CardContent>
+          </Card>
+        </section>
 
         {/* ===== EINSTELLUNGEN SEKTION ===== */}
         <section>

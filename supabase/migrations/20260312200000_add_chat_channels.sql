@@ -24,6 +24,7 @@ END $$;
 -- Admin sees all channels
 -- Employees see broadcast channels for their role (or all-roles channels)
 -- Employees see direct channels where they are the target
+DROP POLICY IF EXISTS "Users can read their channels" ON chat_channels;
 CREATE POLICY "Users can read their channels"
   ON chat_channels FOR SELECT
   USING (
@@ -42,6 +43,7 @@ CREATE POLICY "Users can read their channels"
   );
 
 -- Only admins can create channels
+DROP POLICY IF EXISTS "Admins can insert channels" ON chat_channels;
 CREATE POLICY "Admins can insert channels"
   ON chat_channels FOR INSERT
   WITH CHECK (
@@ -49,6 +51,7 @@ CREATE POLICY "Admins can insert channels"
   );
 
 -- Only admins can delete channels
+DROP POLICY IF EXISTS "Admins can delete channels" ON chat_channels;
 CREATE POLICY "Admins can delete channels"
   ON chat_channels FOR DELETE
   USING (

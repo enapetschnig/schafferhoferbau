@@ -94,6 +94,7 @@ export default function Index() {
   const [chatEmployees, setChatEmployees] = useState<{ user_id: string; vorname: string; nachname: string }[]>([]);
   const { handleRestartInstallGuide } = useOnboarding();
   const { permission: pushPermission, requestPermission: requestPush } = usePushNotifications();
+  const [menuSettings, setMenuSettings] = useState<Record<string, boolean>>({});
 
   // Role-based visibility helper
   const ROLE_LEVEL: Record<string, number> = {
@@ -108,6 +109,7 @@ export default function Index() {
   const roleLevel = ROLE_LEVEL[getEffectiveRole()] ?? 2;
   const canSee = (minRole: string) => roleLevel >= (ROLE_LEVEL[minRole] ?? 0);
   const isExternal = kategorie === "extern";
+  const menuVisible = (key: string) => menuSettings[key] ?? true;
 
   const checkMissingHours = async (userId: string) => {
     const today = new Date();
@@ -442,8 +444,21 @@ export default function Index() {
     }
 
     const role = roleData?.role ?? null;
+    const kat = employeeData?.kategorie || null;
     setUserRole(role);
-    setKategorie(employeeData?.kategorie || null);
+    setKategorie(kat);
+
+    // Load menu visibility settings for this user's effective role
+    const effectiveRole = role === "administrator" ? "admin" : (kat ?? "facharbeiter");
+    const { data: settingsData } = await supabase
+      .from("role_menu_settings")
+      .select("menu_key, visible")
+      .eq("role", effectiveRole);
+    if (settingsData) {
+      const map: Record<string, boolean> = {};
+      settingsData.forEach(r => { map[r.menu_key] = r.visible; });
+      setMenuSettings(map);
+    }
 
     const fetchPendingUsers = async () => {
       if (role === "administrator") {
@@ -1025,7 +1040,8 @@ export default function Index() {
 
         {/* Main Actions Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 lg:gap-6">
-          {/* Zeiterfassung - Für alle */}
+          {/* Zeiterfassung */}
+          {menuVisible("zeiterfassung") && (
           <Card
             className="cursor-pointer hover:shadow-lg transition-all hover:border-primary/50"
             onClick={() => navigate(isExternal ? "/external-time-tracking" : "/time-tracking")}
@@ -1043,9 +1059,10 @@ export default function Index() {
               <Button className="w-full" size="sm">Stunden erfassen</Button>
             </CardContent>
           </Card>
+          )}
 
-          {/* Projekte - Ab Facharbeiter */}
-          {canSee("facharbeiter") && (
+          {/* Projekte */}
+          {menuVisible("projekte") && (
           <Card
             className="cursor-pointer hover:shadow-lg transition-all hover:border-primary/50"
             onClick={() => navigate("/projects")}
@@ -1065,9 +1082,10 @@ export default function Index() {
           </Card>
           )}
 
-          {/* Meine Stunden - Für alle */}
-          <Card 
-            className="cursor-pointer hover:shadow-lg transition-all hover:border-primary/50" 
+          {/* Meine Stunden */}
+          {menuVisible("meine_stunden") && (
+          <Card
+            className="cursor-pointer hover:shadow-lg transition-all hover:border-primary/50"
             onClick={() => navigate("/my-hours")}
           >
             <CardHeader className="space-y-2 pb-3">
@@ -1083,9 +1101,10 @@ export default function Index() {
               <Button className="w-full" size="sm" variant="outline">Anzeigen</Button>
             </CardContent>
           </Card>
+          )}
 
-          {/* Regieberichte - Ab Vorarbeiter */}
-          {canSee("vorarbeiter") && (
+          {/* Regiearbeiten */}
+          {menuVisible("regiearbeiten") && (
           <Card
             className="cursor-pointer hover:shadow-lg transition-all hover:border-primary/50"
             onClick={() => navigate("/disturbances")}
@@ -1105,8 +1124,8 @@ export default function Index() {
           </Card>
           )}
 
-          {/* Tagesberichte - Ab Vorarbeiter */}
-          {canSee("vorarbeiter") && (
+          {/* Tagesberichte */}
+          {menuVisible("tagesberichte") && (
           <Card
             className="cursor-pointer hover:shadow-lg transition-all hover:border-primary/50"
             onClick={() => navigate("/daily-reports")}
@@ -1126,8 +1145,8 @@ export default function Index() {
           </Card>
           )}
 
-          {/* Meine Dokumente - Ab Lehrling, nicht für Admin (hat eigenen Bereich) */}
-          {canSee("lehrling") && !isAdmin && (
+          {/* Meine Dokumente */}
+          {menuVisible("meine_dokumente") && (
             <Card 
               className="cursor-pointer hover:shadow-lg transition-all hover:border-primary/50" 
               onClick={() => navigate("/my-documents")}
@@ -1148,8 +1167,8 @@ export default function Index() {
           )}
 
 
-          {/* Dokumentenbibliothek - Ab Vorarbeiter */}
-          {canSee("vorarbeiter") && (
+          {/* Dokumentenbibliothek */}
+          {menuVisible("dokumentenbibliothek") && (
           <Card
             className="cursor-pointer hover:shadow-lg transition-all hover:border-primary/50"
             onClick={() => navigate("/documents")}
@@ -1169,8 +1188,8 @@ export default function Index() {
           </Card>
           )}
 
-          {/* Admin: Stundenübersicht */}
-          {isAdmin && (
+          {/* Stundenübersicht */}
+          {menuVisible("stundenubersicht") && (
             <Card
               className="cursor-pointer hover:shadow-lg transition-all hover:border-primary/50"
               onClick={() => navigate("/hours-report")}
@@ -1190,8 +1209,8 @@ export default function Index() {
             </Card>
           )}
 
-          {/* Plantafel - Ab Vorarbeiter */}
-          {canSee("vorarbeiter") && (
+          {/* Plantafel */}
+          {menuVisible("plantafel") && (
             <Card
               className="cursor-pointer hover:shadow-lg transition-all hover:border-primary/50"
               onClick={() => navigate("/schedule")}
@@ -1211,8 +1230,8 @@ export default function Index() {
             </Card>
           )}
 
-          {/* Admin: Geräteverwaltung */}
-          {isAdmin && (
+          {/* Geräteverwaltung */}
+          {menuVisible("gerateverwaltung") && (
             <Card
               className="cursor-pointer hover:shadow-lg transition-all hover:border-primary/50"
               onClick={() => navigate("/equipment")}
@@ -1232,8 +1251,8 @@ export default function Index() {
             </Card>
           )}
 
-          {/* Admin: Eingangsrechnungen */}
-          {isAdmin && (
+          {/* Eingangsrechnungen */}
+          {menuVisible("eingangsrechnungen") && (
             <Card
               className="cursor-pointer hover:shadow-lg transition-all hover:border-primary/50"
               onClick={() => navigate("/incoming-invoices")}
@@ -1253,8 +1272,8 @@ export default function Index() {
             </Card>
           )}
 
-          {/* Vorarbeiter+: Evaluierungen & Unterweisungen */}
-          {canSee("vorarbeiter") && (
+          {/* Evaluierungen */}
+          {menuVisible("evaluierungen") && (
             <Card
               className="cursor-pointer hover:shadow-lg transition-all hover:border-primary/50"
               onClick={() => navigate("/safety-evaluations")}
@@ -1274,8 +1293,8 @@ export default function Index() {
             </Card>
           )}
 
-          {/* Alle: Arbeitsschutz */}
-          {!isExternal && (
+          {/* Arbeitsschutz */}
+          {menuVisible("arbeitsschutz") && (
             <Card
               className="cursor-pointer hover:shadow-lg transition-all hover:border-primary/50"
               onClick={() => navigate("/my-safety")}
@@ -1295,8 +1314,8 @@ export default function Index() {
             </Card>
           )}
 
-          {/* Lieferscheine & Rechnungen erfassen */}
-          {canSee("facharbeiter") && (
+          {/* Lieferscheine */}
+          {menuVisible("lieferscheine") && (
             <Card
               className="cursor-pointer hover:shadow-lg transition-all hover:border-primary/50"
               onClick={() => navigate("/incoming-documents")}
@@ -1317,7 +1336,7 @@ export default function Index() {
           )}
 
           {/* Lagerverwaltung */}
-          {canSee("facharbeiter") && (
+          {menuVisible("lagerverwaltung") && (
             <Card
               className="cursor-pointer hover:shadow-lg transition-all hover:border-primary/50"
               onClick={() => navigate("/warehouse")}
@@ -1337,8 +1356,8 @@ export default function Index() {
             </Card>
           )}
 
-          {/* Admin: Mitarbeiter */}
-          {isAdmin && (
+          {/* Admin-Bereich */}
+          {menuVisible("admin_bereich") && (
             <Card
               className="cursor-pointer hover:shadow-lg transition-all hover:border-primary/50"
               onClick={() => navigate("/admin")}
