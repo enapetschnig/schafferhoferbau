@@ -11,7 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { PageHeader } from "@/components/PageHeader";
 import { DocumentDetailDialog, type IncomingDocument } from "@/components/DocumentDetailDialog";
-import { Download, Upload, Filter, FileText, Check, AlertTriangle, XCircle, Loader2, X, Plus, GitCompare } from "lucide-react";
+import { Download, Upload, Filter, FileText, Check, CheckCircle2, AlertTriangle, XCircle, Loader2, X, Plus } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import * as XLSX from "xlsx-js-style";
 import * as pdfjsLib from "pdfjs-dist";
@@ -124,17 +124,6 @@ type ExtractedData = {
   qualitaet: string;
 };
 
-type AbgleichIssue = {
-  type: "supplier_mismatch" | "amount_diff" | "missing_position" | "extra_position" | "price_diff";
-  message: string;
-  severity: "error" | "warning" | "info";
-};
-
-type AbgleichAnalyse = {
-  issues: AbgleichIssue[];
-  summary: string;
-  matchScore: number;
-};
 
 export default function IncomingInvoices() {
   const { toast } = useToast();
@@ -175,8 +164,6 @@ export default function IncomingInvoices() {
   // Abgleich tab state
   const [abgleichLSId, setAbgleichLSId] = useState("");
   const [abgleichREId, setAbgleichREId] = useState("");
-  const [abgleichAnalyse, setAbgleichAnalyse] = useState<AbgleichAnalyse | null>(null);
-  const [analyseLoading, setAnalyseLoading] = useState(false);
 
   const years = Array.from({ length: 5 }, (_, i) => now.getFullYear() - i);
 
@@ -516,42 +503,6 @@ export default function IncomingInvoices() {
     }
   };
 
-  const handleAbgleichAnalyse = async () => {
-    const ls = lieferscheine.find((d) => d.id === abgleichLSId);
-    const re = invoices.find((d) => d.id === abgleichREId);
-    if (!ls || !re) return;
-
-    setAnalyseLoading(true);
-    setAbgleichAnalyse(null);
-    try {
-      const { data, error } = await supabase.functions.invoke("compare-documents", {
-        body: {
-          lieferschein: {
-            lieferant: ls.lieferant,
-            betrag: ls.betrag,
-            positionen: ls.positionen,
-            dokument_nummer: ls.dokument_nummer,
-          },
-          rechnung: {
-            lieferant: re.lieferant,
-            betrag: re.betrag,
-            positionen: re.positionen,
-            dokument_nummer: re.dokument_nummer,
-          },
-        },
-      });
-      if (error) {
-        // data contains the parsed error body from the function (e.g. { error: "OpenAI API error: ..." })
-        const detail = (data as any)?.error || error.message;
-        throw new Error(detail);
-      }
-      setAbgleichAnalyse(data);
-    } catch (err: unknown) {
-      toast({ variant: "destructive", title: "Analyse fehlgeschlagen", description: (err as Error).message });
-    } finally {
-      setAnalyseLoading(false);
-    }
-  };
 
   const selectedLS = lieferscheine.find((d) => d.id === abgleichLSId);
   const selectedRE = invoices.find((d) => d.id === abgleichREId);
@@ -965,7 +916,7 @@ export default function IncomingInvoices() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>Lieferschein auswählen</Label>
-                    <Select value={abgleichLSId} onValueChange={(v) => { setAbgleichLSId(v); setAbgleichAnalyse(null); }}>
+                    <Select value={abgleichLSId} onValueChange={setAbgleichLSId}>
                       <SelectTrigger>
                         <SelectValue placeholder="Lieferschein wählen..." />
                       </SelectTrigger>
@@ -982,7 +933,7 @@ export default function IncomingInvoices() {
                   </div>
                   <div className="space-y-2">
                     <Label>Rechnung auswählen</Label>
-                    <Select value={abgleichREId} onValueChange={(v) => { setAbgleichREId(v); setAbgleichAnalyse(null); }}>
+                    <Select value={abgleichREId} onValueChange={setAbgleichREId}>
                       <SelectTrigger>
                         <SelectValue placeholder="Rechnung wählen..." />
                       </SelectTrigger>
@@ -999,17 +950,6 @@ export default function IncomingInvoices() {
                   </div>
                 </div>
 
-                <Button
-                  onClick={handleAbgleichAnalyse}
-                  disabled={!abgleichLSId || !abgleichREId || analyseLoading}
-                  className="w-full"
-                >
-                  {analyseLoading ? (
-                    <><Loader2 className="w-4 h-4 mr-2 animate-spin" />KI analysiert...</>
-                  ) : (
-                    <><GitCompare className="w-4 h-4 mr-2" />Abgleich starten</>
-                  )}
-                </Button>
 
                 {/* Dokument-Vorschau */}
                 {(selectedLS || selectedRE) && (
@@ -1047,118 +987,67 @@ export default function IncomingInvoices() {
 
                 {/* Positions-Vergleich */}
                 {selectedLS && selectedRE && (
-                  <div>
-                    <h3 className="font-semibold mb-3">Positions-Vergleich</h3>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <p className="text-xs font-medium text-muted-foreground mb-1 uppercase tracking-wide">Lieferschein — {selectedLS.lieferant || "?"} / Nr. {selectedLS.dokument_nummer || "–"}</p>
-                        <div className="border rounded-lg overflow-hidden">
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead className="text-xs">Material</TableHead>
-                                <TableHead className="text-xs w-14">Menge</TableHead>
-                                <TableHead className="text-xs w-20 text-right">Gesamt</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {(selectedLS.positionen as any[] || []).length === 0 ? (
-                                <TableRow><TableCell colSpan={3} className="text-center text-muted-foreground text-xs py-3">Keine Positionen</TableCell></TableRow>
-                              ) : (selectedLS.positionen as any[]).map((p: any, i: number) => {
-                                const rePos = (selectedRE.positionen as any[] || [])[i];
-                                const isMismatch = rePos && p.gesamtpreis && rePos.gesamtpreis && Math.abs(parseFloat(p.gesamtpreis) - parseFloat(rePos.gesamtpreis)) > 0.01;
-                                return (
-                                  <TableRow key={i} className={isMismatch ? "bg-red-50" : ""}>
-                                    <TableCell className="text-xs">{p.material || "–"}</TableCell>
-                                    <TableCell className="text-xs">{p.menge} {p.einheit}</TableCell>
-                                    <TableCell className="text-xs text-right">{p.gesamtpreis ? `€ ${parseFloat(p.gesamtpreis).toFixed(2)}` : "–"}</TableCell>
-                                  </TableRow>
-                                );
-                              })}
-                              <TableRow className="font-medium bg-muted/30">
-                                <TableCell className="text-xs" colSpan={2}>Gesamt</TableCell>
-                                <TableCell className="text-xs text-right">€ {Number(selectedLS.betrag || 0).toFixed(2)}</TableCell>
-                              </TableRow>
-                            </TableBody>
-                          </Table>
-                        </div>
+                  <div className="space-y-3">
+                    {/* Legende */}
+                    <div className="flex items-center gap-4 text-sm p-3 bg-muted/40 rounded-lg border">
+                      <div className="flex items-center gap-1.5">
+                        <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" />
+                        <span>Menge stimmt überein</span>
                       </div>
-                      <div>
-                        <p className="text-xs font-medium text-muted-foreground mb-1 uppercase tracking-wide">Rechnung — {selectedRE.lieferant || "?"} / Nr. {selectedRE.dokument_nummer || "–"}</p>
-                        <div className="border rounded-lg overflow-hidden">
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead className="text-xs">Material</TableHead>
-                                <TableHead className="text-xs w-14">Menge</TableHead>
-                                <TableHead className="text-xs w-20 text-right">Gesamt</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {(selectedRE.positionen as any[] || []).length === 0 ? (
-                                <TableRow><TableCell colSpan={3} className="text-center text-muted-foreground text-xs py-3">Keine Positionen</TableCell></TableRow>
-                              ) : (selectedRE.positionen as any[]).map((p: any, i: number) => {
-                                const lsPos = (selectedLS.positionen as any[] || [])[i];
-                                const isMismatch = lsPos && p.gesamtpreis && lsPos.gesamtpreis && Math.abs(parseFloat(p.gesamtpreis) - parseFloat(lsPos.gesamtpreis)) > 0.01;
-                                return (
-                                  <TableRow key={i} className={isMismatch ? "bg-red-50" : ""}>
-                                    <TableCell className="text-xs">{p.material || "–"}</TableCell>
-                                    <TableCell className="text-xs">{p.menge} {p.einheit}</TableCell>
-                                    <TableCell className="text-xs text-right">{p.gesamtpreis ? `€ ${parseFloat(p.gesamtpreis).toFixed(2)}` : "–"}</TableCell>
-                                  </TableRow>
-                                );
-                              })}
-                              <TableRow className="font-medium bg-muted/30">
-                                <TableCell className="text-xs" colSpan={2}>Gesamt</TableCell>
-                                <TableCell className="text-xs text-right">€ {Number(selectedRE.betrag || 0).toFixed(2)}</TableCell>
-                              </TableRow>
-                            </TableBody>
-                          </Table>
-                        </div>
+                      <div className="flex items-center gap-1.5">
+                        <XCircle className="w-4 h-4 text-red-500 shrink-0" />
+                        <span>Bitte kontrollieren</span>
                       </div>
                     </div>
-                  </div>
-                )}
 
-                {/* KI-Analyse Ergebnis */}
-                {abgleichAnalyse && (
-                  <div className="space-y-4 border rounded-lg p-4">
-                    <div className="flex items-center gap-3">
-                      <h3 className="font-semibold">KI-Analyse</h3>
-                      <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
-                        abgleichAnalyse.matchScore >= 80 ? "bg-green-100 text-green-800" :
-                        abgleichAnalyse.matchScore >= 50 ? "bg-orange-100 text-orange-800" :
-                        "bg-red-100 text-red-800"
-                      }`}>
-                        {abgleichAnalyse.matchScore}% Übereinstimmung
-                      </span>
+                    <div className="border rounded-lg overflow-hidden">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="text-xs w-8"></TableHead>
+                            <TableHead className="text-xs">Material</TableHead>
+                            <TableHead className="text-xs w-28">Menge (Lieferschein)</TableHead>
+                            <TableHead className="text-xs w-28">Menge (Rechnung)</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {(() => {
+                            const lsPos: any[] = selectedLS.positionen as any[] || [];
+                            const rePos: any[] = selectedRE.positionen as any[] || [];
+                            const maxLen = Math.max(lsPos.length, rePos.length);
+                            if (maxLen === 0) {
+                              return (
+                                <TableRow>
+                                  <TableCell colSpan={4} className="text-center text-muted-foreground text-xs py-3">
+                                    Keine Positionen vorhanden
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            }
+                            return Array.from({ length: maxLen }).map((_, i) => {
+                              const ls = lsPos[i];
+                              const re = rePos[i];
+                              const lsMenge = ls ? `${ls.menge || "–"} ${ls.einheit || ""}`.trim() : null;
+                              const reMenge = re ? `${re.menge || "–"} ${re.einheit || ""}`.trim() : null;
+                              const match = lsMenge !== null && reMenge !== null && lsMenge === reMenge;
+                              return (
+                                <TableRow key={i}>
+                                  <TableCell className="text-xs">
+                                    {match
+                                      ? <CheckCircle2 className="w-4 h-4 text-green-600" />
+                                      : <XCircle className="w-4 h-4 text-red-500" />
+                                    }
+                                  </TableCell>
+                                  <TableCell className="text-xs">{ls?.material || re?.material || "–"}</TableCell>
+                                  <TableCell className="text-xs">{lsMenge ?? <span className="text-muted-foreground">–</span>}</TableCell>
+                                  <TableCell className="text-xs">{reMenge ?? <span className="text-muted-foreground">–</span>}</TableCell>
+                                </TableRow>
+                              );
+                            });
+                          })()}
+                        </TableBody>
+                      </Table>
                     </div>
-
-                    {abgleichAnalyse.issues.length > 0 && (
-                      <div className="space-y-2">
-                        {abgleichAnalyse.issues.map((issue, i) => (
-                          <div key={i} className={`flex items-start gap-2 p-3 rounded-lg text-sm ${
-                            issue.severity === "error" ? "bg-red-50 text-red-800" :
-                            issue.severity === "warning" ? "bg-orange-50 text-orange-800" :
-                            "bg-blue-50 text-blue-800"
-                          }`}>
-                            <span className="shrink-0">
-                              {issue.severity === "error" ? "❌" : issue.severity === "warning" ? "⚠️" : "ℹ️"}
-                            </span>
-                            <span>{issue.message}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {abgleichAnalyse.issues.length === 0 && (
-                      <div className="flex items-center gap-2 p-3 rounded-lg bg-green-50 text-green-800 text-sm">
-                        <Check className="w-4 h-4 shrink-0" />
-                        <span>Keine Unstimmigkeiten gefunden</span>
-                      </div>
-                    )}
-
-                    <p className="text-sm text-muted-foreground border-t pt-3">{abgleichAnalyse.summary}</p>
                   </div>
                 )}
               </CardContent>

@@ -34,7 +34,15 @@ export function WarehouseProductsTab() {
   }, []);
 
   const handleDelete = async (id: string) => {
-    await supabase.from("warehouse_products").delete().eq("id", id);
+    const { error } = await supabase.from("warehouse_products").delete().eq("id", id);
+    if (error) {
+      toast({
+        variant: "destructive",
+        title: "Löschen nicht möglich",
+        description: "Das Produkt hat noch Lagerbewegungen oder Lieferscheine und kann daher nicht gelöscht werden.",
+      });
+      return;
+    }
     toast({ title: "Produkt gelöscht" });
     fetchProducts();
   };
