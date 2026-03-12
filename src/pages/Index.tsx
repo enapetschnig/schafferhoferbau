@@ -1371,13 +1371,13 @@ export default function Index() {
                 <div className="h-12 w-12 rounded-lg bg-blue-500/10 flex items-center justify-center">
                   <FileText className="h-6 w-6 text-blue-500" />
                 </div>
-                <CardTitle className="text-lg sm:text-xl">Eingangsrechnungen & Abgleich</CardTitle>
+                <CardTitle className="text-lg sm:text-xl">Lieferscheine</CardTitle>
                 <CardDescription className="text-sm">
-                  Lieferscheine & Rechnungen erfassen und abgleichen
+                  Lieferscheine & Rechnungen fotografieren
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <Button className="w-full" size="sm" variant="outline">Öffnen</Button>
+                <Button className="w-full" size="sm" variant="outline">Erfassen</Button>
               </CardContent>
             </Card>
           )}
