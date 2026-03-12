@@ -29,17 +29,19 @@ type Evaluation = {
 };
 
 const STATUS_LABELS: Record<string, string> = {
+  warte_auf_unterschrift: "Warte auf Unterschrift",
+  abgeschlossen: "Abgeschlossen",
   entwurf: "Entwurf",
   ausgefuellt: "Ausgefüllt",
   diskutiert: "Diskutiert",
-  abgeschlossen: "Abgeschlossen",
 };
 
 const STATUS_COLORS: Record<string, string> = {
+  warte_auf_unterschrift: "bg-orange-100 text-orange-700",
+  abgeschlossen: "bg-green-100 text-green-700",
   entwurf: "bg-gray-100 text-gray-700",
   ausgefuellt: "bg-blue-100 text-blue-700",
   diskutiert: "bg-yellow-100 text-yellow-700",
-  abgeschlossen: "bg-green-100 text-green-700",
 };
 
 const TYP_LABELS: Record<string, string> = {
@@ -132,6 +134,7 @@ export default function SafetyEvaluations() {
         project_id: form.project_id,
         created_by: userId,
         checklist_items: checklistItems,
+        status: "warte_auf_unterschrift",
       })
       .select("id")
       .single();
@@ -171,12 +174,10 @@ export default function SafetyEvaluations() {
       });
     }
 
-    toast({ title: "Evaluierung erstellt" });
+    toast({ title: "Evaluierung erstellt", description: "Die Mitarbeiter wurden benachrichtigt." });
     setShowCreate(false);
     resetForm();
     fetchData();
-
-    if (data) navigate(`/safety-evaluations/${data.id}`);
     setSaving(false);
   };
 

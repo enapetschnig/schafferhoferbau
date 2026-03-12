@@ -14,17 +14,19 @@ import { SafetyEmployeeSelector } from "@/components/safety/SafetyEmployeeSelect
 import { generateSafetyEvaluationPDF } from "@/lib/generateSafetyEvaluationPDF";
 
 const STATUS_LABELS: Record<string, string> = {
+  warte_auf_unterschrift: "Warte auf Unterschrift",
+  abgeschlossen: "Abgeschlossen",
   entwurf: "Entwurf",
   ausgefuellt: "Ausgefüllt",
   diskutiert: "Diskutiert",
-  abgeschlossen: "Abgeschlossen",
 };
 
 const STATUS_COLORS: Record<string, string> = {
+  warte_auf_unterschrift: "bg-orange-100 text-orange-700",
+  abgeschlossen: "bg-green-100 text-green-700",
   entwurf: "bg-gray-100 text-gray-700",
   ausgefuellt: "bg-blue-100 text-blue-700",
   diskutiert: "bg-yellow-100 text-yellow-700",
-  abgeschlossen: "bg-green-100 text-green-700",
 };
 
 type Employee = { id: string; vorname: string; nachname: string };
@@ -50,7 +52,6 @@ export default function SafetyEvaluationDetail() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [userId, setUserId] = useState("");
-  const [isCreator, setIsCreator] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
 
   // Editable state
@@ -82,7 +83,6 @@ export default function SafetyEvaluationDetail() {
     setChecklistItems((ev.checklist_items as ChecklistItem[]) || []);
     setAnswers((ev.filled_answers as ChecklistAnswer[]) || []);
     setDiskussionNotizen(ev.diskussion_notizen || "");
-    setIsCreator(user?.id === ev.created_by);
 
     // Project name
     const { data: proj } = await supabase.from("projects").select("name").eq("id", ev.project_id).single();
@@ -116,8 +116,8 @@ export default function SafetyEvaluationDetail() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const canEdit = isCreator || isAdmin;
-  const status = evaluation?.status || "entwurf";
+  const canEdit = false;
+  const status = evaluation?.status || "warte_auf_unterschrift";
 
   const handleSaveChecklistStructure = async () => {
     if (!id) return;
@@ -220,10 +220,12 @@ export default function SafetyEvaluationDetail() {
             Löschen
           </Button>
         )}
-        <Button variant="outline" size="sm" onClick={handleExportPDF}>
-          <Download className="w-4 h-4 mr-1" />
-          PDF
-        </Button>
+        {status === "abgeschlossen" && (
+          <Button variant="outline" size="sm" onClick={handleExportPDF}>
+            <Download className="w-4 h-4 mr-1" />
+            PDF
+          </Button>
+        )}
         <Badge className={STATUS_COLORS[status]}>{STATUS_LABELS[status]}</Badge>
       </div>
 
