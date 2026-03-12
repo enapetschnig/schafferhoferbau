@@ -1317,7 +1317,7 @@ export default function Index() {
                 </div>
                 <CardTitle className="text-lg sm:text-xl">Evaluierungen</CardTitle>
                 <CardDescription className="text-sm">
-                  Sicherheitsunterweisungen & Evaluierungen
+                  Evaluierungen erstellen & verwalten
                 </CardDescription>
               </CardHeader>
               <CardContent>

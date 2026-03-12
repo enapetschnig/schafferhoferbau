@@ -1,11 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Save, FileSpreadsheet, MessageSquare, CheckCircle2, Download } from "lucide-react";
+import { ArrowLeft, Save, FileSpreadsheet, MessageSquare, Download, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -120,27 +119,33 @@ export default function SafetyEvaluationDetail() {
   const canEdit = isCreator || isAdmin;
   const status = evaluation?.status || "entwurf";
 
-  const handleSaveChecklist = async () => {
+  const handleSaveChecklistStructure = async () => {
     if (!id) return;
     setSaving(true);
 
-    const newStatus = status === "entwurf" ? "ausgefuellt" : status;
     const { error } = await supabase
       .from("safety_evaluations")
-      .update({
-        checklist_items: checklistItems,
-        filled_answers: answers,
-        status: newStatus,
-      })
+      .update({ checklist_items: checklistItems })
       .eq("id", id);
 
     if (error) {
       toast({ variant: "destructive", title: "Fehler", description: error.message });
     } else {
       toast({ title: "Checkliste gespeichert" });
-      setEvaluation((prev: any) => ({ ...prev, status: newStatus, filled_answers: answers, checklist_items: checklistItems }));
+      setEvaluation((prev: any) => ({ ...prev, checklist_items: checklistItems }));
     }
     setSaving(false);
+  };
+
+  const handleDelete = async () => {
+    if (!window.confirm("Evaluierung wirklich löschen? Dieser Vorgang kann nicht rückgängig gemacht werden.")) return;
+    const { error } = await supabase.from("safety_evaluations").delete().eq("id", id);
+    if (error) {
+      toast({ variant: "destructive", title: "Fehler", description: error.message });
+    } else {
+      toast({ title: "Evaluierung gelöscht" });
+      navigate("/safety-evaluations");
+    }
   };
 
   const handleSaveDiscussion = async () => {
@@ -231,6 +236,12 @@ export default function SafetyEvaluationDetail() {
             {evaluation.kategorie && ` · ${evaluation.kategorie}`}
           </p>
         </div>
+        {isAdmin && (
+          <Button variant="outline" size="sm" className="text-destructive hover:bg-destructive/10" onClick={handleDelete}>
+            <Trash2 className="w-4 h-4 mr-1" />
+            Löschen
+          </Button>
+        )}
         <Button variant="outline" size="sm" onClick={handleExportPDF}>
           <Download className="w-4 h-4 mr-1" />
           PDF
@@ -266,13 +277,13 @@ export default function SafetyEvaluationDetail() {
                 items={checklistItems}
                 answers={answers}
                 onChange={setAnswers}
-                readOnly={!canEdit || status === "abgeschlossen"}
+                readOnly={true}
               />
-              {canEdit && status !== "abgeschlossen" && checklistItems.length > 0 && (
+              {canEdit && status === "entwurf" && checklistItems.length > 0 && (
                 <div className="flex justify-end mt-4">
-                  <Button onClick={handleSaveChecklist} disabled={saving}>
+                  <Button onClick={handleSaveChecklistStructure} disabled={saving}>
                     <Save className="w-4 h-4 mr-1" />
-                    {saving ? "Speichert..." : status === "entwurf" ? "Speichern & als ausgefüllt markieren" : "Speichern"}
+                    {saving ? "Speichert..." : "Checkliste speichern"}
                   </Button>
                 </div>
               )}
