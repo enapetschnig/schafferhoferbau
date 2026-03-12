@@ -15,8 +15,11 @@ CREATE TABLE IF NOT EXISTS chat_channels (
 
 ALTER TABLE chat_channels ENABLE ROW LEVEL SECURITY;
 
--- Add to realtime publication
-ALTER PUBLICATION supabase_realtime ADD TABLE chat_channels;
+-- Add to realtime publication (idempotent)
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE chat_channels;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- Admin sees all channels
 -- Employees see broadcast channels for their role (or all-roles channels)
