@@ -7,7 +7,7 @@ const PROMPT = `Du analysierst den Inhalt einer Excel-Datei für eine Sicherheit
 Extrahiere alle Prüfpunkte/Fragen als strukturierte Checkliste.
 Jeder Prüfpunkt hat: category (optional, z.B. "Brandschutz") und question (der eigentliche Prüfpunkt/die Frage).
 Übernimm die Inhalte 1:1 — erfinde nichts, lass nichts weg.
-Gib NUR JSON zurück, kein erklärender Text: [{"category":"...","question":"..."}]`;
+Gib NUR ein JSON-Objekt zurück: {"items":[{"category":"...","question":"..."}]}`;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -43,6 +43,7 @@ Deno.serve(async (req) => {
       body: JSON.stringify({
         model: "gpt-4o",
         max_tokens: 4096,
+        response_format: { type: "json_object" },
         messages: [
           {
             role: "user",
@@ -62,12 +63,8 @@ Deno.serve(async (req) => {
     }
 
     const result = await response.json();
-    const text = result.choices?.[0]?.message?.content || "[]";
-
-    // Extract JSON from the response (handle potential markdown code blocks)
-    const jsonMatch = text.match(/\[[\s\S]*\]/);
-    const jsonStr = jsonMatch ? jsonMatch[0] : text;
-    const items = JSON.parse(jsonStr);
+    const parsed = JSON.parse(result.choices?.[0]?.message?.content || "{}");
+    const items = Array.isArray(parsed.items) ? parsed.items : [];
 
     return new Response(JSON.stringify({ items }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
