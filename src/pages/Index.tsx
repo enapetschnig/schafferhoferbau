@@ -96,6 +96,7 @@ export default function Index() {
   const { handleRestartInstallGuide } = useOnboarding();
   const { permission: pushPermission, requestPermission: requestPush } = usePushNotifications();
   const [menuSettings, setMenuSettings] = useState<Record<string, boolean>>({});
+  const [lohnzettelNotifCount, setLohnzettelNotifCount] = useState(0);
 
   // Role-based visibility helper
   const ROLE_LEVEL: Record<string, number> = {
@@ -508,6 +509,16 @@ export default function Index() {
       setPendingSafetyCount(count);
     };
 
+    const fetchLohnzettelNotifs = async () => {
+      const { count } = await supabase
+        .from("notifications")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", userId)
+        .eq("type", "lohnzettel_upload")
+        .eq("is_read", false);
+      setLohnzettelNotifCount(count || 0);
+    };
+
     await Promise.all([
       fetchProjects(),
       fetchRecentEntries(userId, role),
@@ -517,9 +528,21 @@ export default function Index() {
       fetchAllProjectsForChat(),
       fetchChatPreviews(userId, role === "administrator"),
       fetchPendingSafety(),
+      fetchLohnzettelNotifs(),
     ]);
 
     setLoading(false);
+  };
+
+  const dismissLohnzettelNotifs = async () => {
+    setLohnzettelNotifCount(0);
+    if (!user) return;
+    await supabase
+      .from("notifications")
+      .update({ is_read: true })
+      .eq("user_id", user.id)
+      .eq("type", "lohnzettel_upload")
+      .eq("is_read", false);
   };
 
   useEffect(() => {
@@ -793,6 +816,28 @@ export default function Index() {
               </p>
             </div>
             <ArrowRight className="h-5 w-5 text-orange-600 shrink-0" />
+          </div>
+        )}
+
+        {/* Lohnzettel-Benachrichtigung */}
+        {lohnzettelNotifCount > 0 && (
+          <div
+            className="mb-4 flex items-center gap-3 rounded-lg border border-blue-400/50 bg-blue-50 dark:bg-blue-950/20 p-3 cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-950/30 transition-colors"
+            onClick={() => { dismissLohnzettelNotifs(); navigate("/my-documents"); }}
+          >
+            <FileText className="h-5 w-5 text-blue-600 shrink-0" />
+            <div className="flex-1">
+              <p className="font-semibold text-sm text-blue-800 dark:text-blue-200">
+                {lohnzettelNotifCount === 1 ? "Neuer Lohnzettel verfügbar" : `${lohnzettelNotifCount} neue Lohnzettel verfügbar`}
+              </p>
+              <p className="text-xs text-blue-700 dark:text-blue-300">Zu Meine Dokumente →</p>
+            </div>
+            <button
+              className="ml-2 p-1 rounded hover:bg-blue-200 dark:hover:bg-blue-800"
+              onClick={(e) => { e.stopPropagation(); dismissLohnzettelNotifs(); }}
+            >
+              <X className="h-4 w-4 text-blue-600" />
+            </button>
           </div>
         )}
 
