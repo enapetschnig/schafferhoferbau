@@ -207,7 +207,14 @@ serve(async (req) => {
 
 Hier ist der extrahierte Text des Dokuments:
 
-${truncatedText}`;
+${truncatedText}
+
+------------------------------------
+
+Achte beim Lesen der Zahlen besonders auf:
+- Tausendertrennzeichen entfernen: "1.000" → "1000", "2.500,75" → "2500.75"
+- Dezimalkomma in Punkt umwandeln: "1,5" → "1.5", "10,25" → "10.25"
+- Menge und Einheit sind getrennte Felder — nie kombinieren`;
 
       messages = [{ role: "user", content: prompt }];
 
@@ -217,7 +224,10 @@ ${truncatedText}`;
 
 ------------------------------------
 
-Lies den Text des Dokuments buchstabengenau vom Bild ab.`;
+Lies den Text des Dokuments buchstabengenau vom Bild ab. Achte besonders auf:
+- Ziffern: unterscheide 0/O, 1/I/l, 6/9
+- Dezimalstellen bei Mengen (z.B. 1,5 → "1.5")
+- Tausendertrennzeichen entfernen (z.B. 1.000 → "1000")`;
 
       messages = [{
         role: "user",
@@ -243,6 +253,7 @@ Lies den Text des Dokuments buchstabengenau vom Bild ab.`;
       body: JSON.stringify({
         model: "gpt-4o",
         max_tokens: 16000,
+        temperature: 0,
         response_format: { type: "json_object" },
         messages,
       }),

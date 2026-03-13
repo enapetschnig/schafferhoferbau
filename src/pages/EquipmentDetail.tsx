@@ -44,7 +44,7 @@ export default function EquipmentDetail() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [profiles, setProfiles] = useState<Record<string, string>>({});
   const [projectMap, setProjectMap] = useState<Record<string, string>>({});
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [canManage, setCanManage] = useState(false);
   const [loading, setLoading] = useState(true);
 
   // Wartung dialog
@@ -67,7 +67,7 @@ export default function EquipmentDetail() {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
       const { data: roleData } = await supabase.from("user_roles").select("role").eq("user_id", user.id).maybeSingle();
-      setIsAdmin(roleData?.role === "administrator");
+      setCanManage(['administrator','vorarbeiter','facharbeiter'].includes(roleData?.role ?? ''));
     }
 
     const { data: eq } = await supabase.from("equipment").select("*").eq("id", id).single();
@@ -219,7 +219,7 @@ export default function EquipmentDetail() {
         </Card>
 
         {/* Actions */}
-        {isAdmin && (
+        {canManage && (
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={() => { setTransferTyp(item.standort_typ === "lager" ? "baustelle" : "lager"); setShowTransfer(true); }}>
               <ArrowRightLeft className="w-4 h-4 mr-1" /> Umlagern

@@ -54,7 +54,7 @@ export default function EquipmentPage() {
   const [items, setItems] = useState<Equipment[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [canManage, setCanManage] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterKategorie, setFilterKategorie] = useState("alle");
   const [filterStandort, setFilterStandort] = useState("alle");
@@ -83,7 +83,7 @@ export default function EquipmentPage() {
     if (!user) return;
 
     const { data: roleData } = await supabase.from("user_roles").select("role").eq("user_id", user.id).maybeSingle();
-    setIsAdmin(roleData?.role === "administrator");
+    setCanManage(['administrator','vorarbeiter','facharbeiter'].includes(roleData?.role ?? ''));
 
     const { data } = await supabase.from("equipment").select("*").order("name");
     if (data) {
@@ -267,7 +267,7 @@ export default function EquipmentPage() {
               <Download className="w-4 h-4 mr-1" /> Excel
             </Button>
           )}
-          {isAdmin && (
+          {canManage && (
             <Button size="sm" onClick={() => { resetForm(); setShowForm(true); }}>
               <Plus className="w-4 h-4 mr-1" /> Neues Gerät
             </Button>

@@ -54,6 +54,7 @@ export default function IncomingDocuments() {
   const [showCaptureDialog, setShowCaptureDialog] = useState(false);
   const [selectedDoc, setSelectedDoc] = useState<IncomingDocument | null>(null);
   const [showDetailDialog, setShowDetailDialog] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   const years = Array.from({ length: 5 }, (_, i) => now.getFullYear() - i);
 
@@ -68,6 +69,11 @@ export default function IncomingDocuments() {
   const fetchProjects = async () => {
     const { data } = await supabase.from("projects").select("id, name").order("name");
     if (data) setProjects(data);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data: roleData } = await supabase.from("user_roles").select("role").eq("user_id", user.id).maybeSingle();
+      setIsAdmin(roleData?.role === "administrator");
+    }
   };
 
   const fetchDocuments = useCallback(async () => {
@@ -538,7 +544,7 @@ export default function IncomingDocuments() {
         document={selectedDoc}
         open={showDetailDialog}
         onOpenChange={setShowDetailDialog}
-        isAdmin={false}
+        isAdmin={isAdmin}
         onUpdate={() => { fetchDocuments(); setShowDetailDialog(false); }}
       />
     </div>

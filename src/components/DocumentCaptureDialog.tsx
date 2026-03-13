@@ -137,7 +137,18 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess }: Documen
             for (let i = 1; i <= pdf.numPages; i++) {
               const page = await pdf.getPage(i);
               const textContent = await page.getTextContent();
-              const pageText = textContent.items.map((item: any) => item.str).join(" ");
+              // Y-Position auswerten: Zeilenumbrüche einfügen wenn neue Zeile beginnt
+              let lastY: number | null = null;
+              const parts: string[] = [];
+              for (const item of textContent.items as any[]) {
+                const y = Math.round(item.transform[5]);
+                if (lastY !== null && Math.abs(y - lastY) > 3) {
+                  parts.push("\n");
+                }
+                parts.push(item.str);
+                lastY = y;
+              }
+              const pageText = parts.join(" ").replace(/  +/g, " ").trim();
               pageTexts.push(`--- Seite ${i} ---\n${pageText}`);
             }
             const fullText = pageTexts.join("\n\n");
@@ -152,7 +163,7 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess }: Documen
             const pageCanvases: HTMLCanvasElement[] = [];
             for (let i = 1; i <= pdf.numPages; i++) {
               const page = await pdf.getPage(i);
-              const viewport = page.getViewport({ scale: 1.5 });
+              const viewport = page.getViewport({ scale: 2.0 });
               const canvas = document.createElement("canvas");
               canvas.width = viewport.width;
               canvas.height = viewport.height;
