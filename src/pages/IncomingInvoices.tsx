@@ -165,7 +165,17 @@ export default function IncomingInvoices() {
   const [abgleichLSId, setAbgleichLSId] = useState("");
   const [abgleichREId, setAbgleichREId] = useState("");
 
+  // Lieferscheine tab filter state
+  const [filterLieferantLS, setFilterLieferantLS] = useState("");
+  const [filterTypLS, setFilterTypLS] = useState("alle");
+
   const years = Array.from({ length: 5 }, (_, i) => now.getFullYear() - i);
+
+  const filteredLieferscheine = lieferscheine.filter((d) => {
+    const matchTyp = filterTypLS === "alle" || d.typ === filterTypLS;
+    const matchLieferant = !filterLieferantLS || (d.lieferant || "").toLowerCase().includes(filterLieferantLS.toLowerCase());
+    return matchTyp && matchLieferant;
+  });
 
   useEffect(() => {
     fetchProjects();
@@ -535,9 +545,12 @@ export default function IncomingInvoices() {
         </div>
 
         <Tabs defaultValue="liste" className="w-full">
-          <TabsList className="grid w-full grid-cols-3 mb-4">
+          <TabsList className="grid w-full grid-cols-4 mb-4">
             <TabsTrigger value="liste" className="flex items-center gap-2">
               <FileText className="w-4 h-4" /> Rechnungen
+            </TabsTrigger>
+            <TabsTrigger value="lieferscheine" className="flex items-center gap-2">
+              <FileText className="w-4 h-4" /> Lieferscheine
             </TabsTrigger>
             <TabsTrigger value="upload" className="flex items-center gap-2">
               <Upload className="w-4 h-4" /> Hochladen
@@ -1055,6 +1068,75 @@ export default function IncomingInvoices() {
                     </div>
                   </div>
                 )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Tab: Lieferscheine */}
+          <TabsContent value="lieferscheine">
+            <Card>
+              <CardHeader>
+                <div className="flex flex-wrap items-center gap-3">
+                  <Filter className="w-5 h-5 text-muted-foreground shrink-0" />
+                  <Input
+                    placeholder="Lieferant suchen..."
+                    value={filterLieferantLS}
+                    onChange={(e) => setFilterLieferantLS(e.target.value)}
+                    className="w-[160px] h-10"
+                  />
+                  <Select value={filterTypLS} onValueChange={setFilterTypLS}>
+                    <SelectTrigger className="w-[160px] h-10"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="alle">Alle Typen</SelectItem>
+                      <SelectItem value="lieferschein">Lieferschein</SelectItem>
+                      <SelectItem value="lagerlieferschein">Lagerlieferschein</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </CardHeader>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Datum</TableHead>
+                      <TableHead>Typ</TableHead>
+                      <TableHead>Lieferant</TableHead>
+                      <TableHead className="hidden md:table-cell">Projekt</TableHead>
+                      <TableHead className="hidden md:table-cell">Hochgeladen von</TableHead>
+                      <TableHead className="hidden sm:table-cell">Belegnr.</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredLieferscheine.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                          Keine Lieferscheine im gewählten Zeitraum
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      filteredLieferscheine.map((doc) => (
+                        <TableRow
+                          key={doc.id}
+                          className="cursor-pointer hover:bg-muted/50"
+                          onClick={() => { setSelectedDoc(doc); setShowDetailDialog(true); }}
+                        >
+                          <TableCell className="text-sm">
+                            {doc.datum ? format(parseISO(doc.datum), "dd.MM.yyyy") : "–"}
+                          </TableCell>
+                          <TableCell>
+                            <Badge className={doc.typ === "lagerlieferschein" ? "bg-yellow-100 text-yellow-800" : "bg-blue-100 text-blue-800"}>
+                              {doc.typ === "lagerlieferschein" ? "Lagerliefersch." : "Lieferschein"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="font-medium">{doc.lieferant || "–"}</TableCell>
+                          <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{(doc as any).project_name || "–"}</TableCell>
+                          <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{(doc as any).employee_name || "–"}</TableCell>
+                          <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">{doc.belegnummer || "–"}</TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
               </CardContent>
             </Card>
           </TabsContent>
