@@ -69,7 +69,7 @@ Deno.serve(async (req) => {
     }
 
     // Generate registration link
-    const appUrl = 'https://www.schafferhoferbau.at';
+    const appUrl = 'https://www.schafferhoferbau.app';
     const registrationLink = `${appUrl}/auth`;
 
     // Compose SMS message
