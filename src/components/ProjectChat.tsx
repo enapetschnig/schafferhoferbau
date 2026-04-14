@@ -16,6 +16,10 @@ type ChatMessage = {
   sender_name?: string;
 };
 
+type Reaction = { id: string; message_id: string; user_id: string; emoji: string };
+
+const QUICK_EMOJIS = ["👍", "❤️", "✅", "👏", "🔥"];
+
 const PAGE_SIZE = 50;
 
 export function ProjectChat({ projectId, projectName, isAdmin }: { projectId: string; projectName?: string; isAdmin?: boolean }) {
@@ -30,6 +34,8 @@ export function ProjectChat({ projectId, projectName, isAdmin }: { projectId: st
   const [initialLoad, setInitialLoad] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [reactions, setReactions] = useState<Reaction[]>([]);
+  const [showEmojiPicker, setShowEmojiPicker] = useState<string | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -86,6 +92,16 @@ export function ProjectChat({ projectId, projectName, isAdmin }: { projectId: st
       setMessages(enriched);
       setHasMore((data || []).length === PAGE_SIZE);
       setInitialLoad(false);
+
+      // Reaktionen laden
+      const msgIds = (data || []).map((m: any) => m.id);
+      if (msgIds.length > 0) {
+        const { data: reactData } = await supabase
+          .from("message_reactions")
+          .select("*")
+          .in("message_id", msgIds);
+        if (reactData) setReactions(reactData as Reaction[]);
+      }
     };
 
     loadMessages();
@@ -417,6 +433,81 @@ export function ProjectChat({ projectId, projectName, isAdmin }: { projectId: st
                   {msg.message && (
                     <p className="text-sm whitespace-pre-wrap break-words">{msg.message}</p>
                   )}
+
+                  {/* Emoji-Reaktionen */}
+                  {(() => {
+                    const msgReactions = reactions.filter(r => r.message_id === msg.id);
+                    const grouped: Record<string, string[]> = {};
+                    msgReactions.forEach(r => {
+                      if (!grouped[r.emoji]) grouped[r.emoji] = [];
+                      grouped[r.emoji].push(r.user_id);
+                    });
+                    return (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {Object.entries(grouped).map(([emoji, userIds]) => (
+                          <button
+                            key={emoji}
+                            className={`text-xs px-1.5 py-0.5 rounded-full border ${
+                              currentUserId && userIds.includes(currentUserId)
+                                ? "bg-primary/20 border-primary/40"
+                                : "bg-muted/50 border-muted-foreground/20"
+                            } hover:bg-primary/30`}
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              if (!currentUserId) return;
+                              if (userIds.includes(currentUserId)) {
+                                const r = msgReactions.find(r => r.emoji === emoji && r.user_id === currentUserId);
+                                if (r) {
+                                  await supabase.from("message_reactions").delete().eq("id", r.id);
+                                  setReactions(prev => prev.filter(p => p.id !== r.id));
+                                }
+                              } else {
+                                const { data } = await supabase.from("message_reactions").insert({
+                                  message_id: msg.id, user_id: currentUserId, emoji
+                                }).select().single();
+                                if (data) setReactions(prev => [...prev, data as Reaction]);
+                              }
+                            }}
+                          >
+                            {emoji} {userIds.length > 1 ? userIds.length : ""}
+                          </button>
+                        ))}
+                        <button
+                          className="text-xs px-1.5 py-0.5 rounded-full border border-dashed border-muted-foreground/30 hover:bg-muted/50 text-muted-foreground"
+                          onClick={(e) => { e.stopPropagation(); setShowEmojiPicker(showEmojiPicker === msg.id ? null : msg.id); }}
+                        >
+                          +
+                        </button>
+                        {showEmojiPicker === msg.id && (
+                          <div className="flex gap-1 p-1 bg-card rounded-lg border shadow-lg">
+                            {QUICK_EMOJIS.map(emoji => (
+                              <button
+                                key={emoji}
+                                className="text-lg hover:scale-125 transition-transform px-0.5"
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  if (!currentUserId) return;
+                                  const existing = msgReactions.find(r => r.emoji === emoji && r.user_id === currentUserId);
+                                  if (existing) {
+                                    await supabase.from("message_reactions").delete().eq("id", existing.id);
+                                    setReactions(prev => prev.filter(p => p.id !== existing.id));
+                                  } else {
+                                    const { data } = await supabase.from("message_reactions").insert({
+                                      message_id: msg.id, user_id: currentUserId, emoji
+                                    }).select().single();
+                                    if (data) setReactions(prev => [...prev, data as Reaction]);
+                                  }
+                                  setShowEmojiPicker(null);
+                                }}
+                              >
+                                {emoji}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {/* Timestamp */}
                   <p className={`text-[10px] mt-0.5 text-right ${isOwn ? "opacity-70" : "text-muted-foreground"}`}>
