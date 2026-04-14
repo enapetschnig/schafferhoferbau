@@ -34,6 +34,8 @@ const ProjectOverview = () => {
   const [projectInfo, setProjectInfo] = useState<{
     adresse: string | null; plz: string | null; bauherr: string | null;
     bauherr_kontakt: string | null; bauleiter: string | null;
+    bauherr2: string | null; bauherr2_kontakt: string | null;
+    baustellenart: string | null; anfahrt_ueber_100km: boolean | null;
     budget: number | null; start_datum: string | null; end_datum: string | null;
     beschreibung: string | null; kunde_telefon: string | null; kunde_email: string | null;
     erreichbarkeit: string | null; besonderheiten: string | null; hinweise: string | null;
@@ -76,6 +78,7 @@ const ProjectOverview = () => {
 
   // Contacts state
   const [contacts, setContacts] = useState<Contact[]>([]);
+  const [showAllContacts, setShowAllContacts] = useState(false);
   const [showContactDialog, setShowContactDialog] = useState(false);
   const [editingContact, setEditingContact] = useState<Contact | null>(null);
   const [contactForm, setContactForm] = useState({ name: "", rolle: "", telefon: "", email: "", firma: "", phase: "bauphase", notizen: "" });
@@ -91,6 +94,9 @@ const ProjectOverview = () => {
   const [editForm, setEditForm] = useState({
     name: "", beschreibung: "", adresse: "", plz: "",
     bauherr: "", bauherr_kontakt: "", bauleiter: "",
+    bauherr2: "", bauherr2_kontakt: "",
+    baustellenart: "" as string,
+    anfahrt_ueber_100km: false,
     budget: "", start_datum: "", end_datum: "",
     kunde_telefon: "", kunde_email: "",
     erreichbarkeit: "", besonderheiten: "", hinweise: "",
@@ -106,6 +112,10 @@ const ProjectOverview = () => {
       plz: projectInfo.plz || "",
       bauherr: projectInfo.bauherr || "",
       bauherr_kontakt: projectInfo.bauherr_kontakt || "",
+      bauherr2: projectInfo.bauherr2 || "",
+      bauherr2_kontakt: projectInfo.bauherr2_kontakt || "",
+      baustellenart: projectInfo.baustellenart || "",
+      anfahrt_ueber_100km: projectInfo.anfahrt_ueber_100km || false,
       bauleiter: projectInfo.bauleiter || "",
       budget: projectInfo.budget != null ? String(projectInfo.budget) : "",
       start_datum: projectInfo.start_datum || "",
@@ -131,6 +141,10 @@ const ProjectOverview = () => {
         plz: editForm.plz.trim() || null,
         bauherr: editForm.bauherr.trim() || null,
         bauherr_kontakt: editForm.bauherr_kontakt.trim() || null,
+        bauherr2: editForm.bauherr2.trim() || null,
+        bauherr2_kontakt: editForm.bauherr2_kontakt.trim() || null,
+        baustellenart: editForm.baustellenart || null,
+        anfahrt_ueber_100km: editForm.anfahrt_ueber_100km,
         bauleiter: editForm.bauleiter.trim() || null,
         budget: editForm.budget ? Number(editForm.budget) : null,
         start_datum: editForm.start_datum || null,
@@ -489,7 +503,7 @@ const ProjectOverview = () => {
           </CardHeader>
           {contacts.length > 0 ? (
             <CardContent className="pt-0 space-y-2">
-              {contacts.map(c => (
+              {contacts.slice(0, showAllContacts ? contacts.length : 2).map(c => (
                 <div key={c.id} className="flex items-start gap-3 p-2 rounded-lg border text-sm">
                   <div className="flex-1 min-w-0">
                     <div className="font-medium">{c.name}{c.firma && <span className="text-muted-foreground font-normal"> · {c.firma}</span>}</div>
@@ -524,6 +538,16 @@ const ProjectOverview = () => {
                   </div>
                 </div>
               ))}
+              {contacts.length > 2 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="w-full text-xs"
+                  onClick={() => setShowAllContacts(!showAllContacts)}
+                >
+                  {showAllContacts ? "Weniger anzeigen" : `+ ${contacts.length - 2} weitere Kontakte anzeigen`}
+                </Button>
+              )}
             </CardContent>
           ) : (
             <CardContent className="pt-0">
@@ -562,7 +586,7 @@ const ProjectOverview = () => {
         )}
 
         <div className="grid gap-4 md:grid-cols-2">
-          {/* Projekt-Chat */}
+          {/* 1. Projekt-Chat */}
           <Card
             className="cursor-pointer hover:shadow-lg transition-shadow border-primary/30 bg-primary/5"
             onClick={() => navigate(`/projects/${projectId}/chat`)}
@@ -575,32 +599,41 @@ const ProjectOverview = () => {
               <CardDescription>Nachrichten & Fotos mit dem Team austauschen</CardDescription>
             </CardHeader>
             <CardContent>
-              <Button variant="outline" className="w-full">Chat öffnen</Button>
+              <Button variant="outline" className="w-full">Chat oeffnen</Button>
             </CardContent>
           </Card>
 
-          {/* Fotos - first */}
-          {visibleCategories.filter(c => c.type === "photos").map((category) => (
-            <Card
-              key={category.type}
-              className="cursor-pointer hover:shadow-lg transition-shadow"
-              onClick={() => navigate(`/projects/${projectId}/${category.type}`)}
-            >
+          {/* 2. Plaene/Auftraege */}
+          {visibleCategories.filter(c => c.type === "plans").map((category) => (
+            <Card key={category.type} className="cursor-pointer hover:shadow-lg transition-shadow" onClick={() => navigate(`/projects/${projectId}/${category.type}`)}>
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div className="text-primary">{category.icon}</div>
                   <div className="text-2xl font-bold">{category.count}</div>
                 </div>
-                <CardTitle className="text-xl">{category.title}</CardTitle>
+                <CardTitle className="text-xl">Plaene / Auftraege</CardTitle>
                 <CardDescription>{category.description}</CardDescription>
               </CardHeader>
-              <CardContent>
-                <Button variant="outline" className="w-full">Öffnen</Button>
-              </CardContent>
+              <CardContent><Button variant="outline" className="w-full">Oeffnen</Button></CardContent>
             </Card>
           ))}
 
-          {/* Tagesberichte */}
+          {/* 3. Lieferscheine & Rechnungen */}
+          <Card
+            className="cursor-pointer hover:shadow-lg transition-shadow"
+            onClick={() => navigate(`/projects/${projectId}/orders`)}
+          >
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div className="text-primary"><FileText className="h-8 w-8" /></div>
+              </div>
+              <CardTitle className="text-xl">Lieferscheine & Rechnungen</CardTitle>
+              <CardDescription>Lieferscheine und Rechnungen verwalten</CardDescription>
+            </CardHeader>
+            <CardContent><Button variant="outline" className="w-full">Oeffnen</Button></CardContent>
+          </Card>
+
+          {/* 4. Berichte (Tages-, Regie-, Zwischenberichte) */}
           <Card
             className="cursor-pointer hover:shadow-lg transition-shadow"
             onClick={() => navigate(`/daily-reports?project=${projectId}`)}
@@ -610,21 +643,14 @@ const ProjectOverview = () => {
                 <div className="text-primary"><FileText className="h-8 w-8" /></div>
                 <div className="text-2xl font-bold">{dailyReportCount}</div>
               </div>
-              <CardTitle className="text-xl">Tagesberichte</CardTitle>
-              <CardDescription>Tages- und Zwischenberichte für dieses Projekt</CardDescription>
+              <CardTitle className="text-xl">Berichte</CardTitle>
+              <CardDescription>Tages-, Regie- und Zwischenberichte</CardDescription>
             </CardHeader>
-            <CardContent>
-              <Button variant="outline" className="w-full">Öffnen</Button>
-            </CardContent>
+            <CardContent><Button variant="outline" className="w-full">Oeffnen</Button></CardContent>
           </Card>
 
-          {/* Rest: Pläne, Regieberichte, Chefordner */}
-          {visibleCategories.filter(c => c.type !== "photos").map((category) => (
-            <Card
-              key={category.type}
-              className="cursor-pointer hover:shadow-lg transition-shadow"
-              onClick={() => navigate(`/projects/${projectId}/${category.type}`)}
-            >
+          {visibleCategories.filter(c => c.type === "reports").map((category) => (
+            <Card key={category.type} className="cursor-pointer hover:shadow-lg transition-shadow" onClick={() => navigate(`/projects/${projectId}/${category.type}`)}>
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div className="text-primary">{category.icon}</div>
@@ -633,9 +659,37 @@ const ProjectOverview = () => {
                 <CardTitle className="text-xl">{category.title}</CardTitle>
                 <CardDescription>{category.description}</CardDescription>
               </CardHeader>
-              <CardContent>
-                <Button variant="outline" className="w-full">Öffnen</Button>
-              </CardContent>
+              <CardContent><Button variant="outline" className="w-full">Oeffnen</Button></CardContent>
+            </Card>
+          ))}
+
+          {/* 5. Fotos */}
+          {visibleCategories.filter(c => c.type === "photos").map((category) => (
+            <Card key={category.type} className="cursor-pointer hover:shadow-lg transition-shadow" onClick={() => navigate(`/projects/${projectId}/${category.type}`)}>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div className="text-primary">{category.icon}</div>
+                  <div className="text-2xl font-bold">{category.count}</div>
+                </div>
+                <CardTitle className="text-xl">{category.title}</CardTitle>
+                <CardDescription>{category.description}</CardDescription>
+              </CardHeader>
+              <CardContent><Button variant="outline" className="w-full">Oeffnen</Button></CardContent>
+            </Card>
+          ))}
+
+          {/* 6. Chefordner (Admin only) */}
+          {visibleCategories.filter(c => c.type === "chef").map((category) => (
+            <Card key={category.type} className="cursor-pointer hover:shadow-lg transition-shadow" onClick={() => navigate(`/projects/${projectId}/${category.type}`)}>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div className="text-primary">{category.icon}</div>
+                  <div className="text-2xl font-bold">{category.count}</div>
+                </div>
+                <CardTitle className="text-xl">{category.title}</CardTitle>
+                <CardDescription>{category.description}</CardDescription>
+              </CardHeader>
+              <CardContent><Button variant="outline" className="w-full">Oeffnen</Button></CardContent>
             </Card>
           ))}
         </div>
@@ -779,6 +833,36 @@ const ProjectOverview = () => {
                 <div className="space-y-1">
                   <Label>Bauherr Kontakt</Label>
                   <Input value={editForm.bauherr_kontakt} onChange={(e) => setEditForm(f => ({ ...f, bauherr_kontakt: e.target.value }))} className="h-10" />
+                </div>
+                <div className="space-y-1">
+                  <Label>Bauherr 2</Label>
+                  <Input value={editForm.bauherr2} onChange={(e) => setEditForm(f => ({ ...f, bauherr2: e.target.value }))} className="h-10" />
+                </div>
+                <div className="space-y-1">
+                  <Label>Bauherr 2 Kontakt</Label>
+                  <Input value={editForm.bauherr2_kontakt} onChange={(e) => setEditForm(f => ({ ...f, bauherr2_kontakt: e.target.value }))} className="h-10" />
+                </div>
+                <div className="space-y-1">
+                  <Label>Baustellenart</Label>
+                  <select
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    value={editForm.baustellenart}
+                    onChange={(e) => setEditForm(f => ({ ...f, baustellenart: e.target.value }))}
+                  >
+                    <option value="">-- Auswaehlen --</option>
+                    <option value="regie">Regie</option>
+                    <option value="pauschale">Pauschale</option>
+                  </select>
+                </div>
+                <div className="space-y-1 flex items-center gap-3 pt-5">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded border-gray-300"
+                    checked={editForm.anfahrt_ueber_100km}
+                    onChange={(e) => setEditForm(f => ({ ...f, anfahrt_ueber_100km: e.target.checked }))}
+                    id="anfahrt100km"
+                  />
+                  <Label htmlFor="anfahrt100km">&gt;100km Anfahrt</Label>
                 </div>
                 <div className="space-y-1">
                   <Label>Telefon</Label>

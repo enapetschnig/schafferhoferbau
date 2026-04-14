@@ -1678,6 +1678,7 @@ export type Database = {
           phase: string | null
           project_id: string
           rolle: string | null
+          sort_order: number | null
           telefon: string | null
         }
         Insert: {
@@ -1690,6 +1691,7 @@ export type Database = {
           phase?: string | null
           project_id: string
           rolle?: string | null
+          sort_order?: number | null
           telefon?: string | null
         }
         Update: {
@@ -1702,6 +1704,7 @@ export type Database = {
           phase?: string | null
           project_id?: string
           rolle?: string | null
+          sort_order?: number | null
           telefon?: string | null
         }
         Relationships: [
@@ -1846,9 +1849,13 @@ export type Database = {
       projects: {
         Row: {
           adresse: string | null
+          anfahrt_ueber_100km: boolean | null
           bauherr: string | null
           bauherr_kontakt: string | null
+          bauherr2: string | null
+          bauherr2_kontakt: string | null
           bauleiter: string | null
+          baustellenart: string | null
           beschreibung: string | null
           besonderheiten: string | null
           budget: number | null
@@ -1867,9 +1874,13 @@ export type Database = {
         }
         Insert: {
           adresse?: string | null
+          anfahrt_ueber_100km?: boolean | null
           bauherr?: string | null
           bauherr_kontakt?: string | null
+          bauherr2?: string | null
+          bauherr2_kontakt?: string | null
           bauleiter?: string | null
+          baustellenart?: string | null
           beschreibung?: string | null
           besonderheiten?: string | null
           budget?: number | null
@@ -1888,9 +1899,13 @@ export type Database = {
         }
         Update: {
           adresse?: string | null
+          anfahrt_ueber_100km?: boolean | null
           bauherr?: string | null
           bauherr_kontakt?: string | null
+          bauherr2?: string | null
+          bauherr2_kontakt?: string | null
           bauleiter?: string | null
+          baustellenart?: string | null
           beschreibung?: string | null
           besonderheiten?: string | null
           budget?: number | null
