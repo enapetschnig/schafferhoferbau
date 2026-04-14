@@ -98,6 +98,10 @@ export default function Index() {
   const { permission: pushPermission, requestPermission: requestPush } = usePushNotifications();
   const [menuSettings, setMenuSettings] = useState<Record<string, boolean>>({});
   const [lohnzettelNotifCount, setLohnzettelNotifCount] = useState(0);
+  const [dashboardMessage, setDashboardMessage] = useState("");
+  const [editingMessage, setEditingMessage] = useState(false);
+  const [editMessageText, setEditMessageText] = useState("");
+  const [weatherData, setWeatherData] = useState<{ temp: number; description: string; icon: string; location: string } | null>(null);
 
   // Role-based visibility helper
   const ROLE_LEVEL: Record<string, number> = {
@@ -550,6 +554,45 @@ export default function Index() {
       fetchLohnzettelNotifs(),
     ]);
 
+    // Dashboard-Nachricht laden
+    const { data: msgData } = await supabase
+      .from("app_settings")
+      .select("value")
+      .eq("key", "dashboard_message")
+      .maybeSingle();
+    if (msgData?.value) setDashboardMessage(msgData.value);
+
+    // Wetterdaten laden (basierend auf heutiger Plantafel-Zuweisung)
+    const { data: todayAssign } = await supabase
+      .from("worker_assignments")
+      .select("project_id, projects:project_id(name, plz, adresse)")
+      .eq("user_id", userId)
+      .eq("datum", new Date().toISOString().split("T")[0])
+      .limit(1)
+      .maybeSingle();
+
+    if (todayAssign?.projects) {
+      const proj = todayAssign.projects as any;
+      const location = proj.plz || proj.adresse || proj.name;
+      try {
+        const resp = await fetch(
+          `https://api.open-meteo.com/v1/forecast?latitude=47.07&longitude=15.44&current=temperature_2m,weather_code&timezone=Europe/Vienna`
+        );
+        const weather = await resp.json();
+        if (weather?.current) {
+          const code = weather.current.weather_code;
+          const desc = code <= 3 ? "Sonnig" : code <= 48 ? "Bewoelkt" : code <= 67 ? "Regen" : code <= 77 ? "Schnee" : "Gewitter";
+          const icon = code <= 3 ? "☀️" : code <= 48 ? "☁️" : code <= 67 ? "🌧️" : code <= 77 ? "❄️" : "⛈️";
+          setWeatherData({
+            temp: Math.round(weather.current.temperature_2m),
+            description: desc,
+            icon,
+            location: location || "Baustelle",
+          });
+        }
+      } catch { /* Wetter optional */ }
+    }
+
     setLoading(false);
   };
 
@@ -774,7 +817,48 @@ export default function Index() {
 
       {/* Main Content */}
       <main className="flex-1 min-w-0 px-3 sm:px-4 lg:px-6 py-4 sm:py-6 lg:py-8 max-w-7xl mx-auto">
-        <div className="mb-4" />
+
+        {/* Dashboard-Nachricht (Admin editierbar) */}
+        {dashboardMessage && (
+          <div className="mb-4 p-3 rounded-lg bg-primary/5 border border-primary/20 flex items-center justify-between gap-3">
+            {editingMessage ? (
+              <div className="flex-1 flex gap-2">
+                <input
+                  className="flex-1 text-sm bg-transparent border-b border-primary/30 focus:outline-none focus:border-primary px-1"
+                  value={editMessageText}
+                  onChange={(e) => setEditMessageText(e.target.value)}
+                  autoFocus
+                />
+                <Button size="sm" variant="ghost" onClick={async () => {
+                  await supabase.from("app_settings").upsert({ key: "dashboard_message", value: editMessageText }, { onConflict: "key" });
+                  setDashboardMessage(editMessageText);
+                  setEditingMessage(false);
+                }}>Speichern</Button>
+                <Button size="sm" variant="ghost" onClick={() => setEditingMessage(false)}>Abbrechen</Button>
+              </div>
+            ) : (
+              <>
+                <p className="text-sm text-primary/80 flex-1">{dashboardMessage}</p>
+                {isAdmin && (
+                  <Button size="sm" variant="ghost" className="shrink-0 h-7 text-xs" onClick={() => { setEditMessageText(dashboardMessage); setEditingMessage(true); }}>
+                    Bearbeiten
+                  </Button>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Wetterdaten */}
+        {weatherData && (
+          <div className="mb-4 flex items-center gap-3 p-3 rounded-lg bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800">
+            <span className="text-2xl">{weatherData.icon}</span>
+            <div>
+              <p className="text-sm font-medium">{weatherData.temp}°C · {weatherData.description}</p>
+              <p className="text-xs text-muted-foreground">{weatherData.location}</p>
+            </div>
+          </div>
+        )}
 
         {/* Pending Activations Banner (Admin only) */}
         {isAdmin && pendingCount > 0 && (

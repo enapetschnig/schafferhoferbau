@@ -112,6 +112,7 @@ export default function Admin() {
   const [loadingSettings, setLoadingSettings] = useState(true);
 
   // Stundenerfassung system settings
+  const [dashboardMsg, setDashboardMsg] = useState("");
   const [kilometergeldRate, setKilometergeldRate] = useState("0.42");
   const [showUeberstunden, setShowUeberstunden] = useState(true);
   const [showKilometergeld, setShowKilometergeld] = useState(true);
@@ -136,6 +137,7 @@ export default function Admin() {
           "show_ueberstunden",
           "show_kilometergeld",
           "show_zusatzaufwendungen",
+          "dashboard_message",
         ]);
 
       if (error) {
@@ -147,6 +149,7 @@ export default function Admin() {
         if (map.has("show_ueberstunden")) setShowUeberstunden(map.get("show_ueberstunden") !== "false");
         if (map.has("show_kilometergeld")) setShowKilometergeld(map.get("show_kilometergeld") !== "false");
         if (map.has("show_zusatzaufwendungen")) setShowZusatzaufwendungen(map.get("show_zusatzaufwendungen") === "true");
+        if (map.has("dashboard_message")) setDashboardMsg(map.get("dashboard_message")!);
       }
     } catch (err) {
       console.error("Error fetching app settings:", err);
@@ -1220,6 +1223,15 @@ export default function Admin() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
+              <div>
+                <Label>Dashboard-Nachricht (wird oben im Dashboard angezeigt)</Label>
+                <Input
+                  value={dashboardMsg}
+                  onChange={(e) => setDashboardMsg(e.target.value)}
+                  placeholder="z.B. Willkommen bei Schafferhofer Bau!"
+                />
+              </div>
+              <Separator />
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label>Kilometergeld (EUR/km)</Label>
@@ -1262,6 +1274,7 @@ export default function Admin() {
                     setSavingSettings(true);
                     try {
                       const settings = [
+                        { key: "dashboard_message", value: dashboardMsg },
                         { key: "kilometergeld_rate", value: kilometergeldRate },
                         { key: "show_ueberstunden", value: showUeberstunden.toString() },
                         { key: "show_kilometergeld", value: showKilometergeld.toString() },
