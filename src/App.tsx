@@ -32,6 +32,7 @@ import DailyReportDetail from "./pages/DailyReportDetail";
 import LegalWorkTimeReport from "./pages/LegalWorkTimeReport";
 import EquipmentPage from "./pages/Equipment";
 import EquipmentDetail from "./pages/EquipmentDetail";
+import Bestellungen from "./pages/Bestellungen";
 import ScheduleBoard from "./pages/ScheduleBoard";
 import IncomingInvoices from "./pages/IncomingInvoices";
 import DocumentLibrary from "./pages/DocumentLibrary";
@@ -163,6 +164,7 @@ function AppContent() {
         <Route path="/legal-work-time" element={<ProtectedRoute minRole="admin"><LegalWorkTimeReport /></ProtectedRoute>} />
         <Route path="/equipment" element={<ProtectedRoute minRole="admin"><EquipmentPage /></ProtectedRoute>} />
         <Route path="/equipment/:id" element={<ProtectedRoute minRole="admin"><EquipmentDetail /></ProtectedRoute>} />
+        <Route path="/bestellungen" element={<ProtectedRoute minRole="facharbeiter"><Bestellungen /></ProtectedRoute>} />
         <Route path="/schedule" element={<ProtectedRoute minRole="vorarbeiter"><ScheduleBoard /></ProtectedRoute>} />
         <Route path="/incoming-invoices" element={<ProtectedRoute minRole="admin"><IncomingInvoices /></ProtectedRoute>} />
         <Route path="/incoming-documents" element={<ProtectedRoute minRole="facharbeiter"><IncomingDocuments /></ProtectedRoute>} />

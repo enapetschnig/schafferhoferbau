@@ -118,7 +118,7 @@ export function FileViewer({
           <div className="flex items-center justify-between">
             <DialogTitle className="text-lg truncate pr-4">{fileName}</DialogTitle>
             <div className="flex gap-2">
-              {actualFileType === "image" && (
+              {(actualFileType === "image") && (
                 <>
                   <Button
                     variant="outline"
@@ -183,15 +183,12 @@ export function FileViewer({
               />
             </div>
           ) : actualFileType === "pdf" ? (
-            <div className="flex flex-col items-center justify-center h-full gap-4">
-              <p className="text-muted-foreground text-center">
-                PDF-Vorschau nicht verfügbar
-              </p>
-              <Button onClick={handleDownload} disabled={loading} size="lg">
-                <Download className="w-4 h-4 mr-2" />
-                PDF herunterladen
-              </Button>
-            </div>
+            <iframe
+              src={`${signedUrl}#toolbar=1&navpanes=0`}
+              className="w-full h-full rounded-lg border"
+              title={fileName}
+              style={{ minHeight: "calc(90vh - 80px)" }}
+            />
           ) : (
             <div className="flex flex-col items-center justify-center h-full gap-4">
               <p className="text-muted-foreground">

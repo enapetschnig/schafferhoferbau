@@ -144,6 +144,78 @@ export type Database = {
           },
         ]
       }
+      bestellungen: {
+        Row: {
+          id: string
+          project_id: string | null
+          erstellt_von: string
+          typ: string
+          titel: string
+          beschreibung: string | null
+          status: string
+          lieferant: string | null
+          dokument_url: string | null
+          notizen: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          project_id?: string | null
+          erstellt_von: string
+          typ?: string
+          titel: string
+          beschreibung?: string | null
+          status?: string
+          lieferant?: string | null
+          dokument_url?: string | null
+          notizen?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          project_id?: string | null
+          erstellt_von?: string
+          typ?: string
+          titel?: string
+          beschreibung?: string | null
+          status?: string
+          lieferant?: string | null
+          dokument_url?: string | null
+          notizen?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      bestellpositionen: {
+        Row: {
+          id: string
+          bestellung_id: string
+          artikel: string
+          menge: number | null
+          einheit: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          bestellung_id: string
+          artikel: string
+          menge?: number | null
+          einheit?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          bestellung_id?: string
+          artikel?: string
+          menge?: number | null
+          einheit?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
       bad_weather_records: {
         Row: {
           arbeitsstunden_vor_schlechtwetter: number | null

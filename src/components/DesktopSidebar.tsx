@@ -23,6 +23,7 @@ const MENU_ITEMS: MenuItem[] = [
   { key: "stundenubersicht", label: "Stundenubersicht", icon: <BarChart3 className="h-4 w-4" />, path: "/hours-report", adminOnly: true },
   { key: "plantafel", label: "Plantafel", icon: <Calendar className="h-4 w-4" />, path: "/schedule" },
   { key: "gerateverwaltung", label: "Geraeteverwaltung", icon: <Wrench className="h-4 w-4" />, path: "/equipment" },
+  { key: "bestellungen", label: "Bestellungen", icon: <Package className="h-4 w-4" />, path: "/bestellungen" },
   { key: "eingangsrechnungen", label: "Rechnungen", icon: <FileText className="h-4 w-4" />, path: "/incoming-documents" },
   { key: "lieferscheine", label: "Lieferscheine", icon: <Truck className="h-4 w-4" />, path: "/delivery-notes" },
   { key: "lagerverwaltung", label: "Lagerverwaltung", icon: <Package className="h-4 w-4" />, path: "/warehouse" },
