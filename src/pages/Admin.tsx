@@ -377,6 +377,20 @@ export default function Admin() {
     scrollToRegisteredUser(userId);
   };
 
+  const handleRejectUser = async (userId: string) => {
+    const profile = profiles.find(p => p.id === userId);
+    if (!confirm(`${profile?.vorname} ${profile?.nachname} wirklich ablehnen und loeschen?`)) return;
+
+    // Delete profile (cascades to related data)
+    const { error } = await supabase.from("profiles").delete().eq("id", userId);
+    if (error) {
+      toast({ variant: "destructive", title: "Fehler", description: error.message });
+      return;
+    }
+    setProfiles(prev => prev.filter(p => p.id !== userId));
+    toast({ title: "Abgelehnt", description: `${profile?.vorname} ${profile?.nachname} wurde abgelehnt und entfernt.` });
+  };
+
   const exportUserTimeEntries = async (userId: string, userName: string): Promise<boolean> => {
     try {
       const { data: entries } = await supabase
@@ -890,6 +904,13 @@ export default function Admin() {
                         >
                           <UserPlus className="h-4 w-4 mr-2" />
                           Freischalten
+                        </Button>
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => handleRejectUser(profile.id)}
+                        >
+                          Ablehnen
                         </Button>
                       </div>
                     </div>

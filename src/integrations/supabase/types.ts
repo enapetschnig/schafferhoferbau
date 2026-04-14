@@ -600,32 +600,38 @@ export type Database = {
       }
       documents: {
         Row: {
+          archived: boolean | null
           beschreibung: string | null
           created_at: string
           file_url: string
           id: string
           name: string
           project_id: string
+          sub_type: string | null
           typ: string
           user_id: string
         }
         Insert: {
+          archived?: boolean | null
           beschreibung?: string | null
           created_at?: string
           file_url: string
           id?: string
           name: string
           project_id: string
+          sub_type?: string | null
           typ: string
           user_id: string
         }
         Update: {
+          archived?: boolean | null
           beschreibung?: string | null
           created_at?: string
           file_url?: string
           id?: string
           name?: string
           project_id?: string
+          sub_type?: string | null
           typ?: string
           user_id?: string
         }
