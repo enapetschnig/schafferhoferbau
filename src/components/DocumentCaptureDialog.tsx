@@ -359,10 +359,11 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess }: Documen
       return;
     }
 
-    toast({ title: "Gespeichert", description: "Dokument wurde erfolgreich erfasst" });
-    resetForm();
-    onOpenChange(false);
+    toast({ title: "Gespeichert", description: "Dokument erfasst - Sie koennen direkt das naechste aufnehmen" });
     onSuccess?.();
+    // Zurueck zum Foto-Schritt fuer naechstes Dokument (Dialog bleibt offen)
+    resetForm();
+    setStep("photo");
   };
 
   // mainType: "lieferschein" or "rechnung" (Lagerlieferschein is a sub-option of lieferschein)
