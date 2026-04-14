@@ -114,7 +114,7 @@ export default function Auth() {
       <div className="min-h-screen flex items-center justify-center bg-background p-4">
         <Card className="w-full max-w-md">
           <CardHeader className="text-center">
-            <img src="/schafferhofer-logo.svg" alt="Schafferhofer Bau" className="h-24 mx-auto mb-4" />
+            <img src="/schafferhofer-logo.png" alt="Schafferhofer Bau" className="h-24 mx-auto mb-4" />
             <CardTitle>Registrierung erfolgreich!</CardTitle>
           </CardHeader>
           <CardContent className="text-center space-y-4">
@@ -139,7 +139,7 @@ export default function Auth() {
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <img src="/schafferhofer-logo.svg" alt="Schafferhofer Bau" className="h-24 mx-auto mb-4" />
+          <img src="/schafferhofer-logo.png" alt="Schafferhofer Bau" className="h-24 mx-auto mb-4" />
           <CardTitle>Schafferhofer Bau</CardTitle>
           <CardDescription>Projektdokumentation</CardDescription>
         </CardHeader>

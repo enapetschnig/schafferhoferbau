@@ -324,7 +324,7 @@ const MyHours = () => {
               <ArrowLeft className="h-4 w-4 mr-2" />Zurück
             </Button>
             <img 
-              src="/schafferhofer-logo.svg"
+              src="/schafferhofer-logo.png"
               alt="Schafferhofer Bau"
               className="h-10 w-10 sm:h-14 sm:w-14 cursor-pointer hover:opacity-80 transition-opacity object-contain"
               onClick={() => navigate("/")}

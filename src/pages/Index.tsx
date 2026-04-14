@@ -22,6 +22,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { WeeklyAssignmentWidget } from "@/components/dashboard/WeeklyAssignmentWidget";
+import { DesktopSidebar } from "@/components/DesktopSidebar";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
 
 type Project = {
@@ -310,14 +311,21 @@ export default function Index() {
       });
     }
 
+    // Filter: nur Chats der letzten Woche anzeigen
+    const oneWeekAgo = new Date();
+    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+    const recentPreviews = previews.filter(
+      (p) => new Date(p.timestamp).getTime() >= oneWeekAgo.getTime() || p.unreadCount > 0
+    );
+
     // Sort: unread first, then by timestamp
-    previews.sort((a, b) => {
+    recentPreviews.sort((a, b) => {
       if (a.unreadCount > 0 && b.unreadCount === 0) return -1;
       if (a.unreadCount === 0 && b.unreadCount > 0) return 1;
       return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
     });
 
-    setChatPreviews(previews);
+    setChatPreviews(recentPreviews);
   };
 
   const ROLE_LABELS: Record<string, string> = {
@@ -683,7 +691,7 @@ export default function Index() {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
         <div className="text-center space-y-4 max-w-md">
-          <img src="/schafferhofer-logo.svg" alt="Schafferhofer Bau" className="h-20 mx-auto" />
+          <img src="/schafferhofer-logo.png" alt="Schafferhofer Bau" className="h-20 mx-auto" />
           <h1 className="text-xl font-bold">Konto noch nicht freigeschaltet</h1>
           <p className="text-muted-foreground">
             Dein Konto muss vom Administrator freigeschaltet werden, bevor du die App nutzen kannst.
@@ -704,7 +712,7 @@ export default function Index() {
         <div className="container mx-auto px-3 sm:px-4 lg:px-6 py-3 sm:py-4">
           <div className="flex justify-between items-center gap-3">
             <div className="flex items-center gap-2 sm:gap-3">
-              <img src="/schafferhofer-logo.svg" alt="Schafferhofer Bau" className="h-10 sm:h-14 w-auto" />
+              <img src="/schafferhofer-logo.png" alt="Schafferhofer Bau" className="h-10 sm:h-14 w-auto" />
               <div className="hidden sm:block h-8 w-px bg-border" />
               <div className="flex flex-col">
                 <span className="text-xs sm:text-sm text-muted-foreground">Hallo</span>
@@ -760,18 +768,13 @@ export default function Index() {
         </div>
       </header>
 
+      <div className="flex">
+      {/* Desktop Sidebar */}
+      <DesktopSidebar isAdmin={isAdmin} menuVisible={menuVisible} userName={userName || "Benutzer"} />
+
       {/* Main Content */}
-      <main className="container mx-auto px-3 sm:px-4 lg:px-6 py-4 sm:py-6 lg:py-8">
-        <div className="mb-6 sm:mb-8">
-          <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold mb-2">
-            {isAdmin ? "Admin Dashboard" : "Mein Dashboard"}
-          </h1>
-          <p className="text-sm sm:text-base text-muted-foreground">
-            {isAdmin 
-              ? "Verwaltung aller Projekte und Mitarbeiter" 
-              : "Zeiterfassung und Projektdokumentation"}
-          </p>
-        </div>
+      <main className="flex-1 min-w-0 px-3 sm:px-4 lg:px-6 py-4 sm:py-6 lg:py-8 max-w-7xl mx-auto">
+        <div className="mb-4" />
 
         {/* Pending Activations Banner (Admin only) */}
         {isAdmin && pendingCount > 0 && (
@@ -855,10 +858,6 @@ export default function Index() {
         {/* Favoriten-Projekte — nicht für Externe */}
         {!isExternal && favoriteProjects.length > 0 && (
           <div className="mb-6">
-            <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
-              <Star className="h-5 w-5 fill-red-500 text-red-500" />
-              Meine Favoriten
-            </h2>
             <div className="grid gap-2 sm:grid-cols-3">
               {favoriteProjects.map(p => (
                 <Card
@@ -1567,7 +1566,7 @@ export default function Index() {
           </div>
         )}
       </main>
-
+      </div>
     </div>
   );
 }
