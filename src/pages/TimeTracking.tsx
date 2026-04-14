@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { Clock, Plus, AlertTriangle, CheckCircle2, Calendar, Sun, Trash2, Pencil, ChevronDown, CloudRain } from "lucide-react";
+import { Clock, Plus, AlertTriangle, CheckCircle2, Calendar, Sun, Trash2, Pencil, ChevronDown, CloudRain, Car } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { PageHeader } from "@/components/PageHeader";
 import { format, startOfWeek } from "date-fns";
@@ -29,6 +29,7 @@ import {
   type WeekSchedule,
 } from "@/lib/workingHours";
 import { FillRemainingHoursDialog } from "@/components/FillRemainingHoursDialog";
+import { MultiEmployeeSelect } from "@/components/MultiEmployeeSelect";
 
 type Project = {
   id: string;
@@ -109,6 +110,12 @@ const TimeTracking = () => {
   const [loadingDayEntries, setLoadingDayEntries] = useState(false);
   
   const [showAbsenceDialog, setShowAbsenceDialog] = useState(false);
+  const [showFahrtenDialog, setShowFahrtenDialog] = useState(false);
+  const [savingFahrtengeld, setSavingFahrtengeld] = useState(false);
+  const [fahrtenData, setFahrtenData] = useState({
+    kilometer: "",
+    strecke: "",
+  });
   const [showFillDialog, setShowFillDialog] = useState(false);
   const [showBadWeatherDialog, setShowBadWeatherDialog] = useState(false);
   const [savingBadWeather, setSavingBadWeather] = useState(false);
@@ -137,6 +144,7 @@ const TimeTracking = () => {
     sonstigerGrund: "",
   });
 
+  const [selectedAdditionalEmployees, setSelectedAdditionalEmployees] = useState<string[]>([]);
   const [editMode, setEditMode] = useState(false);
   const [editingEntryIds, setEditingEntryIds] = useState<string[]>([]);
   const [selectedDate, setSelectedDate] = useState(() => {
@@ -878,7 +886,45 @@ const TimeTracking = () => {
       totalEntriesCreated += 1;
     }
 
+    // Duplicate entries for additional employees (Multi-MA)
+    if (!hasError && selectedAdditionalEmployees.length > 0 && !editMode) {
+      for (const empUserId of selectedAdditionalEmployees) {
+        let empRemainingLohn = daySplit.lohnstunden;
+        for (let bi = 0; bi < timeBlocks.length; bi++) {
+          const block = timeBlocks[bi];
+          const blockHours = allBlockHours[bi];
+          const pauseMinutes = isExternalUser ? 0 : calculateBlockPauseMinutes(block);
+          const blockLohn = Math.min(blockHours, empRemainingLohn);
+          const blockZA = Math.round((blockHours - blockLohn) * 100) / 100;
+          empRemainingLohn = Math.round((empRemainingLohn - blockLohn) * 100) / 100;
+          const km = block.kilometer ? parseFloat(block.kilometer) : null;
+
+          await supabase.from("time_entries").insert({
+            user_id: empUserId,
+            datum: selectedDate,
+            project_id: block.locationType === "werkstatt" ? null : (block.projectId || null),
+            taetigkeit: block.taetigkeit,
+            stunden: blockHours,
+            start_time: isExternalUser ? null : block.startTime,
+            end_time: isExternalUser ? null : block.endTime,
+            pause_minutes: pauseMinutes,
+            pause_start: isExternalUser ? null : (block.pauseStart || null),
+            pause_end: isExternalUser ? null : (block.pauseEnd || null),
+            location_type: block.locationType,
+            kilometer: km,
+            km_beschreibung: block.kmBeschreibung || null,
+            zeit_typ: isExternalUser ? "normal" : block.zeitTyp,
+            diaeten_typ: isExternalUser ? null : calculateDiaeten(blockHours, false).typ,
+            lohnstunden: blockLohn > 0 ? blockLohn : null,
+            zeitausgleich_stunden: blockZA > 0 ? blockZA : null,
+          });
+        }
+      }
+      totalEntriesCreated += selectedAdditionalEmployees.length * timeBlocks.length;
+    }
+
     if (!hasError) {
+      setSelectedAdditionalEmployees([]);
       toast({ title: "Erfolg", description: editMode
         ? `${totalEntriesCreated} Eintrag/Einträge aktualisiert`
         : `${totalEntriesCreated} Eintrag/Einträge gespeichert`
@@ -954,6 +1000,42 @@ const TimeTracking = () => {
     setSavingBadWeather(false);
   };
 
+  const handleSaveFahrtengeld = async () => {
+    const km = parseFloat(fahrtenData.kilometer);
+    if (!km || km <= 0) {
+      toast({ variant: "destructive", title: "Fehler", description: "Bitte Kilometer eingeben" });
+      return;
+    }
+    setSavingFahrtengeld(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setSavingFahrtengeld(false); return; }
+
+    const { error } = await supabase.from("time_entries").insert({
+      user_id: targetUserId || user.id,
+      datum: selectedDate,
+      project_id: null,
+      taetigkeit: "Fahrtengeld",
+      stunden: 0,
+      start_time: "00:00",
+      end_time: "00:00",
+      pause_minutes: 0,
+      location_type: "baustelle",
+      kilometer: km,
+      km_beschreibung: fahrtenData.strecke.trim() || null,
+      zeit_typ: km >= 100 ? "fahrt_100km" : "normal",
+    });
+
+    if (error) {
+      toast({ variant: "destructive", title: "Fehler", description: error.message });
+    } else {
+      toast({ title: "Gespeichert", description: `Fahrtengeld ${km} km erfasst` });
+      setShowFahrtenDialog(false);
+      setFahrtenData({ kilometer: "", strecke: "" });
+      fetchExistingDayEntries(selectedDate);
+    }
+    setSavingFahrtengeld(false);
+  };
+
   const isDayBlocked = existingDayEntries.some(e => ["Urlaub", "Krankenstand", "Weiterbildung", "Feiertag", "Zeitausgleich"].includes(e.taetigkeit));
 
   if (loading) return <div className="p-4">Lädt...</div>;
@@ -1008,6 +1090,15 @@ const TimeTracking = () => {
                     <Calendar className="h-4 w-4" />
                     <span className="hidden sm:inline">Abwesenheit</span>
                   </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowFahrtenDialog(true)}
+                    className="gap-1"
+                  >
+                    <Car className="h-4 w-4" />
+                    <span className="hidden sm:inline">Fahrtengeld</span>
+                  </Button>
                 </div>
               )}
             </div>
@@ -1031,6 +1122,18 @@ const TimeTracking = () => {
                   </p>
                 )}
               </div>
+
+              {/* Multi-Mitarbeiter Auswahl (nur fuer Admin/Vorarbeiter) */}
+              {isAdmin && !editMode && !targetUserId && !isExternalUser && timeBlocks.length > 0 && (
+                <MultiEmployeeSelect
+                  selectedEmployees={selectedAdditionalEmployees}
+                  onSelectionChange={setSelectedAdditionalEmployees}
+                  date={selectedDate}
+                  startTime={timeBlocks[0].startTime || "06:30"}
+                  endTime={timeBlocks[timeBlocks.length - 1].endTime || "17:00"}
+                  label="Stunden auch fuer weitere Mitarbeiter erfassen"
+                />
+              )}
 
               {/* Weekly target info — not for external */}
               {!isExternalUser && (
@@ -1892,6 +1995,56 @@ const TimeTracking = () => {
                 </Button>
                 <Button onClick={handleSaveBadWeather} disabled={savingBadWeather}>
                   {savingBadWeather ? "Speichere..." : "Speichern"}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Fahrtengeld Dialog */}
+        <Dialog open={showFahrtenDialog} onOpenChange={setShowFahrtenDialog}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Car className="h-5 w-5" />
+                Fahrtengeld erfassen
+              </DialogTitle>
+              <DialogDescription>
+                Fahrtengeld fuer {selectedDate ? format(new Date(selectedDate), "dd.MM.yyyy") : "heute"}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label>Kilometer *</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={fahrtenData.kilometer}
+                  onChange={(e) => setFahrtenData({ ...fahrtenData, kilometer: e.target.value })}
+                  placeholder="z.B. 45"
+                />
+                {fahrtenData.kilometer && parseFloat(fahrtenData.kilometer) > 0 && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    = {"\u20AC"} {(parseFloat(fahrtenData.kilometer) * 0.42).toFixed(2)}
+                    {parseFloat(fahrtenData.kilometer) >= 100 && (
+                      <Badge variant="secondary" className="ml-2 text-xs">Ueber 100km</Badge>
+                    )}
+                  </p>
+                )}
+              </div>
+              <div>
+                <Label>Strecke</Label>
+                <Input
+                  value={fahrtenData.strecke}
+                  onChange={(e) => setFahrtenData({ ...fahrtenData, strecke: e.target.value })}
+                  placeholder="z.B. Graz - Leibnitz - Graz"
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setShowFahrtenDialog(false)}>Abbrechen</Button>
+                <Button onClick={handleSaveFahrtengeld} disabled={savingFahrtengeld}>
+                  {savingFahrtengeld ? "Speichere..." : "Speichern"}
                 </Button>
               </div>
             </div>
