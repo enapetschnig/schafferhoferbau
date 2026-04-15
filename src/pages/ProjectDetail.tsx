@@ -134,7 +134,7 @@ const ProjectDetail = () => {
   const checkAdminStatus = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-    const { data } = await supabase.from("user_roles").select("role").eq("user_id", user.id).single();
+    const { data } = await supabase.from("user_roles").select("role").eq("user_id", user.id).maybeSingle();
     setIsAdmin(data?.role === "administrator");
   };
 

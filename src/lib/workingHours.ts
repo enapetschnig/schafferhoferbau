@@ -235,6 +235,8 @@ export function splitHours(
   schedule?: WeekSchedule | null,
   schwellenwert?: Schwellenwert | null
 ): HoursSplit {
+  if (totalHours <= 0) return { lohnstunden: 0, zeitausgleich: 0 };
+
   const threshold = getSchwellenwert(date, schwellenwert, schedule);
 
   if (totalHours <= threshold) {

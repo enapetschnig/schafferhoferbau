@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Plus, Trash2, Download, Upload } from "lucide-react";
 import * as XLSX from "xlsx-js-style";
 import { Button } from "@/components/ui/button";
@@ -51,11 +51,14 @@ export function Nachkalkulation({ projectId }: Props) {
     if (data) setPositionen(prev => [...prev, data as Position]);
   };
 
-  const handleUpdate = async (id: string, field: string, value: any) => {
+  const debounceTimers = useRef<Record<string, NodeJS.Timeout>>({});
+  const handleUpdate = (id: string, field: string, value: any) => {
     setPositionen(prev => prev.map(p => p.id === id ? { ...p, [field]: value } : p));
-    // Debounced save
-    setTimeout(async () => {
+    const key = `${id}_${field}`;
+    if (debounceTimers.current[key]) clearTimeout(debounceTimers.current[key]);
+    debounceTimers.current[key] = setTimeout(async () => {
       await supabase.from("nachkalkulation_positionen").update({ [field]: value }).eq("id", id);
+      delete debounceTimers.current[key];
     }, 500);
   };
 

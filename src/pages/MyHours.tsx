@@ -463,7 +463,7 @@ const MyHours = () => {
                     <span className="text-muted-foreground">km: </span>
                     <span className="font-bold">{entries.reduce((s, e) => s + (e.kilometer || 0), 0).toFixed(0)}</span>
                     <span className="text-xs text-muted-foreground ml-1">
-                      (€ {(entries.reduce((s, e) => s + (e.kilometer || 0), 0) * 0.42).toFixed(2)})
+                      (EUR {(entries.reduce((s, e) => s + (e.kilometer || 0), 0) * appSettings.kilometergeldRate).toFixed(2)})
                     </span>
                   </div>
                 )}

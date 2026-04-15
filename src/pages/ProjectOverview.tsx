@@ -277,7 +277,10 @@ const ProjectOverview = () => {
       setProjectName(d.name);
       setProjectInfo({
         adresse: d.adresse, plz: d.plz, bauherr: d.bauherr,
-        bauherr_kontakt: d.bauherr_kontakt, bauleiter: d.bauleiter,
+        bauherr_kontakt: d.bauherr_kontakt,
+        bauherr2: d.bauherr2, bauherr2_kontakt: d.bauherr2_kontakt,
+        baustellenart: d.baustellenart, anfahrt_ueber_100km: d.anfahrt_ueber_100km,
+        bauleiter: d.bauleiter,
         budget: d.budget, start_datum: d.start_datum, end_datum: d.end_datum,
         beschreibung: d.beschreibung, kunde_telefon: d.kunde_telefon,
         kunde_email: d.kunde_email, erreichbarkeit: d.erreichbarkeit,

@@ -70,6 +70,8 @@ interface TimeBlock {
   zeitTyp: "normal" | "lenkzeit" | "reisezeit" | "fahrt_100km";
 }
 
+const ALL_ABSENCE_LABELS = ["Urlaub", "Krankenstand", "Weiterbildung", "Feiertag", "Zeitausgleich", "Arzttermin", "Begraebnis", "Pflegeurlaub", "Sonstige"];
+
 const createDefaultBlock = (startTime = "", endTime = ""): TimeBlock => ({
   id: crypto.randomUUID(),
   locationType: "baustelle",
@@ -262,14 +264,14 @@ const TimeTracking = () => {
       setExistingDayEntries(entries);
       
       // If entries exist, suggest next time slot for first block
-      if (entries.length > 0 && !entries.some(e => ["Urlaub", "Krankenstand", "Weiterbildung", "Feiertag", "Zeitausgleich"].includes(e.taetigkeit))) {
+      if (entries.length > 0 && !entries.some(e => ALL_ABSENCE_LABELS.includes(e.taetigkeit))) {
         const lastEntry = entries[entries.length - 1];
         const [lastEndHours, lastEndMinutes] = lastEntry.end_time.split(':').map(Number);
         const nextStartMinutes = lastEndHours * 60 + lastEndMinutes + 30;
         const suggestedStart = `${String(Math.floor(nextStartMinutes / 60)).padStart(2, '0')}:${String(nextStartMinutes % 60).padStart(2, '0')}`;
         
         setTimeBlocks([createDefaultBlock(suggestedStart)]);
-      } else if (!entries.some(e => ["Urlaub", "Krankenstand", "Weiterbildung", "Feiertag", "Zeitausgleich"].includes(e.taetigkeit))) {
+      } else if (!entries.some(e => ALL_ABSENCE_LABELS.includes(e.taetigkeit))) {
         // Auto-fill default work times for the selected date
         const dateObj = new Date(date);
         const defaults = getDefaultWorkTimes(dateObj, employeeSchedule);
@@ -305,7 +307,7 @@ const TimeTracking = () => {
     const dateParam = searchParams.get("date");
     if (dateParam && existingDayEntries.length > 0 && !editMode && !loadingDayEntries) {
       const hasNormalEntries = existingDayEntries.some(
-        e => !["Urlaub", "Krankenstand", "Weiterbildung", "Feiertag", "Zeitausgleich"].includes(e.taetigkeit)
+        e => !ALL_ABSENCE_LABELS.includes(e.taetigkeit)
       );
       if (hasNormalEntries) {
         enterEditMode();
@@ -456,7 +458,7 @@ const TimeTracking = () => {
   // Enter edit mode: load existing entries as editable time blocks
   const enterEditMode = () => {
     const blocks: TimeBlock[] = existingDayEntries
-      .filter(e => !["Urlaub", "Krankenstand", "Weiterbildung", "Feiertag", "Zeitausgleich"].includes(e.taetigkeit))
+      .filter(e => !ALL_ABSENCE_LABELS.includes(e.taetigkeit))
       .map(entry => ({
         id: crypto.randomUUID(),
         locationType: (entry.location_type === "werkstatt" ? "werkstatt" : "baustelle") as "baustelle" | "werkstatt",
@@ -781,7 +783,7 @@ const TimeTracking = () => {
 
       if (existingEntries && existingEntries.length > 0) {
         for (const entry of existingEntries) {
-          if (["Urlaub", "Krankenstand", "Weiterbildung", "Feiertag", "Zeitausgleich"].includes(entry.taetigkeit)) {
+          if (ALL_ABSENCE_LABELS.includes(entry.taetigkeit)) {
             toast({
               variant: "destructive",
               title: "Tag bereits blockiert",
@@ -870,7 +872,7 @@ const TimeTracking = () => {
         kilometer: km,
         km_beschreibung: block.kmBeschreibung || null,
         zeit_typ: isExternalUser ? "normal" : block.zeitTyp,
-        diaeten_typ: isExternalUser ? null : calculateDiaeten(blockHours, false).typ,
+        diaeten_typ: isExternalUser ? null : (bi === 0 ? calculateDiaeten(dayTotalHours, false).typ : null),
         diaeten_betrag: null,
         lohnstunden: blockLohn > 0 ? blockLohn : null,
         zeitausgleich_stunden: blockZA > 0 ? blockZA : null,
@@ -914,7 +916,7 @@ const TimeTracking = () => {
             kilometer: km,
             km_beschreibung: block.kmBeschreibung || null,
             zeit_typ: isExternalUser ? "normal" : block.zeitTyp,
-            diaeten_typ: isExternalUser ? null : calculateDiaeten(blockHours, false).typ,
+            diaeten_typ: isExternalUser ? null : (bi === 0 ? calculateDiaeten(dayTotalHours, false).typ : null),
             lohnstunden: blockLohn > 0 ? blockLohn : null,
             zeitausgleich_stunden: blockZA > 0 ? blockZA : null,
           });
@@ -1036,7 +1038,7 @@ const TimeTracking = () => {
     setSavingFahrtengeld(false);
   };
 
-  const isDayBlocked = existingDayEntries.some(e => ["Urlaub", "Krankenstand", "Weiterbildung", "Feiertag", "Zeitausgleich"].includes(e.taetigkeit));
+  const isDayBlocked = existingDayEntries.some(e => ALL_ABSENCE_LABELS.includes(e.taetigkeit));
 
   if (loading) return <div className="p-4">Lädt...</div>;
 
