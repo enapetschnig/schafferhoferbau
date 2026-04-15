@@ -575,8 +575,20 @@ export default function Index() {
       const proj = todayAssign.projects as any;
       const location = proj.plz || proj.adresse || proj.name;
       try {
+        // PLZ/Adresse zu Koordinaten aufloesen (Open-Meteo Geocoding)
+        let lat = 47.07, lon = 15.44; // Fallback: Graz
+        const searchTerm = proj.plz ? `${proj.plz} Austria` : (proj.adresse ? `${proj.adresse} Austria` : null);
+        if (searchTerm) {
+          const geoResp = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(searchTerm)}&count=1&language=de&format=json`);
+          const geoData = await geoResp.json();
+          if (geoData?.results?.[0]) {
+            lat = geoData.results[0].latitude;
+            lon = geoData.results[0].longitude;
+          }
+        }
+
         const resp = await fetch(
-          `https://api.open-meteo.com/v1/forecast?latitude=47.07&longitude=15.44&current=temperature_2m,weather_code&timezone=Europe/Vienna`
+          `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code&timezone=Europe/Vienna`
         );
         const weather = await resp.json();
         if (weather?.current) {
