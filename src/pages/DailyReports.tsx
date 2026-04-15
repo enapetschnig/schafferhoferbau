@@ -46,6 +46,7 @@ export default function DailyReports() {
   const [showForm, setShowForm] = useState(false);
   const [filterType, setFilterType] = useState<string>("alle");
   const [filterStatus, setFilterStatus] = useState<string>("alle");
+  const [filterGeschoss, setFilterGeschoss] = useState<string>("alle");
 
   const fetchReports = useCallback(async () => {
     setLoading(true);
@@ -68,9 +69,15 @@ export default function DailyReports() {
     if (error) {
       toast({ variant: "destructive", title: "Fehler beim Laden", description: error.message });
     }
-    if (data) setReports(data as any);
+    if (data) {
+      let filtered = data as any[];
+      if (filterGeschoss !== "alle") {
+        filtered = filtered.filter((r: any) => r.geschoss && r.geschoss.includes(filterGeschoss));
+      }
+      setReports(filtered);
+    }
     setLoading(false);
-  }, [filterType, filterStatus, projectFilter]);
+  }, [filterType, filterStatus, filterGeschoss, projectFilter]);
 
   useEffect(() => {
     fetchReports();
@@ -101,6 +108,19 @@ export default function DailyReports() {
               <SelectItem value="offen">Offen</SelectItem>
               <SelectItem value="gesendet">Gesendet</SelectItem>
               <SelectItem value="abgeschlossen">Abgeschlossen</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={filterGeschoss} onValueChange={setFilterGeschoss}>
+            <SelectTrigger className="w-36">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="alle">Alle Geschosse</SelectItem>
+              <SelectItem value="aussen">Aussen</SelectItem>
+              <SelectItem value="keller">Keller</SelectItem>
+              <SelectItem value="eg">EG</SelectItem>
+              <SelectItem value="og">OG</SelectItem>
+              <SelectItem value="dg">DG</SelectItem>
             </SelectContent>
           </Select>
         </div>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import { Upload, FileText, Trash2, Eye, Download, Archive, CheckSquare, Square } from "lucide-react";
+import { Upload, FileText, Trash2, Eye, Download, Archive, CheckSquare, Square, ChevronLeft, ChevronRight, X } from "lucide-react";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -83,6 +84,8 @@ const ProjectDetail = () => {
   const [isAdmin, setIsAdmin] = useState(false);
   const [activeTab, setActiveTab] = useState("aktuell");
   const [sortOrder, setSortOrder] = useState<"desc" | "asc">("desc");
+  const [dateFilter, setDateFilter] = useState("");
+  const [lightboxImage, setLightboxImage] = useState<string | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
   const [viewerState, setViewerState] = useState<{
     open: boolean;
@@ -304,11 +307,19 @@ const ProjectDetail = () => {
   if (!type) return <div>Ungueltiger Dokumenttyp</div>;
   if (loading) return <div className="min-h-screen flex items-center justify-center"><p>Laedt...</p></div>;
 
-  const filteredFiles = getFilteredFiles().sort((a, b) => {
-    const dateA = new Date(a.created_at).getTime();
-    const dateB = new Date(b.created_at).getTime();
-    return sortOrder === "desc" ? dateB - dateA : dateA - dateB;
-  });
+  const filteredFiles = getFilteredFiles()
+    .filter((f) => {
+      if (!dateFilter) return true;
+      return f.created_at.startsWith(dateFilter);
+    })
+    .sort((a, b) => {
+      const dateA = new Date(a.created_at).getTime();
+      const dateB = new Date(b.created_at).getTime();
+      return sortOrder === "desc" ? dateB - dateA : dateA - dateB;
+    });
+
+  // Alle Bilder fuer Lightbox-Swipe
+  const imageFiles = filteredFiles.filter(f => f.name.match(/\.(jpg|jpeg|png|gif|webp)$/i));
   const isArchivTab = activeTab === "archiv";
   const currentTabConfig = tabs.find((t) => t.key === activeTab);
 
@@ -402,12 +413,24 @@ const ProjectDetail = () => {
                           : <Square className="h-4 w-4" />}
                         Alle auswaehlen
                       </button>
-                      <button
-                        className="text-xs text-muted-foreground hover:text-foreground"
-                        onClick={() => setSortOrder(prev => prev === "desc" ? "asc" : "desc")}
-                      >
-                        {sortOrder === "desc" ? "Neueste zuerst" : "Aelteste zuerst"}
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="month"
+                          value={dateFilter}
+                          onChange={(e) => setDateFilter(e.target.value)}
+                          className="text-xs border rounded px-1.5 py-0.5 bg-background"
+                          placeholder="Filter..."
+                        />
+                        {dateFilter && (
+                          <button className="text-xs text-destructive" onClick={() => setDateFilter("")}>Alle</button>
+                        )}
+                        <button
+                          className="text-xs text-muted-foreground hover:text-foreground"
+                          onClick={() => setSortOrder(prev => prev === "desc" ? "asc" : "desc")}
+                        >
+                          {sortOrder === "desc" ? "Neueste zuerst" : "Aelteste zuerst"}
+                        </button>
+                      </div>
                     </div>
                   )}
 
@@ -451,7 +474,13 @@ const ProjectDetail = () => {
                           )}
 
                           {/* Info */}
-                          <div className="flex-1 min-w-0 cursor-pointer" onClick={() => handleFileOpen(file)}>
+                          <div className="flex-1 min-w-0 cursor-pointer" onClick={() => {
+                            if (file.name.match(/\.(jpg|jpeg|png|gif|webp)$/i) && signedUrls[file.name]) {
+                              setLightboxImage(signedUrls[file.name]);
+                            } else {
+                              handleFileOpen(file);
+                            }
+                          }}>
                             <p className="text-sm font-medium truncate">{file.name}</p>
                             <p className="text-xs text-muted-foreground">
                               {new Date(file.created_at).toLocaleDateString("de-DE")}
@@ -486,6 +515,43 @@ const ProjectDetail = () => {
           </div>
         )}
       </main>
+
+      {/* Bild-Lightbox mit Swipe */}
+      <Dialog open={!!lightboxImage} onOpenChange={() => setLightboxImage(null)}>
+        <DialogContent className="max-w-4xl h-[90vh] flex flex-col p-0 bg-black/95">
+          <div className="flex justify-between items-center px-4 py-2">
+            <span className="text-white text-sm">Bild-Vorschau</span>
+            <div className="flex gap-2">
+              {lightboxImage && (
+                <a href={lightboxImage} download className="text-white hover:text-gray-300">
+                  <Download className="h-5 w-5" />
+                </a>
+              )}
+              <button onClick={() => setLightboxImage(null)} className="text-white hover:text-gray-300">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+          </div>
+          <div className="flex-1 flex items-center justify-center p-4 overflow-auto">
+            {lightboxImage && <img src={lightboxImage} alt="Vorschau" className="max-w-full max-h-full object-contain rounded-lg" />}
+          </div>
+          {imageFiles.length > 1 && (() => {
+            const allUrls = imageFiles.map(f => signedUrls[f.name]).filter(Boolean);
+            const idx = lightboxImage ? allUrls.indexOf(lightboxImage) : -1;
+            return (
+              <div className="flex justify-center gap-4 pb-4">
+                <button className="text-white disabled:opacity-30" disabled={idx <= 0} onClick={() => setLightboxImage(allUrls[idx - 1])}>
+                  <ChevronLeft className="h-8 w-8" />
+                </button>
+                <span className="text-white text-sm self-center">{idx + 1} / {allUrls.length}</span>
+                <button className="text-white disabled:opacity-30" disabled={idx >= allUrls.length - 1} onClick={() => setLightboxImage(allUrls[idx + 1])}>
+                  <ChevronRight className="h-8 w-8" />
+                </button>
+              </div>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
 
       <FileViewer
         open={viewerState.open}

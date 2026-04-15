@@ -58,6 +58,7 @@ export function DailyReportForm({ open, onOpenChange, onSuccess, defaultProjectI
   const [geschoss, setGeschoss] = useState<string[]>([]);
   const [beschreibung, setBeschreibung] = useState("");
   const [notizen, setNotizen] = useState("");
+  const [interneAnmerkungen, setInterneAnmerkungen] = useState("");
   const [activities, setActivities] = useState<Activity[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [selectedWorkers, setSelectedWorkers] = useState<string[]>([]);
@@ -189,6 +190,7 @@ export function DailyReportForm({ open, onOpenChange, onSuccess, defaultProjectI
       geschoss,
       beschreibung: beschreibung.trim(),
       notizen: notizen.trim() || null,
+      interne_anmerkungen: interneAnmerkungen.trim() || null,
     };
 
     let reportId: string;
@@ -373,7 +375,18 @@ export function DailyReportForm({ open, onOpenChange, onSuccess, defaultProjectI
             <Textarea
               value={notizen}
               onChange={(e) => setNotizen(e.target.value)}
-              placeholder="Zusätzliche Bemerkungen..."
+              placeholder="Zusaetzliche Bemerkungen..."
+              rows={2}
+            />
+          </div>
+
+          {/* Interne Anmerkungen */}
+          <div>
+            <Label>Interne Anmerkungen (optional, wahlweise mitdruckbar)</Label>
+            <Textarea
+              value={interneAnmerkungen}
+              onChange={(e) => setInterneAnmerkungen(e.target.value)}
+              placeholder="Interne Notizen (nur fuer Team sichtbar)..."
               rows={2}
             />
           </div>

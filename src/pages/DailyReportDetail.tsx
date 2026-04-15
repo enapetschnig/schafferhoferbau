@@ -85,14 +85,30 @@ export default function DailyReportDetail() {
   };
 
   const openSignDialog = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      const { data: emp } = await supabase
-        .from("employees")
-        .select("vorname, nachname")
-        .eq("user_id", user.id)
-        .single();
-      if (emp) setSignatureName(`${emp.vorname} ${emp.nachname}`.trim());
+    // Bauherr 1 oder 2 als Standard-Unterzeichner vorauswählen
+    if (report?.project_id) {
+      const { data: proj } = await supabase
+        .from("projects")
+        .select("bauherr, bauherr2")
+        .eq("id", report.project_id)
+        .maybeSingle();
+      if (proj?.bauherr) {
+        setSignatureName(proj.bauherr);
+      } else if (proj?.bauherr2) {
+        setSignatureName(proj.bauherr2);
+      }
+    }
+    // Fallback: eingeloggter Mitarbeiter
+    if (!signatureName) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: emp } = await supabase
+          .from("employees")
+          .select("vorname, nachname")
+          .eq("user_id", user.id)
+          .maybeSingle();
+        if (emp) setSignatureName(`${emp.vorname} ${emp.nachname}`.trim());
+      }
     }
     setShowSignDialog(true);
   };

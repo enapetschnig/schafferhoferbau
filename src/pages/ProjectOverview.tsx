@@ -301,8 +301,25 @@ const ProjectOverview = () => {
       .from("project_contacts")
       .select("*")
       .eq("project_id", projectId)
+      .order("sort_order")
       .order("name");
     if (data) setContacts(data as Contact[]);
+  };
+
+  const moveContact = async (contactId: string, direction: "up" | "down") => {
+    const idx = contacts.findIndex(c => c.id === contactId);
+    if (idx < 0) return;
+    const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= contacts.length) return;
+
+    const updates = [
+      { id: contacts[idx].id, sort_order: swapIdx },
+      { id: contacts[swapIdx].id, sort_order: idx },
+    ];
+    for (const u of updates) {
+      await supabase.from("project_contacts").update({ sort_order: u.sort_order }).eq("id", u.id);
+    }
+    fetchContacts();
   };
 
   const handleSaveContact = async () => {
@@ -709,6 +726,12 @@ const ProjectOverview = () => {
                     </Button>
                     {isAdmin && (
                       <>
+                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => moveContact(c.id, "up")} title="Nach oben">
+                          <ArrowLeft className="h-3 w-3 rotate-90" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => moveContact(c.id, "down")} title="Nach unten">
+                          <ArrowLeft className="h-3 w-3 -rotate-90" />
+                        </Button>
                         <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditContact(c)}>
                           <Pencil className="h-3.5 w-3.5" />
                         </Button>
@@ -860,7 +883,17 @@ const ProjectOverview = () => {
             </Card>
           ))}
 
-          {/* 6. Polierordner (Vorarbeiter + Admin) */}
+          {/* 6. Bestellungen */}
+          <Card className="cursor-pointer hover:shadow-lg transition-shadow" onClick={() => navigate(`/bestellungen?project=${projectId}`)}>
+            <CardHeader>
+              <div className="text-primary"><FileText className="h-8 w-8" /></div>
+              <CardTitle className="text-xl">Bestellungen</CardTitle>
+              <CardDescription>Material bestellen und verwalten</CardDescription>
+            </CardHeader>
+            <CardContent><Button variant="outline" className="w-full">Oeffnen</Button></CardContent>
+          </Card>
+
+          {/* 7. Polierordner (Vorarbeiter + Admin) */}
           {visibleCategories.filter(c => c.type === "polier").map((category) => (
             <Card key={category.type} className="cursor-pointer hover:shadow-lg transition-shadow" onClick={() => navigate(`/projects/${projectId}/${category.type}`)}>
               <CardHeader>
