@@ -17,6 +17,10 @@ export type WarehouseProduct = {
   category: WarehouseProductCategory;
   einheit: string;
   ek_preis: number | null;
+  aufschlag_prozent: number | null;
+  rechnungsdatum: string | null;
+  lieferdatum: string | null;
+  lieferant: string | null;
   current_stock: number;
   is_active: boolean;
   created_at: string;
