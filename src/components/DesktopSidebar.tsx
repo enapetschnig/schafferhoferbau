@@ -82,7 +82,7 @@ export function DesktopSidebar({ isAdmin, menuVisible, userName }: Props) {
           <img
             src="/schafferhofer-logo.png"
             alt="Schafferhofer Bau"
-            className="h-8 w-auto object-contain"
+            className="h-10 w-auto object-contain"
           />
         </div>
       </div>

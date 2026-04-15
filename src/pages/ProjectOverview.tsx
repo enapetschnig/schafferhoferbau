@@ -542,7 +542,7 @@ const ProjectOverview = () => {
             <img
               src="/schafferhofer-logo.png"
               alt="Schafferhofer Bau"
-              className="h-12 sm:h-16 w-auto max-w-[160px] sm:max-w-[200px] cursor-pointer hover:opacity-80 transition-opacity object-contain"
+              className="h-14 sm:h-20 w-auto max-w-[180px] sm:max-w-[240px] cursor-pointer hover:opacity-80 transition-opacity object-contain"
               onClick={() => navigate("/projects")}
             />
           </div>

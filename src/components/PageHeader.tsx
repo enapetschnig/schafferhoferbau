@@ -32,7 +32,7 @@ export function PageHeader({ title, showBackButton = true, backPath }: PageHeade
           <img 
             src="/schafferhofer-logo.png"
             alt="Schafferhofer Bau"
-            className="h-10 sm:h-14 w-auto max-w-[140px] sm:max-w-[180px] cursor-pointer hover:opacity-80 transition-opacity object-contain" 
+            className="h-14 sm:h-20 w-auto max-w-[180px] sm:max-w-[240px] cursor-pointer hover:opacity-80 transition-opacity object-contain" 
             onClick={() => navigate("/")}
           />
           {title && (
