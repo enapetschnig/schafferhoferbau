@@ -9,6 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { supabase } from "@/integrations/supabase/client";
 import { PageHeader } from "@/components/PageHeader";
 import { DailyReportForm } from "@/components/DailyReportForm";
+import { ZettelUploadDialog } from "@/components/ZettelUploadDialog";
+import { Upload } from "lucide-react";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
 
@@ -44,6 +46,7 @@ export default function DailyReports() {
   const [reports, setReports] = useState<DailyReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [showZettelUpload, setShowZettelUpload] = useState(false);
   const [filterType, setFilterType] = useState<string>("alle");
   const [filterStatus, setFilterStatus] = useState<string>("alle");
   const [filterGeschoss, setFilterGeschoss] = useState<string>("alle");
@@ -124,10 +127,17 @@ export default function DailyReports() {
             </SelectContent>
           </Select>
         </div>
-        <Button onClick={() => setShowForm(true)}>
-          <Plus className="w-4 h-4 mr-2" />
-          Neuer Bericht
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setShowZettelUpload(true)}>
+            <Upload className="w-4 h-4 mr-2" />
+            <span className="hidden sm:inline">Zettel hochladen</span>
+            <span className="sm:hidden">Zettel</span>
+          </Button>
+          <Button onClick={() => setShowForm(true)}>
+            <Plus className="w-4 h-4 mr-2" />
+            Neuer Bericht
+          </Button>
+        </div>
       </div>
 
       {loading ? (
@@ -188,6 +198,13 @@ export default function DailyReports() {
       <DailyReportForm
         open={showForm}
         onOpenChange={setShowForm}
+        onSuccess={fetchReports}
+        defaultProjectId={projectFilter ?? undefined}
+      />
+
+      <ZettelUploadDialog
+        open={showZettelUpload}
+        onOpenChange={setShowZettelUpload}
         onSuccess={fetchReports}
         defaultProjectId={projectFilter ?? undefined}
       />
