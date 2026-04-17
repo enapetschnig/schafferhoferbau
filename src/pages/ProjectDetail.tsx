@@ -218,9 +218,15 @@ const ProjectDetail = () => {
 
   // Bearbeitetes Bild als neue Datei im Bucket speichern
   const handleEditedImageSave = async (blob: Blob) => {
-    if (!projectId || !type) return;
+    if (!projectId || !type) {
+      toast({ variant: "destructive", title: "Fehler", description: "Projekt-ID fehlt" });
+      throw new Error("project id missing");
+    }
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    if (!user) {
+      toast({ variant: "destructive", title: "Nicht angemeldet" });
+      throw new Error("not authenticated");
+    }
 
     const bucket = bucketMap[type];
     const fileName = `edited_${Date.now()}.jpg`;
@@ -228,11 +234,12 @@ const ProjectDetail = () => {
 
     const { error } = await supabase.storage.from(bucket).upload(filePath, blob, {
       contentType: "image/jpeg",
+      cacheControl: "3600",
     });
 
     if (error) {
-      toast({ variant: "destructive", title: "Fehler", description: error.message });
-      return;
+      toast({ variant: "destructive", title: "Upload fehlgeschlagen", description: error.message });
+      throw error;
     }
 
     // DB-Record erstellen
@@ -248,6 +255,7 @@ const ProjectDetail = () => {
 
     toast({ title: "Bearbeitetes Bild gespeichert" });
     setEditingImage(null);
+    setLightboxImage(null);
     fetchFiles();
     fetchDocRecords();
   };

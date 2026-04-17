@@ -263,7 +263,10 @@ export function ProjectChat({ projectId, projectName, isAdmin }: { projectId: st
 
   // Bearbeitetes Bild als neue Nachricht speichern
   const handleEditedImageSave = async (blob: Blob) => {
-    if (!currentUserId) return;
+    if (!currentUserId) {
+      toast({ variant: "destructive", title: "Nicht angemeldet" });
+      throw new Error("not authenticated");
+    }
     const fileName = `edited_${Date.now()}.jpg`;
     const filePath = `${projectId}/${fileName}`;
 
@@ -273,17 +276,22 @@ export function ProjectChat({ projectId, projectName, isAdmin }: { projectId: st
 
     if (uploadError) {
       toast({ variant: "destructive", title: "Upload fehlgeschlagen", description: uploadError.message });
-      return;
+      throw uploadError;
     }
 
     const { data: urlData } = supabase.storage.from("project-chat").getPublicUrl(filePath);
 
-    await supabase.from("project_messages").insert({
+    const { error: msgError } = await supabase.from("project_messages").insert({
       project_id: projectId,
       user_id: currentUserId,
       image_url: urlData.publicUrl,
       message: "✏️ Bearbeitet",
     });
+
+    if (msgError) {
+      toast({ variant: "destructive", title: "Nachricht konnte nicht gesendet werden", description: msgError.message });
+      throw msgError;
+    }
 
     toast({ title: "Bearbeitetes Bild geteilt" });
     setEditingImage(null);
