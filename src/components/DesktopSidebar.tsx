@@ -34,10 +34,10 @@ const MENU_ITEMS: MenuItem[] = [
 interface Props {
   isAdmin: boolean;
   menuVisible: (key: string) => boolean;
-  userName: string;
+  userName?: string;
 }
 
-export function DesktopSidebar({ isAdmin, menuVisible, userName }: Props) {
+export function DesktopSidebar({ isAdmin, menuVisible }: Props) {
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -46,15 +46,9 @@ export function DesktopSidebar({ isAdmin, menuVisible, userName }: Props) {
   );
 
   return (
-    <aside className="hidden lg:flex flex-col w-56 border-r bg-card h-[calc(100vh-65px)] sticky top-[65px] shrink-0">
-      {/* User info */}
-      <div className="px-4 py-3 border-b">
-        <p className="text-xs text-muted-foreground">Eingeloggt als</p>
-        <p className="text-sm font-semibold truncate">{userName}</p>
-      </div>
-
+    <aside className="hidden lg:flex flex-col w-56 border-r bg-card h-screen sticky top-0 shrink-0">
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto py-2 px-2">
+      <nav className="flex-1 overflow-y-auto py-4 px-2">
         {visibleItems.map((item) => {
           const isActive = item.path === "/" ? location.pathname === "/" : location.pathname.startsWith(item.path);
           return (

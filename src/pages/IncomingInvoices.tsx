@@ -966,14 +966,21 @@ export default function IncomingInvoices() {
 
                 {/* Dokument-Vorschau */}
                 {(selectedLS || selectedRE) && (
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <h3 className="font-semibold text-sm text-muted-foreground">Lieferschein</h3>
+                      <div className="flex items-center justify-between">
+                        <h3 className="font-semibold text-sm text-muted-foreground">Lieferschein</h3>
+                        {selectedLS?.photo_url && (
+                          <a href={selectedLS.photo_url} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline">
+                            In neuem Tab oeffnen
+                          </a>
+                        )}
+                      </div>
                       {selectedLS?.photo_url ? (
-                        selectedLS.photo_url.toLowerCase().includes(".pdf") ? (
-                          <iframe src={selectedLS.photo_url} className="w-full h-80 rounded border" title="Lieferschein PDF" />
+                        /\.pdf(\?|$)/i.test(selectedLS.photo_url) ? (
+                          <iframe src={`${selectedLS.photo_url}#toolbar=1`} className="w-full h-[500px] rounded border" title="Lieferschein PDF" />
                         ) : (
-                          <img src={selectedLS.photo_url} alt="Lieferschein" className="w-full rounded border object-contain max-h-80" />
+                          <img src={selectedLS.photo_url} alt="Lieferschein" className="w-full rounded border object-contain max-h-[500px]" />
                         )
                       ) : selectedLS ? (
                         <div className="w-full h-40 rounded border flex items-center justify-center text-muted-foreground text-sm bg-muted/30">
@@ -982,12 +989,19 @@ export default function IncomingInvoices() {
                       ) : null}
                     </div>
                     <div className="space-y-2">
-                      <h3 className="font-semibold text-sm text-muted-foreground">Rechnung</h3>
+                      <div className="flex items-center justify-between">
+                        <h3 className="font-semibold text-sm text-muted-foreground">Rechnung</h3>
+                        {selectedRE?.photo_url && (
+                          <a href={selectedRE.photo_url} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline">
+                            In neuem Tab oeffnen
+                          </a>
+                        )}
+                      </div>
                       {selectedRE?.photo_url ? (
-                        selectedRE.photo_url.toLowerCase().includes(".pdf") ? (
-                          <iframe src={selectedRE.photo_url} className="w-full h-80 rounded border" title="Rechnung PDF" />
+                        /\.pdf(\?|$)/i.test(selectedRE.photo_url) ? (
+                          <iframe src={`${selectedRE.photo_url}#toolbar=1`} className="w-full h-[500px] rounded border" title="Rechnung PDF" />
                         ) : (
-                          <img src={selectedRE.photo_url} alt="Rechnung" className="w-full rounded border object-contain max-h-80" />
+                          <img src={selectedRE.photo_url} alt="Rechnung" className="w-full rounded border object-contain max-h-[500px]" />
                         )
                       ) : selectedRE ? (
                         <div className="w-full h-40 rounded border flex items-center justify-center text-muted-foreground text-sm bg-muted/30">
