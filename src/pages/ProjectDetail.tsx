@@ -728,48 +728,104 @@ const ProjectDetail = () => {
         )}
       </main>
 
-      {/* Bild-Lightbox mit Swipe */}
+      {/* Bild-Lightbox mit Touch-Swipe */}
       <Dialog open={!!lightboxImage} onOpenChange={() => setLightboxImage(null)}>
         <DialogContent className="max-w-4xl h-[90vh] flex flex-col p-0 bg-black/95">
-          <div className="flex justify-between items-center px-4 py-2">
-            <span className="text-white text-sm">Bild-Vorschau</span>
-            <div className="flex gap-2">
-              {lightboxImage && (
-                <>
-                  <button
-                    onClick={() => setEditingImage(lightboxImage)}
-                    className="text-white hover:text-gray-300 flex items-center gap-1 px-2 py-1 bg-white/10 rounded"
-                    title="Bild bearbeiten"
-                  >
-                    <Pencil className="h-4 w-4" />
-                    <span className="text-xs hidden sm:inline">Bearbeiten</span>
-                  </button>
-                  <a href={lightboxImage} download className="text-white hover:text-gray-300">
-                    <Download className="h-5 w-5" />
-                  </a>
-                </>
-              )}
-              <button onClick={() => setLightboxImage(null)} className="text-white hover:text-gray-300">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-          </div>
-          <div className="flex-1 flex items-center justify-center p-4 overflow-auto">
-            {lightboxImage && <img src={lightboxImage} alt="Vorschau" className="max-w-full max-h-full object-contain rounded-lg" />}
-          </div>
-          {imageFiles.length > 1 && (() => {
+          {(() => {
             const allUrls = imageFiles.map(f => signedUrls[f.name]).filter(Boolean);
             const idx = lightboxImage ? allUrls.indexOf(lightboxImage) : -1;
+            const goPrev = () => { if (idx > 0) setLightboxImage(allUrls[idx - 1]); };
+            const goNext = () => { if (idx < allUrls.length - 1) setLightboxImage(allUrls[idx + 1]); };
+            const shareImage = async () => {
+              if (!lightboxImage) return;
+              try {
+                const resp = await fetch(lightboxImage);
+                const blob = await resp.blob();
+                const fileName = imageFiles[idx]?.name || "bild.jpg";
+                const file = new File([blob], fileName, { type: blob.type });
+                if ("canShare" in navigator && (navigator as any).canShare({ files: [file] })) {
+                  await (navigator as any).share({ files: [file], title: fileName });
+                  return;
+                }
+              } catch (err: any) {
+                if (err?.name === "AbortError") return;
+              }
+              // Fallback: Download
+              const a = document.createElement("a");
+              a.href = lightboxImage;
+              a.download = imageFiles[idx]?.name || "bild.jpg";
+              a.click();
+            };
             return (
-              <div className="flex justify-center gap-4 pb-4">
-                <button className="text-white disabled:opacity-30" disabled={idx <= 0} onClick={() => setLightboxImage(allUrls[idx - 1])}>
-                  <ChevronLeft className="h-8 w-8" />
-                </button>
-                <span className="text-white text-sm self-center">{idx + 1} / {allUrls.length}</span>
-                <button className="text-white disabled:opacity-30" disabled={idx >= allUrls.length - 1} onClick={() => setLightboxImage(allUrls[idx + 1])}>
-                  <ChevronRight className="h-8 w-8" />
-                </button>
-              </div>
+              <>
+                <div className="flex justify-between items-center px-4 py-2">
+                  <span className="text-white text-sm">
+                    {idx >= 0 && allUrls.length > 0 ? `${idx + 1} / ${allUrls.length}` : "Bild-Vorschau"}
+                  </span>
+                  <div className="flex gap-2">
+                    {lightboxImage && (
+                      <>
+                        <button
+                          onClick={() => setEditingImage(lightboxImage)}
+                          className="text-white hover:text-gray-300 flex items-center gap-1 px-2 py-1 bg-white/10 rounded"
+                          title="Bild bearbeiten"
+                        >
+                          <Pencil className="h-4 w-4" />
+                          <span className="text-xs hidden sm:inline">Bearbeiten</span>
+                        </button>
+                        <button
+                          onClick={shareImage}
+                          className="text-white hover:text-gray-300 flex items-center gap-1 px-2 py-1 bg-white/10 rounded"
+                          title="Weiterleiten / teilen"
+                        >
+                          <Share2 className="h-4 w-4" />
+                          <span className="text-xs hidden sm:inline">Teilen</span>
+                        </button>
+                        <a href={lightboxImage} download className="text-white hover:text-gray-300">
+                          <Download className="h-5 w-5" />
+                        </a>
+                      </>
+                    )}
+                    <button onClick={() => setLightboxImage(null)} className="text-white hover:text-gray-300">
+                      <X className="h-5 w-5" />
+                    </button>
+                  </div>
+                </div>
+                <div
+                  className="flex-1 flex items-center justify-center p-4 overflow-auto touch-pan-y select-none"
+                  onTouchStart={(e) => {
+                    const t = e.touches[0];
+                    (e.currentTarget as any)._touchStart = { x: t.clientX, y: t.clientY, time: Date.now() };
+                  }}
+                  onTouchEnd={(e) => {
+                    const start = (e.currentTarget as any)._touchStart;
+                    if (!start) return;
+                    const t = e.changedTouches[0];
+                    const dx = t.clientX - start.x;
+                    const dy = t.clientY - start.y;
+                    const dt = Date.now() - start.time;
+                    // Horizontaler Swipe, min 50px, eher horizontal als vertikal, schnell
+                    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5 && dt < 800) {
+                      if (dx < 0) goNext();
+                      else goPrev();
+                    }
+                    (e.currentTarget as any)._touchStart = null;
+                  }}
+                >
+                  {lightboxImage && <img src={lightboxImage} alt="Vorschau" className="max-w-full max-h-full object-contain rounded-lg pointer-events-none" draggable={false} />}
+                </div>
+                {imageFiles.length > 1 && (
+                  <div className="flex justify-center gap-4 pb-4">
+                    <button className="text-white disabled:opacity-30 p-2" disabled={idx <= 0} onClick={goPrev}>
+                      <ChevronLeft className="h-8 w-8" />
+                    </button>
+                    <span className="text-white text-xs self-center opacity-70">Wischen zum Blättern</span>
+                    <button className="text-white disabled:opacity-30 p-2" disabled={idx >= allUrls.length - 1} onClick={goNext}>
+                      <ChevronRight className="h-8 w-8" />
+                    </button>
+                  </div>
+                )}
+              </>
             );
           })()}
         </DialogContent>
