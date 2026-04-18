@@ -23,6 +23,7 @@ import LeaveManagement from "@/components/LeaveManagement";
 import TimeAccountManagement from "@/components/TimeAccountManagement";
 import { ContactTemplatesManager } from "@/components/admin/ContactTemplatesManager";
 import { YearPlanningRolesPanel } from "@/components/admin/YearPlanningRolesPanel";
+import { WarehouseCategoriesManager } from "@/components/admin/WarehouseCategoriesManager";
 
 type Profile = {
   id: string;
@@ -1308,6 +1309,15 @@ export default function Admin() {
             Kontakt-Vorlagen & Standard-Kontakte
           </h2>
           <ContactTemplatesManager />
+        </section>
+
+        {/* ===== LAGER-KATEGORIEN ===== */}
+        <section>
+          <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
+            <Settings className="h-6 w-6" />
+            Lager-Kategorien
+          </h2>
+          <WarehouseCategoriesManager />
         </section>
 
         {/* ===== PLANTAFEL-RECHTE ===== */}

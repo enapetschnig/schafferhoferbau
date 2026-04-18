@@ -1,19 +1,49 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Switch } from "@/components/ui/switch";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
 import { TRANSFER_TYPE_LABELS, type WarehouseDeliveryNote } from "@/types/warehouse";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   note: WarehouseDeliveryNote | null;
+  onUpdate?: () => void;
 }
 
-export function WarehouseDeliveryNoteDetail({ open, onOpenChange, note }: Props) {
+export function WarehouseDeliveryNoteDetail({ open, onOpenChange, note, onUpdate }: Props) {
+  const { toast } = useToast();
   const [showPhoto, setShowPhoto] = useState<string | null>(null);
+  const [kundeVerrechnet, setKundeVerrechnet] = useState<boolean>(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setKundeVerrechnet(!!note?.kunde_verrechnet);
+  }, [note?.id, note?.kunde_verrechnet]);
+
+  const handleToggleVerrechnet = async (checked: boolean) => {
+    if (!note) return;
+    setKundeVerrechnet(checked);
+    setSaving(true);
+    const { error } = await supabase
+      .from("warehouse_delivery_notes")
+      .update({ kunde_verrechnet: checked })
+      .eq("id", note.id);
+    setSaving(false);
+    if (error) {
+      setKundeVerrechnet(!checked);
+      toast({ variant: "destructive", title: "Fehler", description: error.message });
+      return;
+    }
+    toast({ title: checked ? "Als verrechnet markiert" : "Als nicht verrechnet markiert" });
+    onUpdate?.();
+  };
 
   if (!note) return null;
 
@@ -63,6 +93,25 @@ export function WarehouseDeliveryNoteDetail({ open, onOpenChange, note }: Props)
                 <p>{note.notizen}</p>
               </div>
             )}
+
+            {/* Kunde verrechnet Toggle */}
+            <div className={`flex items-center justify-between p-3 rounded-lg border-2 ${kundeVerrechnet ? "border-green-300 bg-green-50 dark:bg-green-950/20" : "border-red-300 bg-red-50 dark:bg-red-950/20"}`}>
+              <div>
+                <p className="text-sm font-medium">
+                  Kunde verrechnet: <span className={kundeVerrechnet ? "text-green-700" : "text-red-700"}>
+                    {kundeVerrechnet ? "Ja" : "Nein"}
+                  </span>
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {kundeVerrechnet ? "Dieser Lieferschein wurde dem Kunden bereits verrechnet." : "Noch nicht an Kunden verrechnet."}
+                </p>
+              </div>
+              <Switch
+                checked={kundeVerrechnet}
+                onCheckedChange={handleToggleVerrechnet}
+                disabled={saving}
+              />
+            </div>
 
             {/* Positionen */}
             {note.items && note.items.length > 0 && (

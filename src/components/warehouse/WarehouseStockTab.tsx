@@ -23,11 +23,17 @@ interface Props {
 export function WarehouseStockTab({ isAdmin }: Props) {
   const { toast } = useToast();
   const [products, setProducts] = useState<WarehouseProduct[]>([]);
+  const [categories, setCategories] = useState<{ slug: string; label: string }[]>([]);
   const [search, setSearch] = useState("");
   const [filterCategory, setFilterCategory] = useState<WarehouseProductCategory | "all">("all");
   const [filterLieferant, setFilterLieferant] = useState("");
+  const [filterRechnungFrom, setFilterRechnungFrom] = useState("");
+  const [filterRechnungTo, setFilterRechnungTo] = useState("");
+  const [filterLieferFrom, setFilterLieferFrom] = useState("");
+  const [filterLieferTo, setFilterLieferTo] = useState("");
   const [sortField, setSortField] = useState<"name" | "current_stock">("name");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [showMoreFilters, setShowMoreFilters] = useState(false);
 
   const fetchProducts = async () => {
     const { data } = await supabase
@@ -39,16 +45,28 @@ export function WarehouseStockTab({ isAdmin }: Props) {
     if (data) setProducts(data as unknown as WarehouseProduct[]);
   };
 
-  useEffect(() => { fetchProducts(); }, []);
+  const fetchCategories = async () => {
+    const { data } = await supabase.from("warehouse_categories").select("slug, label").order("sort_order").order("label");
+    if (data) setCategories(data);
+  };
+
+  useEffect(() => { fetchProducts(); fetchCategories(); }, []);
+
+  const getCategoryLabel = (slug: string) =>
+    categories.find(c => c.slug === slug)?.label || CATEGORY_LABELS[slug] || slug;
 
   const filtered = products
     .filter((p) => {
       const matchSearch = p.name.toLowerCase().includes(search.toLowerCase()) ||
-        CATEGORY_LABELS[p.category]?.toLowerCase().includes(search.toLowerCase()) ||
+        getCategoryLabel(p.category).toLowerCase().includes(search.toLowerCase()) ||
         (p.lieferant || "").toLowerCase().includes(search.toLowerCase());
       const matchCategory = filterCategory === "all" || p.category === filterCategory;
       const matchLieferant = !filterLieferant || (p.lieferant || "").toLowerCase().includes(filterLieferant.toLowerCase());
-      return matchSearch && matchCategory && matchLieferant;
+      const matchRechnung = (!filterRechnungFrom || (p.rechnungsdatum && p.rechnungsdatum >= filterRechnungFrom))
+        && (!filterRechnungTo || (p.rechnungsdatum && p.rechnungsdatum <= filterRechnungTo));
+      const matchLiefer = (!filterLieferFrom || (p.lieferdatum && p.lieferdatum >= filterLieferFrom))
+        && (!filterLieferTo || (p.lieferdatum && p.lieferdatum <= filterLieferTo));
+      return matchSearch && matchCategory && matchLieferant && matchRechnung && matchLiefer;
     })
     .sort((a, b) => {
       const valA = sortField === "current_stock" ? a.current_stock : a.name.toLowerCase();
@@ -197,6 +215,21 @@ export function WarehouseStockTab({ isAdmin }: Props) {
               </SelectContent>
             </Select>
           )}
+          <Select value={sortField === "current_stock" ? `stock-${sortDir}` : "name"} onValueChange={(v) => {
+            if (v === "name") { setSortField("name"); setSortDir("asc"); }
+            else if (v === "stock-asc") { setSortField("current_stock"); setSortDir("asc"); }
+            else if (v === "stock-desc") { setSortField("current_stock"); setSortDir("desc"); }
+          }}>
+            <SelectTrigger className="w-[160px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="name">Name A-Z</SelectItem>
+              <SelectItem value="stock-asc">Bestand ↑</SelectItem>
+              <SelectItem value="stock-desc">Bestand ↓</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button size="sm" variant="outline" onClick={() => setShowMoreFilters(!showMoreFilters)}>
+            {showMoreFilters ? "Weniger" : "Mehr Filter"}
+          </Button>
           {isAdmin && (
             <div className="flex gap-1">
               <Button size="sm" variant="outline" onClick={handleExcelExport}><Download className="w-4 h-4 mr-1" /> Export</Button>
@@ -211,12 +244,32 @@ export function WarehouseStockTab({ isAdmin }: Props) {
         </div>
         <div className="flex gap-1 flex-wrap">
           <Badge variant={filterCategory === "all" ? "default" : "outline"} className="cursor-pointer" onClick={() => setFilterCategory("all")}>Alle</Badge>
-          {CATEGORY_OPTIONS.map((cat) => (
-            <Badge key={cat} variant={filterCategory === cat ? "default" : "outline"} className="cursor-pointer" onClick={() => setFilterCategory(cat)}>
-              {CATEGORY_LABELS[cat]}
+          {categories.map((cat) => (
+            <Badge key={cat.slug} variant={filterCategory === cat.slug ? "default" : "outline"} className="cursor-pointer" onClick={() => setFilterCategory(cat.slug)}>
+              {cat.label}
             </Badge>
           ))}
         </div>
+        {showMoreFilters && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2 p-3 bg-muted/30 rounded-lg">
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">Rechnungsdatum von</label>
+              <Input type="date" value={filterRechnungFrom} onChange={(e) => setFilterRechnungFrom(e.target.value)} className="h-9" />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">Rechnungsdatum bis</label>
+              <Input type="date" value={filterRechnungTo} onChange={(e) => setFilterRechnungTo(e.target.value)} className="h-9" />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">Lieferdatum von</label>
+              <Input type="date" value={filterLieferFrom} onChange={(e) => setFilterLieferFrom(e.target.value)} className="h-9" />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">Lieferdatum bis</label>
+              <Input type="date" value={filterLieferTo} onChange={(e) => setFilterLieferTo(e.target.value)} className="h-9" />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Table */}

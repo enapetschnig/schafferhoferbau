@@ -79,6 +79,32 @@ export function WarehouseDeliveryNoteDialog({ open, onOpenChange, onSaved }: Pro
       setSignatureName("");
       setProductSearch("");
       setProductCategoryFilter("all");
+
+      // Auto-Fill: Mitarbeitername aus Login + Baustelle aus Plantafel (heutiger Zeitplan)
+      (async () => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        const { data: emp } = await supabase
+          .from("employees")
+          .select("vorname, nachname")
+          .eq("user_id", user.id)
+          .maybeSingle();
+        if (emp) setSignatureName(`${emp.vorname || ""} ${emp.nachname || ""}`.trim());
+
+        // Heutiges Projekt aus worker_assignments
+        const today = new Date().toISOString().split("T")[0];
+        const { data: assign } = await supabase
+          .from("worker_assignments")
+          .select("project_id")
+          .eq("user_id", user.id)
+          .eq("datum", today)
+          .limit(1)
+          .maybeSingle();
+        if (assign?.project_id) {
+          // Bei lager_to_baustelle: Ziel-Projekt, sonst Source
+          setTargetProjectId(assign.project_id);
+        }
+      })();
     }
   }, [open]);
 
@@ -294,6 +320,43 @@ export function WarehouseDeliveryNoteDialog({ open, onOpenChange, onSaved }: Pro
               .eq("id", item.product.id);
           }
         }
+      }
+
+      // Verknuepfung zu incoming_documents (allgemeiner Lieferscheine-Bereich)
+      // damit der Lieferschein auch dort auftaucht
+      try {
+        const mainProjectId = transferType === "baustelle_to_lager"
+          ? sourceProjectId
+          : targetProjectId;
+        if (mainProjectId) {
+          const transferLabel = transferType === "lager_to_baustelle" ? "Lager → Baustelle"
+            : transferType === "baustelle_to_lager" ? "Baustelle → Lager"
+            : "Baustelle → Baustelle";
+          const positionen = selectedItems.map(i => ({
+            material: i.product.name,
+            menge: String(i.menge),
+            einheit: i.product.einheit || "",
+            einzelpreis: null,
+            gesamtpreis: null,
+          }));
+          await supabase.from("incoming_documents").insert({
+            project_id: mainProjectId,
+            user_id: user.id,
+            typ: "lagerlieferschein",
+            photo_url: photoUrls[0] || "",
+            zusatz_seiten_urls: photoUrls.slice(1),
+            lieferant: transferLabel,
+            dokument_datum: datum,
+            positionen,
+            unterschrift: signature,
+            unterschrift_name: signatureName || null,
+            notizen: notizen || null,
+            ist_retour: transferType === "baustelle_to_lager",
+          });
+        }
+      } catch (linkErr) {
+        console.warn("Lieferschein konnte nicht in incoming_documents verlinkt werden:", linkErr);
+        // nicht fatal - Hauptlieferschein ist bereits gespeichert
       }
 
       toast({ title: "Lieferschein erstellt" });

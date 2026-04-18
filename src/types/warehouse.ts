@@ -1,10 +1,6 @@
-export type WarehouseProductCategory =
-  | "kanaele"
-  | "betonzubehoer"
-  | "daemmung"
-  | "kleinteile"
-  | "baugeraete"
-  | "schalungen";
+// Kategorien werden jetzt dynamisch aus warehouse_categories-Tabelle geladen.
+// Typ bleibt string damit beliebige Slugs moeglich sind.
+export type WarehouseProductCategory = string;
 
 export type WarehouseTransferType =
   | "lager_to_baustelle"
@@ -38,6 +34,8 @@ export type WarehouseDeliveryNote = {
   unterschrift: string;
   unterschrift_name: string | null;
   notizen: string | null;
+  kunde_verrechnet?: boolean | null;
+  incoming_document_id?: string | null;
   parent_note_id: string | null;
   created_at: string;
   // Joined fields:
