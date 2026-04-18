@@ -714,13 +714,13 @@ const ProjectOverview = () => {
         {/* Projektkontakte — prominent oben */}
         <Card className="mb-4">
           <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
               <CardTitle className="text-lg flex items-center gap-2">
                 <Users className="h-5 w-5" />
                 Projektkontakte
                 {contacts.length > 0 && <span className="text-sm font-normal text-muted-foreground">({contacts.length})</span>}
               </CardTitle>
-              <div className="flex gap-1">
+              <div className="flex gap-1 flex-wrap">
                 {contacts.length > 0 && (
                   <Button size="sm" variant="ghost" onClick={exportContactsExcel} title="Excel-Export">
                     <Download className="h-4 w-4" />
