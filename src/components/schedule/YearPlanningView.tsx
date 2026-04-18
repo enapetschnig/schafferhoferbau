@@ -71,6 +71,7 @@ interface Props {
   assignments: Assignment[];
   holidays: CompanyHoliday[];
   leaveRequests: LeaveRequest[];
+  onSelectWeek?: (weekStart: Date) => void;
 }
 
 const BLOCK_COLORS = [
@@ -93,11 +94,20 @@ export function YearPlanningView({
   projects,
   assignments,
   holidays,
+  onSelectWeek,
 }: Props) {
   const { toast } = useToast();
   const [planBlocks, setPlanBlocks] = useState<PlanBlock[]>([]);
   const gridRef = useRef<HTMLDivElement | null>(null);
   const [dragState, setDragState] = useState<DragState | null>(null);
+  // Create-Drag: Ziehen auf leerer Flaeche um neuen Block zu erstellen
+  const [createDrag, setCreateDrag] = useState<{
+    kind: "plan" | "resource";
+    resourceId?: string;
+    startWeek: number;
+    endWeek: number;
+    active: boolean;
+  } | null>(null);
   const [showBlockDialog, setShowBlockDialog] = useState(false);
   const [editingBlock, setEditingBlock] = useState<PlanBlock | null>(null);
   const [blockForm, setBlockForm] = useState({
@@ -230,6 +240,50 @@ export function YearPlanningView({
     else fetchResourceBlocks();
   };
 
+  // Create-Drag: auf leerer Flaeche ziehen um neuen Block zu erstellen
+  const startCreateDrag = (e: React.PointerEvent, kind: "plan" | "resource", weekNum: number, resourceId?: string) => {
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    setCreateDrag({ kind, resourceId, startWeek: weekNum, endWeek: weekNum, active: true });
+  };
+
+  const updateCreateDrag = (weekNum: number) => {
+    if (!createDrag || !createDrag.active) return;
+    if (createDrag.endWeek !== weekNum) {
+      setCreateDrag({ ...createDrag, endWeek: weekNum });
+    }
+  };
+
+  const endCreateDrag = () => {
+    if (!createDrag) return;
+    const sw = Math.min(createDrag.startWeek, createDrag.endWeek);
+    const ew = Math.max(createDrag.startWeek, createDrag.endWeek);
+    if (createDrag.kind === "plan") {
+      setEditingBlock(null);
+      setBlockForm({
+        title: "",
+        projectId: "__none__",
+        color: BLOCK_COLORS[0],
+        startWeek: String(sw),
+        endWeek: String(ew),
+        partie: "",
+        individualName: "",
+      });
+      setShowBlockDialog(true);
+    } else {
+      setEditingResourceBlock(null);
+      setResourceForm({
+        resourceId: createDrag.resourceId || "",
+        projectId: "__none__",
+        color: BLOCK_COLORS[3],
+        startWeek: String(sw),
+        endWeek: String(ew),
+        label: "",
+      });
+      setShowResourceDialog(true);
+    }
+    setCreateDrag(null);
+  };
+
   // Helper: bekommt effektive start/end_week waehrend Drag
   const getEffectiveRange = (
     id: string,
@@ -275,7 +329,7 @@ export function YearPlanningView({
 
     const payload = {
       title: blockForm.title.trim(),
-      project_id: blockForm.projectId || null,
+      project_id: (!blockForm.projectId || blockForm.projectId === "__none__") ? null : blockForm.projectId,
       color: blockForm.color,
       start_week: parseInt(blockForm.startWeek),
       end_week: parseInt(blockForm.endWeek),
@@ -305,7 +359,7 @@ export function YearPlanningView({
     setEditingBlock(block);
     setBlockForm({
       title: block.title,
-      projectId: block.project_id || "",
+      projectId: block.project_id || "__none__",
       color: block.color || BLOCK_COLORS[0],
       startWeek: block.start_week.toString(),
       endWeek: block.end_week.toString(),
@@ -322,7 +376,7 @@ export function YearPlanningView({
 
     const payload = {
       resource_id: resourceForm.resourceId,
-      project_id: resourceForm.projectId || null,
+      project_id: (!resourceForm.projectId || resourceForm.projectId === "__none__") ? null : resourceForm.projectId,
       color: resourceForm.color,
       start_week: parseInt(resourceForm.startWeek),
       end_week: parseInt(resourceForm.endWeek),
@@ -351,7 +405,7 @@ export function YearPlanningView({
     setEditingResourceBlock(block);
     setResourceForm({
       resourceId: block.resource_id,
-      projectId: block.project_id || "",
+      projectId: block.project_id || "__none__",
       color: block.color || BLOCK_COLORS[3],
       startWeek: block.start_week.toString(),
       endWeek: block.end_week.toString(),
@@ -432,8 +486,8 @@ export function YearPlanningView({
       ref={gridRef}
       className="border rounded-lg overflow-x-auto"
       onPointerMove={onPointerMove}
-      onPointerUp={endDrag}
-      onPointerCancel={endDrag}
+      onPointerUp={(e) => { endDrag(e); endCreateDrag(); }}
+      onPointerCancel={(e) => { endDrag(e); setCreateDrag(null); }}
     >
       {/* Month header */}
       <div
@@ -467,16 +521,19 @@ export function YearPlanningView({
           KW
         </div>
         {weeks.map((w) => (
-          <div
+          <button
+            type="button"
             key={w.weekNum}
+            onClick={() => onSelectWeek?.(w.start)}
             className={`text-[10px] text-center py-0.5 border-r ${
               isHolidayWeek(w.start)
                 ? "bg-gray-200 text-gray-400"
                 : "text-muted-foreground"
-            }`}
+            } ${onSelectWeek ? "hover:bg-primary/20 hover:text-primary cursor-pointer" : ""}`}
+            title={onSelectWeek ? `Zur Wochenansicht KW ${w.weekNum}` : undefined}
           >
             {w.weekNum}
-          </div>
+          </button>
         ))}
       </div>
 
@@ -618,9 +675,37 @@ export function YearPlanningView({
         );
       })}
 
+      {/* Neuer-Plan-Block-Zeile: Klick+Ziehen um neuen Block anzulegen */}
+      <div
+        data-yp-row="true"
+        className="grid border-b bg-primary/5"
+        style={{
+          gridTemplateColumns: `minmax(140px, 200px) repeat(${weeks.length}, minmax(24px, 1fr))`,
+        }}
+      >
+        <div className="p-1.5 border-r text-xs text-muted-foreground truncate sticky left-0 bg-card z-10 flex items-center gap-1">
+          <Plus className="h-3 w-3 text-primary" />
+          <span>Neuer Block (ziehen)</span>
+        </div>
+        {weeks.map((w) => {
+          const isCreateHere = createDrag?.kind === "plan"
+            && w.weekNum >= Math.min(createDrag.startWeek, createDrag.endWeek)
+            && w.weekNum <= Math.max(createDrag.startWeek, createDrag.endWeek);
+          return (
+            <div
+              key={w.weekNum}
+              className={`border-r min-h-[24px] cursor-crosshair hover:bg-primary/10 ${isCreateHere ? "bg-primary/30" : ""}`}
+              onPointerDown={(e) => startCreateDrag(e, "plan", w.weekNum)}
+              onPointerEnter={() => { if (createDrag?.kind === "plan") updateCreateDrag(w.weekNum); }}
+              title="Ziehen zum Anlegen eines neuen Blocks"
+            />
+          );
+        })}
+      </div>
+
       {planBlocks.length === 0 && (
         <div className="px-3 py-4 text-xs text-muted-foreground text-center">
-          Noch keine Grobplanungsbloecke angelegt
+          Noch keine Grobplanungsblöcke angelegt — ziehe oben in der Zeile um einen zu erstellen
         </div>
       )}
 
@@ -668,10 +753,18 @@ export function YearPlanningView({
                 const { start: s, end: e } = getEffectiveRange(b.id, "resource", b.start_week, b.end_week);
                 return { b, s, e };
               }).filter(({ s, e }) => w.weekNum >= s && w.weekNum <= e);
+              const isCreateDragHere = createDrag?.kind === "resource"
+                && createDrag.resourceId === resource.id
+                && w.weekNum >= Math.min(createDrag.startWeek, createDrag.endWeek)
+                && w.weekNum <= Math.max(createDrag.startWeek, createDrag.endWeek);
+              const isEmpty = cells.length === 0;
               return (
                 <div
                   key={w.weekNum}
-                  className={`border-r min-h-[24px] relative ${holiday ? "bg-gray-100" : ""}`}
+                  className={`border-r min-h-[24px] relative ${holiday ? "bg-gray-100" : ""} ${isCreateDragHere ? "bg-orange-200/50" : isEmpty ? "hover:bg-orange-100/40 cursor-crosshair" : ""}`}
+                  onPointerDown={(e) => { if (isEmpty) startCreateDrag(e, "resource", w.weekNum, resource.id); }}
+                  onPointerEnter={() => { if (createDrag?.resourceId === resource.id) updateCreateDrag(w.weekNum); }}
+                  title={isEmpty ? "Ziehen zum Einplanen" : undefined}
                 >
                   {cells.map(({ b, s, e }, idx) => {
                     const projectName = b.project_id
@@ -750,7 +843,7 @@ export function YearPlanningView({
             <Select value={blockForm.projectId} onValueChange={(v) => setBlockForm({ ...blockForm, projectId: v })}>
               <SelectTrigger><SelectValue placeholder="Kein Projekt" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Kein Projekt</SelectItem>
+                <SelectItem value="__none__">Kein Projekt</SelectItem>
                 {projects.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
               </SelectContent>
             </Select>
@@ -836,7 +929,7 @@ export function YearPlanningView({
             <Select value={resourceForm.projectId} onValueChange={(v) => setResourceForm({ ...resourceForm, projectId: v })}>
               <SelectTrigger><SelectValue placeholder="Kein Projekt" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Kein Projekt</SelectItem>
+                <SelectItem value="__none__">Kein Projekt</SelectItem>
                 {(() => {
                   const sw = parseInt(resourceForm.startWeek) || 1;
                   const ew = parseInt(resourceForm.endWeek) || 1;

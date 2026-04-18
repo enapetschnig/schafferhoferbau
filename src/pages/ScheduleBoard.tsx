@@ -450,6 +450,7 @@ export default function ScheduleBoard() {
             assignments={assignments}
             holidays={companyHolidays}
             leaveRequests={leaveRequests}
+            onSelectWeek={(wStart) => { setWeekStart(wStart); setMode("week"); }}
           />
         )}
       </main>
