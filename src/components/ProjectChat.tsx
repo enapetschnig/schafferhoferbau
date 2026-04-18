@@ -157,12 +157,28 @@ export function ProjectChat({ projectId, projectName, isAdmin }: { projectId: st
     };
   }, [projectId]);
 
-  // Auto-scroll on new messages
+  // Auto-scroll: immer ganz runter bei neuen Nachrichten und beim Oeffnen
   useEffect(() => {
-    if (!initialLoad) {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }
+    if (messages.length === 0) return;
+    // Initial + neue Nachrichten: zum Ende scrollen.
+    // instant beim ersten Laden, smooth danach
+    const behavior: ScrollBehavior = initialLoad ? "auto" : "smooth";
+    // Doppelt mit Delay: einmal sofort, dann nach Render (Bilder, Reaktionen geladen)
+    messagesEndRef.current?.scrollIntoView({ behavior, block: "end" });
+    const t = setTimeout(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
+    }, 100);
+    return () => clearTimeout(t);
   }, [messages, initialLoad]);
+
+  // Extra Scroll nach dem initialen Laden (falls Bilder erst geladen werden)
+  useEffect(() => {
+    if (initialLoad) return;
+    const t1 = setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "auto", block: "end" }), 50);
+    const t2 = setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "auto", block: "end" }), 300);
+    const t3 = setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "auto", block: "end" }), 800);
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
+  }, [initialLoad]);
 
   // Load older messages
   const loadMore = async () => {
