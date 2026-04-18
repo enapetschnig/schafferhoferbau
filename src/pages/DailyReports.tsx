@@ -1,9 +1,14 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Plus, FileText, Filter } from "lucide-react";
+import { Plus, FileText, Filter, Download, CheckSquare, Square, Loader2 } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import { generateDailyReportPDF } from "@/lib/generateDailyReportPDF";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
@@ -50,13 +55,23 @@ export default function DailyReports() {
   const [filterType, setFilterType] = useState<string>("alle");
   const [filterStatus, setFilterStatus] = useState<string>("alle");
   const [filterGeschoss, setFilterGeschoss] = useState<string>("alle");
+  const [filterDateFrom, setFilterDateFrom] = useState<string>("");
+  const [filterDateTo, setFilterDateTo] = useState<string>("");
+  const [filterSignature, setFilterSignature] = useState<"alle" | "ja" | "nein">("alle");
+  const [sortOrder, setSortOrder] = useState<"desc" | "asc">("desc");
+  const [showFilters, setShowFilters] = useState(false);
+  const [selectedReports, setSelectedReports] = useState<Set<string>>(new Set());
+  const [showBulkDownloadDialog, setShowBulkDownloadDialog] = useState(false);
+  const [bulkIncludeIntern, setBulkIncludeIntern] = useState(false);
+  const [bulkIncludeHours, setBulkIncludeHours] = useState(false);
+  const [bulkDownloading, setBulkDownloading] = useState(false);
 
   const fetchReports = useCallback(async () => {
     setLoading(true);
     let query = supabase
       .from("daily_reports")
       .select("*, projects(name, plz)")
-      .order("datum", { ascending: false });
+      .order("datum", { ascending: sortOrder === "asc" });
 
     if (projectFilter) {
       query = query.eq("project_id", projectFilter);
@@ -66,6 +81,12 @@ export default function DailyReports() {
     }
     if (filterStatus !== "alle") {
       query = query.eq("status", filterStatus);
+    }
+    if (filterDateFrom) {
+      query = query.gte("datum", filterDateFrom);
+    }
+    if (filterDateTo) {
+      query = query.lte("datum", filterDateTo);
     }
 
     const { data, error } = await query;
@@ -77,21 +98,76 @@ export default function DailyReports() {
       if (filterGeschoss !== "alle") {
         filtered = filtered.filter((r: any) => r.geschoss && r.geschoss.includes(filterGeschoss));
       }
+      if (filterSignature !== "alle") {
+        filtered = filtered.filter((r: any) => filterSignature === "ja"
+          ? !!r.unterschrift_kunde
+          : !r.unterschrift_kunde);
+      }
       setReports(filtered);
     }
     setLoading(false);
-  }, [filterType, filterStatus, filterGeschoss, projectFilter]);
+  }, [filterType, filterStatus, filterGeschoss, projectFilter, filterDateFrom, filterDateTo, filterSignature, sortOrder]);
 
   useEffect(() => {
     fetchReports();
   }, [fetchReports]);
 
+  const handleBulkDownload = async () => {
+    if (selectedReports.size === 0) return;
+    setBulkDownloading(true);
+    try {
+      const ids = Array.from(selectedReports);
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "";
+      let ok = 0;
+      for (const id of ids) {
+        try {
+          const { data: report } = await supabase
+            .from("daily_reports")
+            .select("*, projects(name, adresse, plz)")
+            .eq("id", id)
+            .single();
+          if (!report) continue;
+          const { data: activities } = await supabase
+            .from("daily_report_activities")
+            .select("geschoss, beschreibung")
+            .eq("daily_report_id", id)
+            .order("sort_order");
+          const { data: photos } = await supabase
+            .from("daily_report_photos")
+            .select("file_path, file_name")
+            .eq("daily_report_id", id);
+
+          // Optional: interne Anmerkungen raus wenn nicht gewollt
+          const reportForPdf = { ...report, project: report.projects } as any;
+          if (!bulkIncludeIntern) {
+            reportForPdf.interne_anmerkungen = null;
+            reportForPdf.notizen = null;
+          }
+          await generateDailyReportPDF(
+            reportForPdf,
+            (activities || []) as any,
+            (photos || []) as any,
+            supabaseUrl
+          );
+          ok++;
+        } catch (err: any) {
+          console.error(`PDF-Fehler fuer ${id}:`, err);
+        }
+      }
+      toast({ title: `${ok} PDF(s) heruntergeladen` });
+      setShowBulkDownloadDialog(false);
+      setSelectedReports(new Set());
+    } finally {
+      setBulkDownloading(false);
+    }
+  };
+
   return (
     <div className="container mx-auto p-4 max-w-4xl">
       <PageHeader title="Tagesberichte" backPath={projectFilter ? `/projects/${projectFilter}` : undefined} />
 
-      <div className="flex flex-wrap justify-between items-center gap-3 mb-6">
-        <div className="flex gap-2">
+      <div className="flex flex-wrap justify-between items-center gap-3 mb-3">
+        <div className="flex gap-2 flex-wrap">
           <Select value={filterType} onValueChange={setFilterType}>
             <SelectTrigger className="w-40">
               <SelectValue />
@@ -99,6 +175,7 @@ export default function DailyReports() {
             <SelectContent>
               <SelectItem value="alle">Alle Typen</SelectItem>
               <SelectItem value="tagesbericht">Tagesbericht</SelectItem>
+              <SelectItem value="regiebericht">Regiebericht</SelectItem>
               <SelectItem value="zwischenbericht">Zwischenbericht</SelectItem>
             </SelectContent>
           </Select>
@@ -126,6 +203,9 @@ export default function DailyReports() {
               <SelectItem value="dg">DG</SelectItem>
             </SelectContent>
           </Select>
+          <Button variant="outline" size="sm" onClick={() => setShowFilters(!showFilters)}>
+            {showFilters ? "Weniger Filter" : "Mehr Filter"}
+          </Button>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => setShowZettelUpload(true)}>
@@ -139,6 +219,71 @@ export default function DailyReports() {
           </Button>
         </div>
       </div>
+
+      {selectedReports.size > 0 && (
+        <div className="flex items-center gap-2 mb-3 p-2 bg-muted rounded-lg">
+          <Badge variant="secondary">{selectedReports.size} ausgewählt</Badge>
+          <Button size="sm" variant="outline" onClick={() => setShowBulkDownloadDialog(true)}>
+            <Download className="h-3.5 w-3.5 mr-1" /> Als PDF herunterladen
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setSelectedReports(new Set())}>
+            Auswahl löschen
+          </Button>
+        </div>
+      )}
+
+      {showFilters && (
+        <Card className="mb-4">
+          <CardContent className="p-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+            <div>
+              <Label className="text-xs">Von Datum</Label>
+              <Input type="date" value={filterDateFrom} onChange={(e) => setFilterDateFrom(e.target.value)} className="h-9" />
+            </div>
+            <div>
+              <Label className="text-xs">Bis Datum</Label>
+              <Input type="date" value={filterDateTo} onChange={(e) => setFilterDateTo(e.target.value)} className="h-9" />
+            </div>
+            <div>
+              <Label className="text-xs">Kundenunterschrift</Label>
+              <Select value={filterSignature} onValueChange={(v) => setFilterSignature(v as any)}>
+                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="alle">Alle</SelectItem>
+                  <SelectItem value="ja">Vorhanden (grün)</SelectItem>
+                  <SelectItem value="nein">Fehlt (rot)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs">Reihenfolge</Label>
+              <Select value={sortOrder} onValueChange={(v) => setSortOrder(v as any)}>
+                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="desc">Zuletzt zuerst</SelectItem>
+                  <SelectItem value="asc">Zuerst zuerst</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="sm:col-span-2 md:col-span-4 flex justify-end">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setFilterDateFrom("");
+                  setFilterDateTo("");
+                  setFilterSignature("alle");
+                  setSortOrder("desc");
+                  setFilterGeschoss("alle");
+                  setFilterStatus("alle");
+                  setFilterType("alle");
+                }}
+              >
+                Filter zurücksetzen
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {loading ? (
         <p className="text-center text-muted-foreground py-8">Lade...</p>
@@ -154,18 +299,35 @@ export default function DailyReports() {
           {reports.map((report) => (
             <Card
               key={report.id}
-              className="cursor-pointer hover:shadow-md transition-shadow"
+              className={`cursor-pointer hover:shadow-md transition-shadow ${selectedReports.has(report.id) ? "border-primary" : ""}`}
               onClick={() => navigate(`/daily-reports/${report.id}`)}
             >
               <CardContent className="p-4">
-                <div className="flex items-start justify-between">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
+                <div className="flex items-start justify-between gap-3">
+                  <button
+                    type="button"
+                    className="shrink-0 mt-0.5"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedReports((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(report.id)) next.delete(report.id);
+                        else next.add(report.id);
+                        return next;
+                      });
+                    }}
+                  >
+                    {selectedReports.has(report.id)
+                      ? <CheckSquare className="h-5 w-5 text-primary" />
+                      : <Square className="h-5 w-5 text-muted-foreground" />}
+                  </button>
+                  <div className="space-y-1 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-medium">
                         {format(new Date(report.datum), "EEEE, dd.MM.yyyy", { locale: de })}
                       </span>
                       <Badge variant="outline" className="text-xs">
-                        {report.report_type === "tagesbericht" ? "Tagesbericht" : "Zwischenbericht"}
+                        {report.report_type === "regiebericht" ? "Regiebericht" : report.report_type === "tagesbericht" ? "Tagesbericht" : "Zwischenbericht"}
                       </Badge>
                       <Badge className={`text-xs ${STATUS_COLORS[report.status] || ""}`}>
                         {report.status === "offen" ? "Offen" : report.status === "gesendet" ? "Gesendet" : "Abgeschlossen"}
@@ -208,6 +370,41 @@ export default function DailyReports() {
         onSuccess={fetchReports}
         defaultProjectId={projectFilter ?? undefined}
       />
+
+      {/* Bulk-PDF Dialog */}
+      <Dialog open={showBulkDownloadDialog} onOpenChange={(o) => !bulkDownloading && setShowBulkDownloadDialog(o)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{selectedReports.size} Berichte als PDF herunterladen</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 pt-2">
+            <p className="text-sm text-muted-foreground">
+              Was soll in den PDF-Dokumenten enthalten sein?
+            </p>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <Checkbox checked={bulkIncludeIntern} onCheckedChange={(v) => setBulkIncludeIntern(!!v)} />
+              <span className="text-sm">Interne Anmerkungen + Notizen einschließen</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <Checkbox checked={bulkIncludeHours} onCheckedChange={(v) => setBulkIncludeHours(!!v)} />
+              <span className="text-sm">Stunden der Mitarbeiter einschließen</span>
+            </label>
+            <p className="text-xs text-muted-foreground">
+              Ohne Haken: saubere Kunden-Version ohne interne Infos.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowBulkDownloadDialog(false)} disabled={bulkDownloading}>
+              Abbrechen
+            </Button>
+            <Button onClick={handleBulkDownload} disabled={bulkDownloading}>
+              {bulkDownloading
+                ? <><Loader2 className="w-4 h-4 mr-1 animate-spin" /> Erstellt...</>
+                : <><Download className="w-4 h-4 mr-1" /> Herunterladen</>}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

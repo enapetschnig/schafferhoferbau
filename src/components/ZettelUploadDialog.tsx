@@ -142,12 +142,8 @@ export function ZettelUploadDialog({ open, onOpenChange, onSuccess, defaultProje
   };
 
   const handleFinalSave = async () => {
-    if (!signatureData || !signatureName.trim()) {
-      toast({ variant: "destructive", title: "Unterschrift fehlt" });
-      return;
-    }
     if (!projectId || !zettelFile || photos.length < 4) {
-      toast({ variant: "destructive", title: "Unvollständig", description: "Alle Felder erforderlich" });
+      toast({ variant: "destructive", title: "Unvollständig", description: "Zettel + 4 Fotos erforderlich" });
       return;
     }
 
@@ -155,6 +151,8 @@ export function ZettelUploadDialog({ open, onOpenChange, onSuccess, defaultProje
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Nicht angemeldet");
+
+      const hasSignature = !!signatureData && !!signatureName.trim();
 
       // 1. Report erstellen
       const { data: report, error: insertError } = await supabase
@@ -166,9 +164,9 @@ export function ZettelUploadDialog({ open, onOpenChange, onSuccess, defaultProje
           datum,
           status: "gesendet",
           ist_zettel_upload: true,
-          unterschrift_kunde: signatureData,
-          unterschrift_name: signatureName.trim(),
-          unterschrift_am: new Date().toISOString(),
+          unterschrift_kunde: hasSignature ? signatureData : null,
+          unterschrift_name: hasSignature ? signatureName.trim() : null,
+          unterschrift_am: hasSignature ? new Date().toISOString() : null,
           beschreibung: "Handgeschriebener Zettel - siehe Upload",
         })
         .select()
@@ -371,16 +369,19 @@ export function ZettelUploadDialog({ open, onOpenChange, onSuccess, defaultProje
               />
             </div>
             <div>
-              <Label>Unterschrift *</Label>
+              <Label>Unterschrift <span className="text-muted-foreground text-xs">(optional)</span></Label>
               <div className="border rounded-lg overflow-hidden mt-1">
                 <SignaturePad onSignatureChange={setSignatureData} width={400} height={150} />
               </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Kann auch ohne Unterschrift gespeichert werden.
+              </p>
             </div>
             <DialogFooter className="flex-row justify-between gap-2">
               <Button variant="outline" onClick={() => setStep("form")} disabled={saving}>
                 Zurück
               </Button>
-              <Button onClick={handleFinalSave} disabled={saving || !signatureData || !signatureName.trim()}>
+              <Button onClick={handleFinalSave} disabled={saving}>
                 <CheckCircle2 className="h-4 w-4 mr-1" />
                 {saving ? "Speichert..." : "Speichern"}
               </Button>

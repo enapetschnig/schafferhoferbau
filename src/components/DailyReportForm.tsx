@@ -52,7 +52,7 @@ export function DailyReportForm({ open, onOpenChange, onSuccess, defaultProjectI
   const [projects, setProjects] = useState<Project[]>([]);
 
   const [projectId, setProjectId] = useState(editData?.project_id ?? defaultProjectId ?? "");
-  const [reportType, setReportType] = useState<"tagesbericht" | "zwischenbericht">("tagesbericht");
+  const [reportType, setReportType] = useState<"tagesbericht" | "zwischenbericht" | "regiebericht">("tagesbericht");
   const [datum, setDatum] = useState(format(new Date(), "yyyy-MM-dd"));
   const [temperaturMin, setTemperaturMin] = useState<number | null>(null);
   const [temperaturMax, setTemperaturMax] = useState<number | null>(null);
@@ -89,6 +89,32 @@ export function DailyReportForm({ open, onOpenChange, onSuccess, defaultProjectI
       .order("name");
     if (data) setProjects(data);
   }, []);
+
+  // Projekt-Autofill aus Plantafel (bei neuen Berichten, keine defaultProjectId, kein Bearbeiten)
+  useEffect(() => {
+    if (editData || defaultProjectId || projectId) return;
+    if (projects.length === 0) return;
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const today = new Date().toISOString().split("T")[0];
+      const { data } = await supabase
+        .from("worker_assignments")
+        .select("project_id")
+        .eq("user_id", user.id)
+        .eq("datum", today)
+        .limit(1)
+        .maybeSingle();
+      if (data?.project_id && projects.some(p => p.id === data.project_id)) {
+        setProjectId(data.project_id);
+        // Auch Typ automatisch setzen
+        const proj = projects.find(p => p.id === data.project_id);
+        if (proj?.baustellenart === "regie") setReportType("regiebericht");
+        else if (proj?.baustellenart === "pauschale") setReportType("tagesbericht");
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projects, editData, defaultProjectId]);
 
   // Auto-Wetter fuer ausgewaehltes Projekt + Datum
   const selectedProject = projects.find(p => p.id === projectId);
@@ -147,7 +173,7 @@ export function DailyReportForm({ open, onOpenChange, onSuccess, defaultProjectI
   useEffect(() => {
     if (editData) {
       setProjectId(editData.project_id);
-      setReportType(editData.report_type as "tagesbericht" | "zwischenbericht");
+      setReportType(editData.report_type as "tagesbericht" | "zwischenbericht" | "regiebericht");
       setDatum(editData.datum);
       setTemperaturMin(editData.temperatur_min);
       setTemperaturMax(editData.temperatur_max);
@@ -324,16 +350,29 @@ export function DailyReportForm({ open, onOpenChange, onSuccess, defaultProjectI
         </DialogHeader>
 
         <div className="space-y-4">
-          {/* Report Type */}
-          <div>
-            <Label>Berichtstyp</Label>
-            <Select value={reportType} onValueChange={(v) => setReportType(v as any)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="tagesbericht">Tagesbericht</SelectItem>
-                <SelectItem value="zwischenbericht">Zwischenbericht</SelectItem>
-              </SelectContent>
-            </Select>
+          {/* Berichtstyp als intuitive Button-Gruppe ganz oben */}
+          <div className="space-y-1">
+            <Label className="text-sm">Berichtstyp</Label>
+            <div className="grid grid-cols-3 gap-1 p-1 bg-muted/40 rounded-lg">
+              {[
+                { key: "tagesbericht", label: "Tagesbericht" },
+                { key: "regiebericht", label: "Regiebericht" },
+                { key: "zwischenbericht", label: "Zwischenbericht" },
+              ].map((t) => (
+                <button
+                  key={t.key}
+                  type="button"
+                  onClick={() => setReportType(t.key as any)}
+                  className={`text-xs sm:text-sm py-2 px-2 rounded transition-colors ${
+                    reportType === t.key
+                      ? "bg-primary text-primary-foreground font-medium shadow-sm"
+                      : "text-muted-foreground hover:bg-background"
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Project */}
@@ -341,12 +380,14 @@ export function DailyReportForm({ open, onOpenChange, onSuccess, defaultProjectI
             <Label>Projekt *</Label>
             <Select value={projectId} onValueChange={(v) => {
               setProjectId(v);
-              // Auto-select report type based on Baustellenart
+              // Auto-select report type based on Baustellenart (nur bei neuen Berichten)
               const proj = projects.find(p => p.id === v);
-              if (proj?.baustellenart === "regie" && !editData) {
-                // Regie -> Regiebericht (wird in separatem Modul erstellt, hier Tagesbericht)
-              } else if (proj?.baustellenart === "pauschale" && !editData) {
-                setReportType("tagesbericht");
+              if (!editData) {
+                if (proj?.baustellenart === "regie") {
+                  setReportType("regiebericht");
+                } else if (proj?.baustellenart === "pauschale") {
+                  setReportType("tagesbericht");
+                }
               }
             }}>
               <SelectTrigger><SelectValue placeholder="Projekt auswählen" /></SelectTrigger>
