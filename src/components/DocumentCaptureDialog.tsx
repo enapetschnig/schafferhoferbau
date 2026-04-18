@@ -29,9 +29,13 @@ interface DocumentCaptureDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess?: () => void;
+  /** Optional: wird als "Alle Lieferscheine"-Shortcut oben angezeigt */
+  onShowAll?: () => void;
+  /** Optional: Projekt-ID das automatisch ausgewaehlt werden soll */
+  defaultProjectId?: string;
 }
 
-export function DocumentCaptureDialog({ open, onOpenChange, onSuccess }: DocumentCaptureDialogProps) {
+export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll, defaultProjectId }: DocumentCaptureDialogProps) {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -41,7 +45,11 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess }: Documen
 
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [extraPages, setExtraPages] = useState<File[]>([]); // zusaetzliche Seiten fuer mehrseitige Lieferscheine
+  const [warePhotos, setWarePhotos] = useState<File[]>([]); // optionale Fotos der Ware
   const [uploadedUrl, setUploadedUrl] = useState<string | null>(null);
+  const extraPageInputRef = useRef<HTMLInputElement>(null);
+  const warePhotoInputRef = useRef<HTMLInputElement>(null);
 
   const [extracting, setExtracting] = useState(false);
   const [extracted, setExtracted] = useState<ExtractedData | null>(null);
@@ -71,14 +79,19 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess }: Documen
   }, []);
 
   useEffect(() => {
-    if (open) fetchProjects();
-  }, [open, fetchProjects]);
+    if (open) {
+      fetchProjects();
+      if (defaultProjectId) setProjectId(defaultProjectId);
+    }
+  }, [open, fetchProjects, defaultProjectId]);
 
   const resetForm = () => {
     setDocType("lieferschein");
     setProjectId("");
     setImageFile(null);
     setImagePreview(null);
+    setExtraPages([]);
+    setWarePhotos([]);
     setUploadedUrl(null);
     setExtracted(null);
     setEditPositionen([]);
@@ -308,11 +321,7 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess }: Documen
   };
 
   const handleSave = async () => {
-    if (!signatureData) {
-      toast({ variant: "destructive", title: "Unterschrift fehlt", description: "Bitte unterschreiben Sie das Dokument." });
-      return;
-    }
-
+    // Unterschrift ist optional - durch Upload ist Mitarbeiter-Zuordnung bereits gegeben
     if (!uploadedUrl) {
       toast({ variant: "destructive", title: "Fehler", description: "Kein Foto hochgeladen" });
       return;
@@ -333,6 +342,34 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess }: Documen
       if (emp) empName = `${emp.vorname} ${emp.nachname}`.trim();
     }
 
+    // Upload extra pages
+    const zusatzUrls: string[] = [];
+    for (const file of extraPages) {
+      const ext = file.name.split(".").pop() || "jpg";
+      const filePath = `${projectId}/seite_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
+      const { error: upErr } = await supabase.storage
+        .from("incoming-documents")
+        .upload(filePath, file);
+      if (!upErr) {
+        const { data: urlData } = supabase.storage.from("incoming-documents").getPublicUrl(filePath);
+        zusatzUrls.push(urlData.publicUrl);
+      }
+    }
+
+    // Upload Ware-Fotos
+    const warenUrls: string[] = [];
+    for (const file of warePhotos) {
+      const ext = file.name.split(".").pop() || "jpg";
+      const filePath = `${projectId}/ware_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
+      const { error: upErr } = await supabase.storage
+        .from("incoming-documents")
+        .upload(filePath, file);
+      if (!upErr) {
+        const { data: urlData } = supabase.storage.from("incoming-documents").getPublicUrl(filePath);
+        warenUrls.push(urlData.publicUrl);
+      }
+    }
+
     const { error } = await supabase.from("incoming_documents").insert({
       project_id: projectId,
       user_id: user.id,
@@ -351,6 +388,8 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess }: Documen
       })),
       unterschrift: signatureData,
       unterschrift_name: empName || null,
+      zusatz_seiten_urls: zusatzUrls.length > 0 ? zusatzUrls : null,
+      waren_fotos_urls: warenUrls.length > 0 ? warenUrls : null,
     });
 
     if (error) {
@@ -374,9 +413,23 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess }: Documen
     <Dialog open={open} onOpenChange={(o) => { if (!o) resetForm(); onOpenChange(o); }}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>
-            {step === "photo" ? "Dokument erfassen" : step === "review" ? "Daten prüfen" : "Unterschrift"}
-          </DialogTitle>
+          <div className="flex items-start justify-between gap-2">
+            <DialogTitle>
+              {step === "photo" ? "Dokument erfassen" : step === "review" ? "Daten prüfen" : "Unterschrift"}
+            </DialogTitle>
+            {onShowAll && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="text-xs"
+                onClick={onShowAll}
+                title="Alle Lieferscheine ansehen"
+              >
+                Alle Lieferscheine
+              </Button>
+            )}
+          </div>
         </DialogHeader>
 
         <div className="space-y-4">
@@ -487,7 +540,103 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess }: Documen
                   className="hidden"
                   onChange={handlePhotoCapture}
                 />
+
+                {/* Weitere Seiten */}
+                {imageFile && (
+                  <div className="space-y-1.5">
+                    {extraPages.length > 0 && (
+                      <div className="space-y-1">
+                        {extraPages.map((f, i) => (
+                          <div key={i} className="flex items-center gap-2 p-1.5 bg-muted/40 rounded text-xs">
+                            <FileText className="h-3.5 w-3.5 shrink-0" />
+                            <span className="flex-1 truncate">Seite {i + 2}: {f.name}</span>
+                            <button
+                              type="button"
+                              className="text-destructive"
+                              onClick={() => setExtraPages(extraPages.filter((_, idx) => idx !== i))}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <input
+                      ref={extraPageInputRef}
+                      type="file"
+                      accept="image/*,.pdf,.jpg,.jpeg,.png,.heic"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => {
+                        const files = Array.from(e.target.files || []);
+                        if (files.length > 0) setExtraPages(prev => [...prev, ...files]);
+                        e.target.value = "";
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="w-full"
+                      onClick={() => extraPageInputRef.current?.click()}
+                    >
+                      <Plus className="h-3.5 w-3.5 mr-1" />
+                      {extraPages.length === 0 ? "Weitere Seiten hinzufügen" : `+ Noch eine Seite (${extraPages.length + 1} bisher)`}
+                    </Button>
+                  </div>
+                )}
               </div>
+
+              {/* Fotos der Ware (optional) */}
+              {imageFile && docType !== "rechnung" && (
+                <div className="space-y-2">
+                  <Label className="text-sm">
+                    Fotos der Ware <span className="text-muted-foreground font-normal">(optional)</span>
+                  </Label>
+                  {warePhotos.length > 0 && (
+                    <div className="grid grid-cols-4 gap-1.5">
+                      {warePhotos.map((f, i) => (
+                        <div key={i} className="relative group aspect-square">
+                          <img
+                            src={URL.createObjectURL(f)}
+                            alt=""
+                            className="w-full h-full object-cover rounded border"
+                          />
+                          <button
+                            type="button"
+                            className="absolute top-0.5 right-0.5 bg-destructive text-destructive-foreground rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                            onClick={() => setWarePhotos(warePhotos.filter((_, idx) => idx !== i))}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <input
+                    ref={warePhotoInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => {
+                      const files = Array.from(e.target.files || []);
+                      if (files.length > 0) setWarePhotos(prev => [...prev, ...files]);
+                      e.target.value = "";
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                    onClick={() => warePhotoInputRef.current?.click()}
+                  >
+                    <Plus className="h-3.5 w-3.5 mr-1" />
+                    {warePhotos.length === 0 ? "Fotos der gelieferten Ware hinzufügen" : `+ Noch ein Foto (${warePhotos.length} bisher)`}
+                  </Button>
+                </div>
+              )}
 
               <Button
                 onClick={handleUploadAndExtract}
@@ -549,10 +698,12 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess }: Documen
                   <Label>Belegnummer</Label>
                   <Input value={belegnummer} onChange={(e) => setBelegnummer(e.target.value)} placeholder="z.B. LS-1234" />
                 </div>
-                <div className="col-span-2">
-                  <Label>Betrag (€)</Label>
-                  <Input type="number" step="0.01" value={betrag} onChange={(e) => setBetrag(e.target.value)} placeholder="0.00" />
-                </div>
+                {docType === "rechnung" && (
+                  <div className="col-span-2">
+                    <Label>Betrag (€)</Label>
+                    <Input type="number" step="0.01" value={betrag} onChange={(e) => setBetrag(e.target.value)} placeholder="0.00" />
+                  </div>
+                )}
               </div>
 
               {/* Positions — editable */}

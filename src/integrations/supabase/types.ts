@@ -1171,6 +1171,9 @@ export type Database = {
           unterschrift_name: string | null
           notizen: string | null
           bezahlt_am: string | null
+          zusatz_seiten_urls: string[] | null
+          waren_fotos_urls: string[] | null
+          ist_retour: boolean | null
           created_at: string
           updated_at: string
         }
@@ -1190,6 +1193,9 @@ export type Database = {
           unterschrift_name?: string | null
           notizen?: string | null
           bezahlt_am?: string | null
+          zusatz_seiten_urls?: string[] | null
+          waren_fotos_urls?: string[] | null
+          ist_retour?: boolean | null
           created_at?: string
           updated_at?: string
         }
@@ -1209,6 +1215,9 @@ export type Database = {
           unterschrift_name?: string | null
           notizen?: string | null
           bezahlt_am?: string | null
+          zusatz_seiten_urls?: string[] | null
+          waren_fotos_urls?: string[] | null
+          ist_retour?: boolean | null
           created_at?: string
           updated_at?: string
         }

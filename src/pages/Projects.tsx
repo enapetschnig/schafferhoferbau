@@ -857,7 +857,7 @@ const Projects = () => {
                   {[
                     { key: "chat", label: "Chat", icon: <MessageCircle className="w-5 h-5 text-primary" />, path: `/projects/${project.id}/chat`, count: null },
                     { key: "plans", label: "Pläne", icon: <FileText className="w-5 h-5 text-primary" />, path: `/projects/${project.id}/plans`, count: project.fileCount?.plans },
-                    { key: "lieferscheine", label: "Liefer.", icon: <Receipt className="w-5 h-5 text-primary" />, path: `/projects/${project.id}/orders`, count: null },
+                    { key: "lieferscheine", label: "Liefer.", icon: <Receipt className="w-5 h-5 text-primary" />, path: `/incoming-documents?project=${project.id}${!isAdmin ? "&capture=1" : ""}`, count: null },
                     { key: "berichte", label: "Berichte", icon: <FileText className="w-5 h-5 text-primary" />, path: `/daily-reports?project=${project.id}`, count: project.fileCount?.berichte },
                     { key: "photos", label: "Fotos", icon: <Image className="w-5 h-5 text-primary" />, path: `/projects/${project.id}/photos`, count: project.fileCount?.photos },
                     { key: "bestellungen", label: "Bestell.", icon: <Package className="w-5 h-5 text-primary" />, path: `/bestellungen?project=${project.id}`, count: project.fileCount?.bestellungen },
@@ -1022,7 +1022,7 @@ const Projects = () => {
                         {[
                           { key: "chat", label: "Chat", icon: <MessageCircle className="w-5 h-5 text-primary" />, path: `/projects/${project.id}/chat`, count: null },
                           { key: "plans", label: "Pläne", icon: <FileText className="w-5 h-5 text-primary" />, path: `/projects/${project.id}/plans`, count: project.fileCount?.plans },
-                          { key: "lieferscheine", label: "Liefer.", icon: <Receipt className="w-5 h-5 text-primary" />, path: `/projects/${project.id}/orders`, count: null },
+                          { key: "lieferscheine", label: "Liefer.", icon: <Receipt className="w-5 h-5 text-primary" />, path: `/incoming-documents?project=${project.id}${!isAdmin ? "&capture=1" : ""}`, count: null },
                           { key: "berichte", label: "Berichte", icon: <FileText className="w-5 h-5 text-primary" />, path: `/daily-reports?project=${project.id}`, count: project.fileCount?.berichte },
                           { key: "photos", label: "Fotos", icon: <Image className="w-5 h-5 text-primary" />, path: `/projects/${project.id}/photos`, count: project.fileCount?.photos },
                           { key: "bestellungen", label: "Bestell.", icon: <Package className="w-5 h-5 text-primary" />, path: `/bestellungen?project=${project.id}`, count: project.fileCount?.bestellungen },

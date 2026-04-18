@@ -874,7 +874,7 @@ const ProjectOverview = () => {
           {/* 3. Lieferscheine & Rechnungen */}
           <Card
             className="cursor-pointer hover:shadow-lg transition-shadow"
-            onClick={() => navigate(`/projects/${projectId}/orders`)}
+            onClick={() => navigate(`/incoming-documents?project=${projectId}${!isAdmin ? "&capture=1" : ""}`)}
           >
             <CardHeader>
               <div className="flex items-center justify-between">

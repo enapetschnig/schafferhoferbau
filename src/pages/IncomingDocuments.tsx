@@ -51,7 +51,9 @@ export default function IncomingDocuments() {
   const [filterMonth, setFilterMonth] = useState(now.getMonth() + 1);
   const [filterYear, setFilterYear] = useState(now.getFullYear());
 
-  const [showCaptureDialog, setShowCaptureDialog] = useState(false);
+  const [showCaptureDialog, setShowCaptureDialog] = useState(() => searchParams.get("capture") === "1");
+  const hideListInitially = searchParams.get("capture") === "1";
+  const [showList, setShowList] = useState(!hideListInitially);
   const [selectedDoc, setSelectedDoc] = useState<IncomingDocument | null>(null);
   const [showDetailDialog, setShowDetailDialog] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -537,6 +539,8 @@ export default function IncomingDocuments() {
         open={showCaptureDialog}
         onOpenChange={setShowCaptureDialog}
         onSuccess={fetchDocuments}
+        defaultProjectId={searchParams.get("project") || undefined}
+        onShowAll={hideListInitially ? () => { setShowCaptureDialog(false); setShowList(true); } : undefined}
       />
 
       {/* Detail Dialog */}
