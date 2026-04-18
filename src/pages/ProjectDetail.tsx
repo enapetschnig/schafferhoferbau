@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import { Upload, FileText, Trash2, Eye, Download, Archive, CheckSquare, Square, ChevronLeft, ChevronRight, X, Pencil } from "lucide-react";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Upload, FileText, Trash2, Eye, Download, Archive, CheckSquare, Square, ChevronLeft, ChevronRight, X, Pencil, Share2, Plus } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { VoiceAIInput } from "@/components/VoiceAIInput";
 import { ImageEditor } from "@/components/ImageEditor";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,10 +28,11 @@ type StorageFile = {
 type DocRecord = {
   id: string;
   name: string;
-  file_url: string;
+  file_url: string | null;
   sub_type: string | null;
   archived: boolean;
   created_at: string;
+  text_content?: string | null;
 };
 
 const bucketMap: Record<DocumentType, string> = {
@@ -84,6 +87,11 @@ const ProjectDetail = () => {
   const [projectName, setProjectName] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
   const [activeTab, setActiveTab] = useState("aktuell");
+  const [archiveSubType, setArchiveSubType] = useState<string>("all"); // fuer Archiv-Subtabs bei plans
+  const [showTextAuftragDialog, setShowTextAuftragDialog] = useState(false);
+  const [textAuftragTitle, setTextAuftragTitle] = useState("");
+  const [textAuftragContent, setTextAuftragContent] = useState("");
+  const [savingTextAuftrag, setSavingTextAuftrag] = useState(false);
   const [sortOrder, setSortOrder] = useState<"desc" | "asc">("desc");
   const [dateFilter, setDateFilter] = useState("");
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
@@ -163,7 +171,7 @@ const ProjectDetail = () => {
     if (!projectId || !type) return;
     const { data } = await supabase
       .from("documents")
-      .select("id, name, file_url, sub_type, archived, created_at")
+      .select("id, name, file_url, sub_type, archived, created_at, text_content")
       .eq("project_id", projectId)
       .eq("typ", type)
       .order("created_at", { ascending: false });
@@ -300,6 +308,70 @@ const ProjectDetail = () => {
     toast({ title: `${selectedFiles.size} Datei(en) werden heruntergeladen` });
   };
 
+  const handleShareSelected = async () => {
+    if (selectedFiles.size === 0) return;
+    const selected = Array.from(selectedFiles);
+
+    // Versuche Web Share API mit Files (nur HTTPS + supported browsers)
+    const canShareFiles = typeof navigator !== "undefined" &&
+      "canShare" in navigator && "share" in navigator;
+
+    try {
+      const filesToShare: File[] = [];
+      for (const fileName of selected.slice(0, 10)) {
+        const url = signedUrls[fileName];
+        if (!url) continue;
+        const resp = await fetch(url);
+        const blob = await resp.blob();
+        filesToShare.push(new File([blob], fileName, { type: blob.type }));
+      }
+
+      if (canShareFiles && filesToShare.length > 0 && (navigator as any).canShare({ files: filesToShare })) {
+        await (navigator as any).share({
+          files: filesToShare,
+          title: `${projectName} · ${titleMap[type!]}`,
+          text: `${filesToShare.length} Datei(en) aus ${projectName}`,
+        });
+        toast({ title: "Dateien geteilt" });
+        return;
+      }
+    } catch (err: any) {
+      if (err?.name === "AbortError") return; // User hat abgebrochen
+      // fallthrough zu Download-Fallback
+    }
+
+    // Fallback: Download als Paket
+    toast({ title: "Teilen nicht unterstuetzt", description: "Dateien werden heruntergeladen, du kannst sie dann manuell teilen." });
+    await handleBulkDownload();
+  };
+
+  const handleSaveTextAuftrag = async () => {
+    if (!projectId || !textAuftragTitle.trim() || !textAuftragContent.trim()) return;
+    setSavingTextAuftrag(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setSavingTextAuftrag(false); return; }
+    const { error } = await supabase.from("documents").insert({
+      project_id: projectId,
+      user_id: user.id,
+      typ: "plans",
+      sub_type: "auftrag",
+      name: textAuftragTitle.trim(),
+      file_url: null,
+      text_content: textAuftragContent.trim(),
+    });
+    setSavingTextAuftrag(false);
+    if (error) {
+      toast({ variant: "destructive", title: "Fehler", description: error.message });
+      return;
+    }
+    toast({ title: "Auftrag gespeichert" });
+    setShowTextAuftragDialog(false);
+    setTextAuftragTitle("");
+    setTextAuftragContent("");
+    fetchDocRecords();
+    fetchFiles();
+  };
+
   const handleFileOpen = (file: StorageFile) => {
     setViewerState({ open: true, fileName: file.name, filePath: `${projectId}/${file.name}` });
   };
@@ -330,7 +402,17 @@ const ProjectDetail = () => {
       const docRecord = docRecords.find((d) => d.name === file.name || d.file_url === `${projectId}/${file.name}`);
       const isArchived = docRecord?.archived === true;
 
-      if (isArchivTab) return isArchived;
+      if (isArchivTab) {
+        if (!isArchived) return false;
+        // Archive-Sub-Filter (nur bei plans)
+        if (type === "plans" && archiveSubType !== "all") {
+          if (archiveSubType === "plan") {
+            return !docRecord?.sub_type || docRecord.sub_type === "plan";
+          }
+          return docRecord?.sub_type === archiveSubType;
+        }
+        return true;
+      }
 
       // Nicht-archivierte Dateien
       if (isArchived) return false;
@@ -393,6 +475,40 @@ const ProjectDetail = () => {
 
               {tabs.map((tab) => (
                 <TabsContent key={tab.key} value={tab.key}>
+                  {/* Archiv-Sub-Tabs: nur bei plans */}
+                  {tab.key === "archiv" && type === "plans" && (
+                    <div className="flex flex-wrap gap-1 mb-3 p-1 bg-muted/40 rounded-lg">
+                      {[
+                        { key: "all", label: "Alle" },
+                        { key: "plan", label: "Aktuelle Pläne" },
+                        { key: "besprechungsprotokoll", label: "Protokolle" },
+                        { key: "auftrag", label: "Aufträge" },
+                      ].map((sub) => (
+                        <Button
+                          key={sub.key}
+                          size="sm"
+                          variant={archiveSubType === sub.key ? "default" : "ghost"}
+                          onClick={() => { setArchiveSubType(sub.key); setSelectedFiles(new Set()); }}
+                          className="text-xs h-7"
+                        >
+                          {sub.label}
+                        </Button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Text-Auftrag Button (nur Aufträge-Tab) */}
+                  {!isArchivTab && tab.key === "auftraege" && isAdmin && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="mb-3"
+                      onClick={() => setShowTextAuftragDialog(true)}
+                    >
+                      <Plus className="h-4 w-4 mr-1" /> Auftrag als Text schreiben
+                    </Button>
+                  )}
+
                   {/* Upload - nur im aktiven Tab, nicht im Archiv */}
                   {!isArchivTab && (isAdmin || type === "photos") && (
                     <div className="mb-4">
@@ -432,6 +548,9 @@ const ProjectDetail = () => {
                       )}
                       <Button size="sm" variant="outline" onClick={handleBulkDownload}>
                         <Download className="h-3.5 w-3.5 mr-1" /> Herunterladen
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={handleShareSelected}>
+                        <Share2 className="h-3.5 w-3.5 mr-1" /> Weiterleiten
                       </Button>
                       {isAdmin && (
                         <Button size="sm" variant="destructive" onClick={async () => {
@@ -490,6 +609,53 @@ const ProjectDetail = () => {
                     </div>
                   ) : (
                     <div className="space-y-1.5">
+                      {/* Text-only Auftraege (keine Files in Storage) */}
+                      {type === "plans" && (() => {
+                        const archivMode = activeTab === "archiv";
+                        const textOnlyDocs = docRecords.filter((d) =>
+                          d.text_content && !d.file_url &&
+                          (archivMode ? d.archived : !d.archived) &&
+                          (archivMode
+                            ? (archiveSubType === "all" || d.sub_type === archiveSubType || (archiveSubType === "plan" && !d.sub_type))
+                            : (currentTabConfig?.subType ? d.sub_type === currentTabConfig.subType : (!d.sub_type || d.sub_type === "plan")))
+                        );
+                        return textOnlyDocs.map((doc) => (
+                          <div
+                            key={`text-${doc.id}`}
+                            className="flex items-start gap-3 p-3 rounded-lg border bg-blue-50/30 dark:bg-blue-950/10 border-blue-200/50"
+                          >
+                            <FileText className="w-10 h-10 text-blue-600 shrink-0 mt-0.5" />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <p className="text-sm font-medium truncate">{doc.name}</p>
+                                <Badge variant="outline" className="text-[10px] h-5">Text</Badge>
+                              </div>
+                              <p className="text-xs text-muted-foreground">
+                                {new Date(doc.created_at).toLocaleDateString("de-DE")}
+                              </p>
+                              <p className="text-sm mt-1 whitespace-pre-wrap line-clamp-3">
+                                {doc.text_content}
+                              </p>
+                            </div>
+                            {isAdmin && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-destructive shrink-0"
+                                onClick={async () => {
+                                  if (!confirm(`"${doc.name}" löschen?`)) return;
+                                  await supabase.from("documents").delete().eq("id", doc.id);
+                                  fetchDocRecords();
+                                  toast({ title: "Gelöscht" });
+                                }}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            )}
+                          </div>
+                        ));
+                      })()}
+
                       {filteredFiles.map((file) => (
                         <div
                           key={file.id}
@@ -627,6 +793,50 @@ const ProjectDetail = () => {
           title="Bild bearbeiten"
         />
       )}
+
+      {/* Text-Auftrag Dialog */}
+      <Dialog open={showTextAuftragDialog} onOpenChange={setShowTextAuftragDialog}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Auftrag als Text erfassen</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 pt-2">
+            <div>
+              <Label>Titel *</Label>
+              <Input
+                value={textAuftragTitle}
+                onChange={(e) => setTextAuftragTitle(e.target.value)}
+                placeholder="z.B. Auftrag Rohbau Haus 12"
+              />
+            </div>
+            <div>
+              <Label>Auftragstext *</Label>
+              <VoiceAIInput
+                multiline
+                rows={6}
+                context="default"
+                value={textAuftragContent}
+                onChange={setTextAuftragContent}
+                placeholder="Auftrag einsprechen oder eintippen — KI-Verbesserung vorhanden"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => { setShowTextAuftragDialog(false); setTextAuftragTitle(""); setTextAuftragContent(""); }}
+            >
+              Abbrechen
+            </Button>
+            <Button
+              onClick={handleSaveTextAuftrag}
+              disabled={savingTextAuftrag || !textAuftragTitle.trim() || !textAuftragContent.trim()}
+            >
+              {savingTextAuftrag ? "Speichert..." : "Auftrag speichern"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

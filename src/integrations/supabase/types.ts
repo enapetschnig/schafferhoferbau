@@ -738,11 +738,12 @@ export type Database = {
           archived: boolean | null
           beschreibung: string | null
           created_at: string
-          file_url: string
+          file_url: string | null
           id: string
           name: string
           project_id: string
           sub_type: string | null
+          text_content: string | null
           typ: string
           user_id: string
         }
@@ -750,11 +751,12 @@ export type Database = {
           archived?: boolean | null
           beschreibung?: string | null
           created_at?: string
-          file_url: string
+          file_url?: string | null
           id?: string
           name: string
           project_id: string
           sub_type?: string | null
+          text_content?: string | null
           typ: string
           user_id: string
         }
@@ -762,11 +764,12 @@ export type Database = {
           archived?: boolean | null
           beschreibung?: string | null
           created_at?: string
-          file_url?: string
+          file_url?: string | null
           id?: string
           name?: string
           project_id?: string
           sub_type?: string | null
+          text_content?: string | null
           typ?: string
           user_id?: string
         }
