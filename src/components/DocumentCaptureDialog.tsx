@@ -131,6 +131,12 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
     } else {
       setImagePreview(null);
     }
+    // Fallback-Datum: Aufnahmedatum des Fotos vorbefuellen.
+    // Wird von der KI-Extraktion ueberschrieben, wenn ein Datum im Dokument steht.
+    if (!dokumentDatum && file.lastModified) {
+      const lm = new Date(file.lastModified);
+      setDokumentDatum(lm.toISOString().split("T")[0]);
+    }
   };
 
   const handlePhotoCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -386,13 +392,22 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
       }
     }
 
+    // Fallback: wenn KI kein Datum erkannt hat und der User auch nichts eingegeben hat,
+    // nimm das Aufnahme-/Modifikationsdatum der Datei (typisch bei Handyfotos =
+    // Aufnahmedatum). Liefert kein EXIF nötig, lastModified reicht in 95% der Faelle.
+    const effectiveDatum = dokumentDatum
+      ? dokumentDatum
+      : imageFile
+      ? new Date(imageFile.lastModified).toISOString().split("T")[0]
+      : null;
+
     const { error } = await supabase.from("incoming_documents").insert({
       project_id: projectId,
       user_id: user.id,
       typ: docType,
       photo_url: uploadedUrl,
       lieferant: lieferant.trim() || null,
-      dokument_datum: dokumentDatum || null,
+      dokument_datum: effectiveDatum,
       dokument_nummer: belegnummer.trim() || null,
       betrag: betrag ? parseFloat(betrag) : null,
       positionen: editPositionen.map(p => ({

@@ -162,6 +162,8 @@ export default function IncomingInvoices() {
   const [selectedDoc, setSelectedDoc] = useState<IncomingDocument | null>(null);
   const [showDetailDialog, setShowDetailDialog] = useState(false);
   const [showBatchDialog, setShowBatchDialog] = useState(false);
+  const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<Set<string>>(new Set());
+  const [bulkZipping, setBulkZipping] = useState(false);
 
   // Upload tab state
   const [dragOver, setDragOver] = useState(false);
@@ -334,6 +336,64 @@ export default function IncomingInvoices() {
     .filter((d) => d.status === "offen" && d.betrag)
     .reduce((sum, d) => sum + Number(d.betrag), 0);
   const matchedCount = invoices.filter((inv) => getMatch(inv).status === "match").length;
+
+  // ZIP-Sammel-Download der ausgewaehlten Rechnungen (Original-PDFs/Bilder)
+  const handleBulkZipDownload = async () => {
+    if (selectedInvoiceIds.size === 0) return;
+    setBulkZipping(true);
+    try {
+      const { default: JSZip } = await import("jszip");
+      const zip = new JSZip();
+      const chosen = invoices.filter((inv) => selectedInvoiceIds.has(inv.id));
+      for (const inv of chosen) {
+        const files = [inv.photo_url, ...(inv.zusatz_seiten_urls || [])].filter(Boolean) as string[];
+        for (let i = 0; i < files.length; i++) {
+          try {
+            const resp = await fetch(files[i]);
+            if (!resp.ok) continue;
+            const blob = await resp.blob();
+            const ext = files[i].split(".").pop()?.split("?")[0] || "pdf";
+            const base = [
+              (inv.dokument_datum || inv.created_at).slice(0, 10),
+              (inv.lieferant || "Lieferant").replace(/[^a-zA-Z0-9äöüÄÖÜß]/g, "_"),
+              (inv.dokument_nummer || inv.id.slice(0, 6)).replace(/[^a-zA-Z0-9äöüÄÖÜß-]/g, "_"),
+            ].join("_");
+            const fileName = files.length === 1 ? `${base}.${ext}` : `${base}_seite${i + 1}.${ext}`;
+            zip.file(fileName, blob);
+          } catch (err) {
+            console.warn("ZIP-Entry fehlgeschlagen:", files[i], err);
+          }
+        }
+      }
+      const blob = await zip.generateAsync({ type: "blob" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `Rechnungen_${monthNames[filterMonth - 1]}_${filterYear}.zip`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      toast({ title: `${chosen.length} Rechnungen als ZIP heruntergeladen` });
+      setSelectedInvoiceIds(new Set());
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "ZIP-Export fehlgeschlagen", description: err?.message });
+    } finally {
+      setBulkZipping(false);
+    }
+  };
+
+  const toggleInvoice = (id: string) => {
+    setSelectedInvoiceIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAllInvoices = () => {
+    setSelectedInvoiceIds((prev) => {
+      if (prev.size === filtered.length) return new Set();
+      return new Set(filtered.map((inv) => inv.id));
+    });
+  };
 
   // Excel export
   const exportToExcel = () => {
@@ -729,6 +789,18 @@ export default function IncomingInvoices() {
               </CardHeader>
 
               <CardContent>
+                {selectedInvoiceIds.size > 0 && (
+                  <div className="flex items-center gap-2 mb-3 p-2 bg-muted rounded-lg flex-wrap">
+                    <Badge variant="secondary">{selectedInvoiceIds.size} ausgewählt</Badge>
+                    <Button size="sm" onClick={handleBulkZipDownload} disabled={bulkZipping}>
+                      {bulkZipping ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Download className="h-3.5 w-3.5 mr-1" />}
+                      Als ZIP laden
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => setSelectedInvoiceIds(new Set())} disabled={bulkZipping}>
+                      Auswahl aufheben
+                    </Button>
+                  </div>
+                )}
                 {loading ? (
                   <p className="text-center py-8 text-muted-foreground">Lädt...</p>
                 ) : filtered.length === 0 ? (
@@ -741,6 +813,13 @@ export default function IncomingInvoices() {
                     <Table>
                       <TableHeader>
                         <TableRow>
+                          <TableHead className="w-8">
+                            <Checkbox
+                              checked={filtered.length > 0 && selectedInvoiceIds.size === filtered.length}
+                              onCheckedChange={toggleAllInvoices}
+                              aria-label="Alle auswählen"
+                            />
+                          </TableHead>
                           <TableHead>Datum</TableHead>
                           <TableHead>Lieferant</TableHead>
                           <TableHead className="hidden sm:table-cell">Belegnr.</TableHead>
@@ -761,6 +840,13 @@ export default function IncomingInvoices() {
                               className="cursor-pointer hover:bg-muted/50"
                               onClick={() => { setSelectedDoc(inv); setShowDetailDialog(true); }}
                             >
+                              <TableCell className="w-8" onClick={(e) => e.stopPropagation()}>
+                                <Checkbox
+                                  checked={selectedInvoiceIds.has(inv.id)}
+                                  onCheckedChange={() => toggleInvoice(inv.id)}
+                                  aria-label={`Rechnung ${inv.lieferant || inv.id.slice(0, 6)} auswählen`}
+                                />
+                              </TableCell>
                               <TableCell className="font-mono text-xs">
                                 {inv.dokument_datum
                                   ? format(parseISO(inv.dokument_datum), "dd.MM.yyyy")

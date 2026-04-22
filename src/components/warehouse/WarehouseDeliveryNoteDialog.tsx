@@ -369,8 +369,18 @@ export function WarehouseDeliveryNoteDialog({ open, onOpenChange, onSaved }: Pro
     }
   };
 
+  // Suche: diakritika-insensitiv, Multi-Keyword (alle Woerter muessen treffen),
+  // matcht Name + Kategorie + Einheit. Behebt das alte Problem, dass die
+  // Substring-Suche Umlaute und Mehrwort-Eingaben nicht sauber behandelt hat.
+  const normalize = (s: string) =>
+    s.toLowerCase()
+      .normalize("NFKD")
+      .replace(/[̀-ͯ]/g, "")
+      .replace(/ß/g, "ss");
+  const searchTokens = normalize(productSearch).split(/\s+/).filter(Boolean);
   const filteredProducts = products.filter((p) => {
-    const matchSearch = p.name.toLowerCase().includes(productSearch.toLowerCase());
+    const haystack = normalize([p.name, p.category, p.einheit].filter(Boolean).join(" "));
+    const matchSearch = searchTokens.every((t) => haystack.includes(t));
     const matchCategory = productCategoryFilter === "all" || p.category === productCategoryFilter;
     const notSelected = !selectedItems.find((i) => i.product.id === p.id);
     return matchSearch && matchCategory && notSelected;

@@ -24,6 +24,10 @@ type ImportRow = {
   category: WarehouseProductCategory | null;
   einheit: string;
   ek_preis: number | null;
+  lieferant: string;            // Pflicht laut Spec
+  aufschlag_prozent: number | null;
+  rechnungsdatum: string | null; // YYYY-MM-DD
+  lieferdatum: string | null;
   valid: boolean;
   error?: string;
 };
@@ -61,28 +65,68 @@ export function WarehouseExcelImportDialog({ open, onOpenChange, onImported }: P
     const sheet = wb.Sheets[wb.SheetNames[0]];
     const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet);
 
+    // Excel-Datum (serial) oder String zu YYYY-MM-DD
+    const toIso = (v: unknown): string | null => {
+      if (v == null || v === "") return null;
+      if (typeof v === "number") {
+        // Excel-Serial: 1900-01-01 = 1, mit bekanntem 1900-Bug
+        const d = new Date(Math.round((v - 25569) * 86400 * 1000));
+        return isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+      }
+      const s = String(v).trim();
+      const dm = s.match(/^(\d{1,2})[.\/](\d{1,2})[.\/](\d{2,4})$/);
+      if (dm) {
+        const day = dm[1].padStart(2, "0");
+        const mon = dm[2].padStart(2, "0");
+        let yr = dm[3]; if (yr.length === 2) yr = "20" + yr;
+        return `${yr}-${mon}-${day}`;
+      }
+      const d = new Date(s);
+      return isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+    };
+
     const parsed: ImportRow[] = json.map((row) => {
-      const nameVal = (row["Name"] || row["Bezeichnung"] || row["Artikel"] || row["Produkt"] || "") as string;
-      const catVal = (row["Kategorie"] || row["Category"] || "") as string;
-      const einheitVal = (row["Einheit"] || row["Unit"] || "Stück") as string;
-      const preisVal = row["EK-Preis"] || row["Preis"] || row["Einkaufspreis"] || row["EK Preis"] || null;
+      const nameVal = (row["Name"] || row["Bezeichnung"] || row["Artikel"] || row["Produkt"] || row["D"] || "") as string;
+      const catVal = (row["Kategorie"] || row["Category"] || row["A"] || "") as string;
+      const einheitVal = (row["Einheit"] || row["Unit"] || row["C"] || "Stück") as string;
+      const preisVal = row["EK-Preis"] || row["Preis"] || row["Einkaufspreis"] || row["EK Preis"] || row["EK"] || row["E"] || null;
+      const lieferantVal = (row["Lieferant"] || row["Supplier"] || row["I"] || "") as string;
+      const aufschlagVal = row["Aufschlag"] || row["Aufschlag (%)"] || row["Aufschlag%"] || row["F"] || null;
+      const rechnungsdatumVal = row["Rechnungsdatum"] || row["Rechnungs-Datum"] || row["G"] || null;
+      const lieferdatumVal = row["Lieferdatum"] || row["Liefer-Datum"] || row["H"] || null;
 
       const category = parseCategory(String(catVal));
       const name = String(nameVal).trim();
+      const lieferant = String(lieferantVal).trim();
       let ek_preis: number | null = null;
       if (preisVal != null) {
-        const parsed = parseFloat(String(preisVal).replace(",", "."));
-        if (!isNaN(parsed)) ek_preis = parsed;
+        const p = parseFloat(String(preisVal).replace(",", "."));
+        if (!isNaN(p)) ek_preis = p;
+      }
+      let aufschlag_prozent: number | null = null;
+      if (aufschlagVal != null) {
+        const a = parseFloat(String(aufschlagVal).replace(",", "."));
+        if (!isNaN(a)) aufschlag_prozent = a;
       }
 
-      const valid = !!name && !!category;
+      const valid = !!name && !!category && !!lieferant;
       return {
         name,
         category,
         einheit: String(einheitVal).trim() || "Stück",
         ek_preis,
+        lieferant,
+        aufschlag_prozent,
+        rechnungsdatum: toIso(rechnungsdatumVal),
+        lieferdatum: toIso(lieferdatumVal),
         valid,
-        error: !name ? "Name fehlt" : !category ? "Ungültige Kategorie" : undefined,
+        error: !name
+          ? "Name fehlt"
+          : !category
+          ? "Ungültige Kategorie"
+          : !lieferant
+          ? "Lieferant fehlt (Pflichtfeld)"
+          : undefined,
       };
     });
 
@@ -92,7 +136,29 @@ export function WarehouseExcelImportDialog({ open, onOpenChange, onImported }: P
   const updateRowCategory = (index: number, cat: WarehouseProductCategory) => {
     setRows((prev) =>
       prev.map((r, i) =>
-        i === index ? { ...r, category: cat, valid: !!r.name && !!cat, error: undefined } : r
+        i === index
+          ? {
+              ...r,
+              category: cat,
+              valid: !!r.name && !!cat && !!r.lieferant,
+              error: !r.lieferant ? "Lieferant fehlt (Pflichtfeld)" : undefined,
+            }
+          : r
+      )
+    );
+  };
+
+  const updateRowLieferant = (index: number, lieferant: string) => {
+    setRows((prev) =>
+      prev.map((r, i) =>
+        i === index
+          ? {
+              ...r,
+              lieferant: lieferant.trim(),
+              valid: !!r.name && !!r.category && !!lieferant.trim(),
+              error: !lieferant.trim() ? "Lieferant fehlt (Pflichtfeld)" : undefined,
+            }
+          : r
       )
     );
   };
@@ -115,9 +181,13 @@ export function WarehouseExcelImportDialog({ open, onOpenChange, onImported }: P
         category: r.category!,
         einheit: r.einheit,
         ek_preis: r.ek_preis,
+        lieferant: r.lieferant,
+        aufschlag_prozent: r.aufschlag_prozent,
+        rechnungsdatum: r.rechnungsdatum,
+        lieferdatum: r.lieferdatum,
       }));
 
-      const { error } = await supabase.from("warehouse_products").insert(insertData);
+      const { error } = await (supabase.from("warehouse_products") as any).insert(insertData);
       if (error) throw error;
 
       toast({ title: `${validRows.length} Produkte importiert` });
@@ -144,8 +214,10 @@ export function WarehouseExcelImportDialog({ open, onOpenChange, onImported }: P
         {rows.length === 0 ? (
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              Lade eine Excel-Datei hoch. Erwartete Spalten: <strong>Name</strong> (Pflicht),{" "}
-              <strong>Kategorie</strong> (Pflicht), <strong>Einheit</strong>, <strong>EK-Preis</strong>
+              Lade eine Excel-Datei hoch. Erwartete Spalten (Reihenfolge A-K wie in der Spec):<br />
+              <strong>Kategorie</strong>*, Menge, Einheit, <strong>Name/Artikel</strong>*, EK-Preis, Aufschlag %,
+              Rechnungsdatum, Lieferdatum, <strong>Lieferant</strong>*
+              <span className="block text-xs mt-1">* = Pflichtfeld</span>
             </p>
             <p className="text-xs text-muted-foreground">
               Gültige Kategorien: {Object.values(CATEGORY_LABELS).join(", ")}
@@ -186,6 +258,8 @@ export function WarehouseExcelImportDialog({ open, onOpenChange, onImported }: P
                     <TableHead>Kategorie</TableHead>
                     <TableHead>Einheit</TableHead>
                     <TableHead>EK-Preis</TableHead>
+                    <TableHead>Lieferant *</TableHead>
+                    <TableHead>Aufschlag %</TableHead>
                     <TableHead className="w-10"></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -218,6 +292,22 @@ export function WarehouseExcelImportDialog({ open, onOpenChange, onImported }: P
                       </TableCell>
                       <TableCell>{row.einheit}</TableCell>
                       <TableCell>{row.ek_preis != null ? `€ ${row.ek_preis.toFixed(2)}` : "–"}</TableCell>
+                      <TableCell>
+                        {row.lieferant ? (
+                          row.lieferant
+                        ) : (
+                          <input
+                            type="text"
+                            placeholder="Lieferant *"
+                            className="h-8 w-32 rounded border border-input bg-background px-2 text-xs"
+                            onBlur={(e) => updateRowLieferant(i, e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") updateRowLieferant(i, (e.target as HTMLInputElement).value);
+                            }}
+                          />
+                        )}
+                      </TableCell>
+                      <TableCell>{row.aufschlag_prozent != null ? `${row.aufschlag_prozent}%` : "–"}</TableCell>
                       <TableCell>
                         <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => removeRow(i)}>
                           <X className="w-3 h-3" />
