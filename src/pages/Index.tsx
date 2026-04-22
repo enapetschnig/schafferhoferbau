@@ -814,6 +814,24 @@ export default function Index() {
   }, [user?.id, userRole]);
 
   const handleLogout = async () => {
+    // App-spezifische Marker aufraeumen, damit sie nicht fuer den naechsten
+    // User auf demselben Geraet uebrig bleiben (z.B. Projekt-ZIP-Download-Gate).
+    try {
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (
+          key &&
+          (key.startsWith("project_zip_downloaded_") ||
+            key.startsWith("company-chat-tabs-"))
+        ) {
+          keysToRemove.push(key);
+        }
+      }
+      keysToRemove.forEach((k) => localStorage.removeItem(k));
+    } catch {
+      /* ignore storage errors */
+    }
     await supabase.auth.signOut({ scope: "local" });
     navigate("/auth");
   };

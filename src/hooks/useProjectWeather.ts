@@ -86,7 +86,9 @@ export function useProjectWeather(location: string | null | undefined, date: str
         const resp = await fetch(url);
         const weather = await resp.json();
         const d = weather?.daily;
-        if (!d || !d.temperature_2m_min?.[0] == null) {
+        // Vorsicht: `!d.temperature_2m_min?.[0] == null` wuerde wegen Operator-
+        // Praezedenz immer `false` ergeben. Richtig: direkt nullish-check.
+        if (!d || d.temperature_2m_min?.[0] == null) {
           throw new Error("Keine Wetterdaten fuer dieses Datum");
         }
 

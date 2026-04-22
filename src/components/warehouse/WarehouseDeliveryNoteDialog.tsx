@@ -168,6 +168,24 @@ export function WarehouseDeliveryNoteDialog({ open, onOpenChange, onSaved }: Pro
 
   const handleSave = async () => {
     if (!signature) return;
+
+    // Bounds-Check: Bei Lager-Ausgabe (lager_to_baustelle) darf die Menge
+    // den aktuellen Lagerbestand nicht ueberschreiten. Beim Retour (baustelle_to_lager)
+    // ist es unproblematisch, der Bestand steigt.
+    if (transferType === "lager_to_baustelle") {
+      const overdraw = selectedItems
+        .filter((i) => i.menge > (i.product.current_stock ?? 0))
+        .map((i) => `${i.product.name}: ${i.menge} > Lager ${i.product.current_stock ?? 0}`);
+      if (overdraw.length > 0) {
+        toast({
+          variant: "destructive",
+          title: "Lagerbestand nicht ausreichend",
+          description: overdraw.join("; "),
+        });
+        return;
+      }
+    }
+
     setSaving(true);
 
     try {

@@ -85,18 +85,39 @@ export default function EmployeeDocumentsManager({ employeeId, userId }: Props) 
     if (!files || files.length === 0) return;
 
     const MAX_SIZE = 50 * 1024 * 1024;
+    const ALLOWED_EXT = /\.(pdf|jpe?g|png|heic|heif)$/i;
+    const ALLOWED_TYPES = [
+      "application/pdf",
+      "image/jpeg",
+      "image/jpg",
+      "image/png",
+      "image/heic",
+      "image/heif",
+    ];
     const oversizedFiles: string[] = [];
+    const disallowedFiles: string[] = [];
 
     Array.from(files).forEach((file) => {
       if (file.size > MAX_SIZE) {
         oversizedFiles.push(`${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
       }
+      const nameOk = ALLOWED_EXT.test(file.name);
+      const typeOk = ALLOWED_TYPES.includes(file.type) || file.type === "";
+      if (!nameOk || !typeOk) disallowedFiles.push(file.name);
     });
 
     if (oversizedFiles.length > 0) {
       toast({
         title: "Dateien zu groß",
         description: `Folgende Dateien sind zu groß (max. 50 MB):\n${oversizedFiles.join("\n")}`,
+        variant: "destructive",
+      });
+      return;
+    }
+    if (disallowedFiles.length > 0) {
+      toast({
+        title: "Dateityp nicht erlaubt",
+        description: `Nur PDF und JPG/PNG. Abgelehnt: ${disallowedFiles.join(", ")}`,
         variant: "destructive",
       });
       return;

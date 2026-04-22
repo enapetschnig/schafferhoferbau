@@ -97,7 +97,11 @@ export default function DailyReports() {
     if (data) {
       let filtered = data as any[];
       if (filterGeschoss !== "alle") {
-        filtered = filtered.filter((r: any) => r.geschoss && r.geschoss.includes(filterGeschoss));
+        // geschoss ist ein TEXT[] — exakter Array-Vergleich, damit z.B. "EG"
+        // nicht faelschlicherweise einen "EG1"-Eintrag matcht
+        filtered = filtered.filter((r: any) =>
+          Array.isArray(r.geschoss) && r.geschoss.includes(filterGeschoss)
+        );
       }
       if (filterSignature !== "alle") {
         filtered = filtered.filter((r: any) => filterSignature === "ja"

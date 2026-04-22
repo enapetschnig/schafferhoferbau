@@ -31,9 +31,17 @@ export async function normalizeImageOrientation(file: File): Promise<File> {
     const outputType = file.type === "image/png" ? "image/png" : "image/jpeg";
     const quality = outputType === "image/jpeg" ? 0.92 : undefined;
 
-    const blob: Blob | null = await new Promise((resolve) =>
-      canvas.toBlob(resolve, outputType, quality)
-    );
+    // toBlob kann bei zu grossen Bildern / OOM null liefern — Promise nie blockieren
+    const blob: Blob | null = await new Promise((resolve) => {
+      try {
+        canvas.toBlob(resolve, outputType, quality);
+      } catch {
+        resolve(null);
+      }
+    });
+    // Canvas freigeben, um Speicher schneller zurueckzugewinnen
+    canvas.width = 0;
+    canvas.height = 0;
     if (!blob) return file;
 
     return new File([blob], file.name, {

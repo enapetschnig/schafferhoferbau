@@ -276,7 +276,7 @@ const MyHours = () => {
       vorhanden: totalDays,
       anspruch: totalDays,
       verbraucht: usedDays,
-      verbleibend: totalDays - usedDays,
+      verbleibend: Math.max(0, totalDays - usedDays),
       einheit: preferredEinheit || "tage",
       stichtag: null,
       source: "fallback",

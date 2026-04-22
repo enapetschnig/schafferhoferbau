@@ -164,6 +164,15 @@ export const SignatureDialog = ({
 
       // Send disturbance data to edge function via direct fetch (bypasses supabase client issues)
       const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        toast({
+          variant: "destructive",
+          title: "Nicht angemeldet",
+          description: "Bitte melde dich neu an und versuche es erneut.",
+        });
+        setSaving(false);
+        return;
+      }
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
@@ -171,7 +180,7 @@ export const SignatureDialog = ({
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${session?.access_token || supabaseKey}`,
+          "Authorization": `Bearer ${session.access_token}`,
           "apikey": supabaseKey,
         },
         body: JSON.stringify({

@@ -104,6 +104,27 @@ export default function MyDocuments() {
       return;
     }
 
+    // Strikte Dateityp-Whitelist - verhindert Upload von .exe/.html/.svg etc.
+    const allowedTypes = [
+      "application/pdf",
+      "image/jpeg",
+      "image/jpg",
+      "image/png",
+      "image/heic",
+      "image/heif",
+    ];
+    const allowedExtensions = /\.(pdf|jpe?g|png|heic|heif)$/i;
+    const nameOk = allowedExtensions.test(file.name);
+    const typeOk = allowedTypes.includes(file.type) || file.type === ""; // Handy-Camera liefert teils ""
+    if (!nameOk || !typeOk) {
+      toast({
+        variant: "destructive",
+        title: "Dateityp nicht erlaubt",
+        description: "Nur PDF und JPG/PNG sind zulässig.",
+      });
+      return;
+    }
+
     setUploading(true);
 
     const filePath = `${userId}/${type}/${Date.now()}_${file.name}`;
