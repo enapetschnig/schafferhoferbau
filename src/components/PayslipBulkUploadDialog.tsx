@@ -26,6 +26,7 @@ type Assignment = {
   matched_user_id: string | null;
   pages: number[];
   confidence: "high" | "low";
+  release_date: string; // Freigabedatum pro Mitarbeiter — default uebernommen aus globalem Wert
 };
 
 interface Props {
@@ -204,7 +205,13 @@ export function PayslipBulkUploadDialog({ open, onOpenChange }: Props) {
 
       if (error) throw error;
 
-      setAssignments(data.assignments || []);
+      // Jeder erkannte Eintrag bekommt das globale Datum als Default;
+      // der Admin kann es anschliessend pro MA ueberschreiben.
+      const withDates: Assignment[] = (data.assignments || []).map((a: Omit<Assignment, "release_date">) => ({
+        ...a,
+        release_date: releaseDate,
+      }));
+      setAssignments(withDates);
       setUnassignedPages(data.unassigned_pages || []);
       setStep(2);
     } catch (err: unknown) {
@@ -224,6 +231,16 @@ export function PayslipBulkUploadDialog({ open, onOpenChange }: Props) {
           : a
       )
     );
+  };
+
+  const updateAssignmentReleaseDate = (index: number, date: string) => {
+    setAssignments((prev) =>
+      prev.map((a, i) => (i === index ? { ...a, release_date: date } : a))
+    );
+  };
+
+  const applyReleaseDateToAll = (date: string) => {
+    setAssignments((prev) => prev.map((a) => ({ ...a, release_date: date })));
   };
 
   const handleSave = async () => {
@@ -267,16 +284,17 @@ export function PayslipBulkUploadDialog({ open, onOpenChange }: Props) {
           continue;
         }
 
-        // Metadaten mit Freigabedatum speichern
+        // Metadaten mit individuellem Freigabedatum speichern
+        const perRowRelease = assignment.release_date || releaseDate;
         await supabase.from("payslip_metadata").insert({
           user_id: assignment.matched_user_id,
           file_path: filePath,
-          release_date: releaseDate,
+          release_date: perRowRelease,
         });
 
         // In-App notification nur wenn Freigabedatum heute oder in Vergangenheit
         const today = new Date().toISOString().split("T")[0];
-        if (releaseDate <= today) {
+        if (perRowRelease <= today) {
           await supabase.from("notifications").insert({
             user_id: assignment.matched_user_id,
             type: "lohnzettel_upload",
@@ -412,6 +430,26 @@ export function PayslipBulkUploadDialog({ open, onOpenChange }: Props) {
                 {unassignedPages.length > 0 && ` ${unassignedPages.length} Seiten nicht zugeordnet.`}
               </p>
 
+              {/* Globaler Datum-Override: setzt Freigabedatum fuer alle Zeilen */}
+              <div className="flex items-center gap-2 p-2 rounded-md border bg-muted/30">
+                <Calendar className="h-4 w-4 text-muted-foreground shrink-0" />
+                <span className="text-xs text-muted-foreground">Freigabedatum fuer alle:</span>
+                <Input
+                  type="date"
+                  value={releaseDate}
+                  onChange={(e) => setReleaseDate(e.target.value)}
+                  className="h-8 text-xs w-40"
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 text-xs"
+                  onClick={() => applyReleaseDateToAll(releaseDate)}
+                >
+                  Auf alle anwenden
+                </Button>
+              </div>
+
               <div className="space-y-2 max-h-[50vh] overflow-y-auto">
                 {assignments.map((a, i) => (
                   <div
@@ -420,7 +458,7 @@ export function PayslipBulkUploadDialog({ open, onOpenChange }: Props) {
                       a.matched_user_id ? "bg-green-50 border-green-200" : "bg-yellow-50 border-yellow-200"
                     }`}
                   >
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 flex-wrap">
                       <div className="shrink-0">
                         {a.matched_user_id ? (
                           <Check className="w-5 h-5 text-green-600" />
@@ -447,7 +485,7 @@ export function PayslipBulkUploadDialog({ open, onOpenChange }: Props) {
                         value={a.matched_user_id || ""}
                         onValueChange={(v) => updateAssignment(i, v)}
                       >
-                        <SelectTrigger className="w-48 h-8 text-xs">
+                        <SelectTrigger className="w-40 h-8 text-xs">
                           <SelectValue placeholder="Zuordnen..." />
                         </SelectTrigger>
                         <SelectContent>
@@ -458,6 +496,16 @@ export function PayslipBulkUploadDialog({ open, onOpenChange }: Props) {
                           ))}
                         </SelectContent>
                       </Select>
+                      <div className="flex items-center gap-1">
+                        <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
+                        <Input
+                          type="date"
+                          value={a.release_date}
+                          onChange={(e) => updateAssignmentReleaseDate(i, e.target.value)}
+                          className="h-8 text-xs w-36"
+                          title="Freigabedatum fuer diesen Mitarbeiter"
+                        />
+                      </div>
                     </div>
                     {/* Thumbnails */}
                     <div className="flex gap-1 mt-2 overflow-x-auto">
