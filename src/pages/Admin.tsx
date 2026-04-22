@@ -77,6 +77,7 @@ interface Employee {
   kategorie?: string | null;
   schwellenwert?: Record<string, any> | null;
   sichtbarkeit?: Record<string, boolean> | null;
+  urlaub_einheit_preferred?: "tage" | "stunden" | null;
 }
 
 export default function Admin() {
@@ -1774,6 +1775,75 @@ export default function Admin() {
                           </div>
                         );
                       })}
+                    </div>
+                  </div>
+
+                  <Separator />
+
+                  {/* Urlaubskonto — Einheit und manueller Override */}
+                  <div>
+                    <h3 className="text-lg font-semibold mb-3">Urlaubskonto</h3>
+                    <p className="text-sm text-muted-foreground mb-3">
+                      Die Basisdaten werden normalerweise automatisch aus dem neuesten Lohnzettel extrahiert.
+                      Hier kannst du Einheit und Werte pro Mitarbeiter ueberschreiben.
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <Label>Gefuehrte Einheit</Label>
+                        <select
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                          value={formData.urlaub_einheit_preferred || ""}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              urlaub_einheit_preferred: (e.target.value || null) as "tage" | "stunden" | null,
+                            })
+                          }
+                        >
+                          <option value="">Automatisch aus Lohnzettel</option>
+                          <option value="tage">Tage</option>
+                          <option value="stunden">Stunden (z.B. Mauerhofer)</option>
+                        </select>
+                      </div>
+                      <div className="flex items-end">
+                        {selectedEmployee?.user_id && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={async () => {
+                              const anspruch = window.prompt("Jahres-Urlaubsanspruch (leer = nicht setzen):", "");
+                              const rest = window.prompt("Aktueller Resturlaub:", "");
+                              const stichtag = window.prompt(
+                                "Stichtag (YYYY-MM-DD):",
+                                new Date().toISOString().slice(0, 10)
+                              );
+                              if (!rest || !stichtag) return;
+                              const einheit = formData.urlaub_einheit_preferred || "tage";
+                              const { error } = await (supabase.from("payslip_metadata") as any).insert({
+                                user_id: selectedEmployee.user_id,
+                                file_path: null,
+                                release_date: stichtag,
+                                urlaubsanspruch: anspruch ? parseFloat(anspruch.replace(",", ".")) : null,
+                                resturlaub: parseFloat(rest.replace(",", ".")),
+                                urlaub_einheit: einheit,
+                                stichtag,
+                              });
+                              if (error) {
+                                toast({
+                                  title: "Fehler",
+                                  description: error.message,
+                                  variant: "destructive",
+                                });
+                              } else {
+                                toast({ title: "Urlaubskonto manuell gesetzt" });
+                              }
+                            }}
+                          >
+                            Urlaubskonto manuell setzen
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   </div>
 

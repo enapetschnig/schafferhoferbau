@@ -27,6 +27,11 @@ type Assignment = {
   pages: number[];
   confidence: "high" | "low";
   release_date: string; // Freigabedatum pro Mitarbeiter — default uebernommen aus globalem Wert
+  // Urlaubsdaten aus dem Lohnzettel — KI-Extraktion, vom Admin editierbar
+  urlaubsanspruch: number | null;
+  resturlaub: number | null;
+  urlaub_einheit: "tage" | "stunden" | null;
+  stichtag: string | null; // YYYY-MM-DD
 };
 
 interface Props {
@@ -207,9 +212,17 @@ export function PayslipBulkUploadDialog({ open, onOpenChange }: Props) {
 
       // Jeder erkannte Eintrag bekommt das globale Datum als Default;
       // der Admin kann es anschliessend pro MA ueberschreiben.
-      const withDates: Assignment[] = (data.assignments || []).map((a: Omit<Assignment, "release_date">) => ({
-        ...a,
+      // Urlaubsdaten kommen direkt aus der KI-Extraktion (können null sein).
+      const withDates: Assignment[] = (data.assignments || []).map((a: Partial<Assignment> & { employee_name: string; matched_user_id: string | null; pages: number[]; confidence: "high" | "low" }) => ({
+        employee_name: a.employee_name,
+        matched_user_id: a.matched_user_id,
+        pages: a.pages,
+        confidence: a.confidence,
         release_date: releaseDate,
+        urlaubsanspruch: a.urlaubsanspruch ?? null,
+        resturlaub: a.resturlaub ?? null,
+        urlaub_einheit: a.urlaub_einheit ?? null,
+        stichtag: a.stichtag ?? null,
       }));
       setAssignments(withDates);
       setUnassignedPages(data.unassigned_pages || []);
@@ -241,6 +254,26 @@ export function PayslipBulkUploadDialog({ open, onOpenChange }: Props) {
 
   const applyReleaseDateToAll = (date: string) => {
     setAssignments((prev) => prev.map((a) => ({ ...a, release_date: date })));
+  };
+
+  const updateAssignmentVacation = (
+    index: number,
+    field: "urlaubsanspruch" | "resturlaub" | "urlaub_einheit" | "stichtag",
+    value: string
+  ) => {
+    setAssignments((prev) =>
+      prev.map((a, i) => {
+        if (i !== index) return a;
+        if (field === "urlaubsanspruch" || field === "resturlaub") {
+          const num = value === "" ? null : parseFloat(value.replace(",", "."));
+          return { ...a, [field]: Number.isNaN(num) ? null : num };
+        }
+        if (field === "urlaub_einheit") {
+          return { ...a, urlaub_einheit: (value as "tage" | "stunden") || null };
+        }
+        return { ...a, stichtag: value || null };
+      })
+    );
   };
 
   const handleSave = async () => {
@@ -284,12 +317,16 @@ export function PayslipBulkUploadDialog({ open, onOpenChange }: Props) {
           continue;
         }
 
-        // Metadaten mit individuellem Freigabedatum speichern
+        // Metadaten mit individuellem Freigabedatum + Urlaubsdaten speichern
         const perRowRelease = assignment.release_date || releaseDate;
-        await supabase.from("payslip_metadata").insert({
+        await (supabase.from("payslip_metadata") as any).insert({
           user_id: assignment.matched_user_id,
           file_path: filePath,
           release_date: perRowRelease,
+          urlaubsanspruch: assignment.urlaubsanspruch,
+          resturlaub: assignment.resturlaub,
+          urlaub_einheit: assignment.urlaub_einheit,
+          stichtag: assignment.stichtag,
         });
 
         // In-App notification nur wenn Freigabedatum heute oder in Vergangenheit
@@ -506,6 +543,54 @@ export function PayslipBulkUploadDialog({ open, onOpenChange }: Props) {
                           title="Freigabedatum fuer diesen Mitarbeiter"
                         />
                       </div>
+                    </div>
+                    {/* Urlaubsdaten aus Lohnzettel (KI-extrahiert, editierbar) */}
+                    <div className="flex items-center gap-2 mt-2 pt-2 border-t border-green-200/60 flex-wrap text-xs">
+                      <span className="text-muted-foreground font-medium">Urlaub:</span>
+                      <Select
+                        value={a.urlaub_einheit || ""}
+                        onValueChange={(v) => updateAssignmentVacation(i, "urlaub_einheit", v)}
+                      >
+                        <SelectTrigger className="w-24 h-7 text-xs">
+                          <SelectValue placeholder="Einheit" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="tage">Tage</SelectItem>
+                          <SelectItem value="stunden">Stunden</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <span className="text-muted-foreground">Anspruch:</span>
+                      <Input
+                        type="number"
+                        step="0.5"
+                        min="0"
+                        value={a.urlaubsanspruch ?? ""}
+                        onChange={(e) => updateAssignmentVacation(i, "urlaubsanspruch", e.target.value)}
+                        className="h-7 text-xs w-20"
+                        placeholder="-"
+                      />
+                      <span className="text-muted-foreground">Rest:</span>
+                      <Input
+                        type="number"
+                        step="0.5"
+                        min="0"
+                        value={a.resturlaub ?? ""}
+                        onChange={(e) => updateAssignmentVacation(i, "resturlaub", e.target.value)}
+                        className="h-7 text-xs w-20"
+                        placeholder="-"
+                      />
+                      <span className="text-muted-foreground">Stichtag:</span>
+                      <Input
+                        type="date"
+                        value={a.stichtag ?? ""}
+                        onChange={(e) => updateAssignmentVacation(i, "stichtag", e.target.value)}
+                        className="h-7 text-xs w-36"
+                      />
+                      {a.urlaubsanspruch == null && a.resturlaub == null && (
+                        <Badge variant="secondary" className="text-[10px] bg-yellow-100 text-yellow-800">
+                          Nicht erkannt — bitte ergaenzen
+                        </Badge>
+                      )}
                     </div>
                     {/* Thumbnails */}
                     <div className="flex gap-1 mt-2 overflow-x-auto">

@@ -44,11 +44,11 @@ serve(async (req) => {
 
     // Build page text summaries (truncate to avoid token limits)
     const pageTexts = pdfText.map((text: string, i: number) => {
-      const truncated = text.substring(0, 2000);
+      const truncated = text.substring(0, 3500);
       return `=== SEITE ${i + 1} ===\n${truncated}`;
     }).join("\n\n");
 
-    const prompt = `Du bist ein Assistent, der Lohnzettel-PDFs analysiert.
+    const prompt = `Du bist ein Assistent, der österreichische Lohnzettel-PDFs analysiert.
 
 Hier ist eine Liste aller Mitarbeiter:
 ${employeeList}
@@ -57,9 +57,21 @@ Hier ist der extrahierte Text aus einem Sammel-PDF mit Lohnzetteln (${pdfText.le
 
 ${pageTexts}
 
-Aufgabe: Ordne jede Seite einem Mitarbeiter zu. Lohnzettel können 1 oder mehrere Seiten pro Mitarbeiter umfassen.
-Suche nach Mitarbeiter-Namen, Sozialversicherungsnummern oder anderen identifizierenden Informationen auf jeder Seite.
-Wenn mehrere aufeinanderfolgende Seiten zum gleichen Mitarbeiter gehören, gruppiere sie zusammen.
+Aufgabe:
+1) Ordne jede Seite einem Mitarbeiter zu. Lohnzettel können 1 oder mehrere Seiten pro Mitarbeiter umfassen.
+   Suche nach Mitarbeiter-Namen, SV-Nummern oder anderen identifizierenden Informationen auf jeder Seite.
+   Wenn mehrere aufeinanderfolgende Seiten zum gleichen Mitarbeiter gehören, gruppiere sie zusammen.
+
+2) Extrahiere pro Mitarbeiter die URLAUBSDATEN aus dem Lohnzettel:
+   - "urlaubsanspruch": Jahres-Urlaubsanspruch (Gesamt, meist 25/30 Tage oder 200/240 Stunden)
+     Typische Bezeichnungen: "Urlaubsanspruch", "Urlaubsanspruch gesamt", "Urlaub Anspruch"
+   - "resturlaub": aktuell offener/verbleibender Urlaub zum Stichtag
+     Typische Bezeichnungen: "Resturlaub", "Urlaubsrest", "Restanspruch Urlaub", "offener Urlaub"
+   - "urlaub_einheit": "tage" oder "stunden" — abhaengig davon, was auf dem Lohnzettel neben den Werten steht
+     ("Tage", "d", "T" → "tage"; "Stunden", "h", "Std." → "stunden")
+     Falls beide angegeben sind, waehle "tage" als Default.
+   - "stichtag": Das Ende des Abrechnungsmonats im Format YYYY-MM-DD (z.B. Abrechnung "04/2026" oder
+     "April 2026" → "2026-04-30"). Falls nicht eindeutig: null.
 
 Antworte NUR mit einem validen JSON-Objekt:
 {
@@ -68,7 +80,11 @@ Antworte NUR mit einem validen JSON-Objekt:
       "employee_name": "Voller Name des Mitarbeiters",
       "matched_user_id": "user_id aus der Liste oben oder null",
       "pages": [0, 1],
-      "confidence": "high oder low"
+      "confidence": "high oder low",
+      "urlaubsanspruch": 25,
+      "resturlaub": 12,
+      "urlaub_einheit": "tage",
+      "stichtag": "2026-04-30"
     }
   ],
   "unassigned_pages": [5, 6]
@@ -78,8 +94,10 @@ Regeln:
 - "pages" sind 0-basierte Indizes (Seite 1 = Index 0)
 - "confidence": "high" wenn der Name eindeutig erkannt wurde, "low" wenn unsicher
 - Seiten ohne erkennbare Zuordnung in "unassigned_pages"
-- "matched_user_id" muss exakt einer der user_ids aus der Mitarbeiterliste sein, oder null falls nicht zuordenbar
-- Jede Seite darf nur einem Mitarbeiter zugeordnet werden`;
+- "matched_user_id" muss exakt einer der user_ids aus der Mitarbeiterliste sein, oder null
+- Jede Seite darf nur einem Mitarbeiter zugeordnet werden
+- Fehlende Urlaubswerte als null zuruckgeben (nicht 0!)
+- Dezimalwerte sind erlaubt (z.B. 12.5)`;
 
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",

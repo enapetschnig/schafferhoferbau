@@ -61,7 +61,15 @@ const MyHours = () => {
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
   const [projectOptions, setProjectOptions] = useState<ProjectOption[]>([]);
-  const [vacationBalance, setVacationBalance] = useState<{ total: number; used: number } | null>(null);
+  const [vacationBalance, setVacationBalance] = useState<{
+    vorhanden: number;     // Resturlaub zum Stichtag laut Lohnzettel
+    anspruch: number | null; // Jahresanspruch (optional)
+    verbraucht: number;    // seit Stichtag verbrauchte Tage/Stunden
+    verbleibend: number;   // vorhanden - verbraucht
+    einheit: "tage" | "stunden";
+    stichtag: string | null;
+    source: "lohnzettel" | "fallback";
+  } | null>(null);
   const [vacationHistory, setVacationHistory] = useState<{ datum: string; stunden: number }[]>([]);
   const [isExternal, setIsExternal] = useState(false);
   const [showAuswertung, setShowAuswertung] = useState(false);
@@ -171,9 +179,78 @@ const MyHours = () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    const currentYear = new Date().getFullYear();
+    // 1) Mitarbeiter-Praeferenz fuer Einheit (z.B. Mauerhofer = stunden)
+    const { data: empData } = await supabase
+      .from("employees")
+      .select("urlaub_einheit_preferred")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    const preferredEinheit = (empData as any)?.urlaub_einheit_preferred as ("tage" | "stunden") | null;
 
-    // Fetch leave balance from admin settings
+    // 2) Neuester gueltiger Lohnzettel mit Urlaubsdaten
+    const { data: payslip } = await (supabase
+      .from("payslip_metadata") as any)
+      .select("urlaubsanspruch, resturlaub, urlaub_einheit, stichtag")
+      .eq("user_id", user.id)
+      .not("stichtag", "is", null)
+      .not("resturlaub", "is", null)
+      .order("stichtag", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const payslipRow = payslip as {
+      urlaubsanspruch: number | null;
+      resturlaub: number | null;
+      urlaub_einheit: "tage" | "stunden" | null;
+      stichtag: string | null;
+    } | null;
+
+    if (payslipRow?.stichtag && payslipRow.resturlaub != null) {
+      // 3) Verbraucht seit Stichtag berechnen
+      const einheit = preferredEinheit || payslipRow.urlaub_einheit || "tage";
+      const stichtagPlusOne = new Date(payslipRow.stichtag);
+      stichtagPlusOne.setDate(stichtagPlusOne.getDate() + 1);
+      const fromDate = stichtagPlusOne.toISOString().split("T")[0];
+
+      const { data: vacEntries } = await supabase
+        .from("time_entries")
+        .select("datum, stunden")
+        .eq("user_id", user.id)
+        .eq("taetigkeit", "Urlaub")
+        .gte("datum", fromDate)
+        .order("datum", { ascending: false });
+
+      // Antwort 1: 1 Tag pro Urlaubs-Eintrag (Tage-Modus), Stunden = sum(stunden) (Stunden-Modus)
+      const verbraucht = einheit === "stunden"
+        ? (vacEntries || []).reduce((sum, e) => sum + (e.stunden || 0), 0)
+        : (vacEntries?.length || 0);
+
+      setVacationBalance({
+        vorhanden: payslipRow.resturlaub,
+        anspruch: payslipRow.urlaubsanspruch,
+        verbraucht,
+        verbleibend: Math.max(0, payslipRow.resturlaub - verbraucht),
+        einheit,
+        stichtag: payslipRow.stichtag,
+        source: "lohnzettel",
+      });
+
+      // Urlaubsverlauf (alle Urlaubstage dieses Jahres - wie gehabt)
+      const currentYear = new Date().getFullYear();
+      const { data: allVacEntries } = await supabase
+        .from("time_entries")
+        .select("datum, stunden")
+        .eq("user_id", user.id)
+        .eq("taetigkeit", "Urlaub")
+        .gte("datum", `${currentYear}-01-01`)
+        .lte("datum", `${currentYear}-12-31`)
+        .order("datum", { ascending: false });
+      setVacationHistory(allVacEntries || []);
+      return;
+    }
+
+    // Fallback: altes leave_balances-System wenn kein Lohnzettel vorhanden
+    const currentYear = new Date().getFullYear();
     const { data: balanceData } = await supabase
       .from("leave_balances")
       .select("total_days, used_days")
@@ -181,7 +258,6 @@ const MyHours = () => {
       .eq("year", currentYear)
       .maybeSingle();
 
-    // Count actual vacation days from time_entries
     const yearStart = `${currentYear}-01-01`;
     const yearEnd = `${currentYear}-12-31`;
     const { data: vacEntries } = await supabase
@@ -196,7 +272,15 @@ const MyHours = () => {
     const usedDays = vacEntries?.length || 0;
     const totalDays = balanceData?.total_days || 25;
 
-    setVacationBalance({ total: totalDays, used: usedDays });
+    setVacationBalance({
+      vorhanden: totalDays,
+      anspruch: totalDays,
+      verbraucht: usedDays,
+      verbleibend: totalDays - usedDays,
+      einheit: preferredEinheit || "tage",
+      stichtag: null,
+      source: "fallback",
+    });
     setVacationHistory(vacEntries || []);
   };
 
@@ -649,27 +733,51 @@ const MyHours = () => {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Palmtree className="h-5 w-5" />
-                Urlaubskonto {new Date().getFullYear()}
+                Urlaubskonto
               </CardTitle>
+              <p className="text-xs text-muted-foreground mt-1">
+                {vacationBalance.source === "lohnzettel" && vacationBalance.stichtag
+                  ? `Basis: Lohnzettel mit Stichtag ${new Date(vacationBalance.stichtag).toLocaleDateString("de-AT")}`
+                  : "Fallback — kein Lohnzettel hinterlegt. Bitte Admin kontaktieren."}
+              </p>
             </CardHeader>
             <CardContent>
               <div className="flex flex-wrap gap-4 mb-4">
                 <div className="bg-muted/50 rounded-lg p-3 flex-1 min-w-[120px]">
-                  <p className="text-sm text-muted-foreground">Gesamt</p>
-                  <p className="text-2xl font-bold">{vacationBalance.total}</p>
-                  <p className="text-xs text-muted-foreground">Tage</p>
+                  <p className="text-sm text-muted-foreground">Vorhanden</p>
+                  <p className="text-2xl font-bold">
+                    {vacationBalance.vorhanden.toLocaleString("de-AT", { maximumFractionDigits: 1 })}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {vacationBalance.einheit === "stunden" ? "Stunden" : "Tage"}
+                    {vacationBalance.source === "lohnzettel" && " laut Lohnzettel"}
+                  </p>
                 </div>
                 <div className="bg-muted/50 rounded-lg p-3 flex-1 min-w-[120px]">
                   <p className="text-sm text-muted-foreground">Verbraucht</p>
-                  <p className="text-2xl font-bold">{vacationBalance.used}</p>
-                  <p className="text-xs text-muted-foreground">Tage</p>
+                  <p className="text-2xl font-bold">
+                    {vacationBalance.verbraucht.toLocaleString("de-AT", { maximumFractionDigits: 1 })}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {vacationBalance.einheit === "stunden" ? "Stunden" : "Tage"}
+                    {vacationBalance.source === "lohnzettel" && vacationBalance.stichtag && " seit Stichtag"}
+                  </p>
                 </div>
                 <div className="bg-primary/10 rounded-lg p-3 flex-1 min-w-[120px]">
                   <p className="text-sm text-muted-foreground">Verbleibend</p>
-                  <p className="text-2xl font-bold text-primary">{vacationBalance.total - vacationBalance.used}</p>
-                  <p className="text-xs text-muted-foreground">Tage</p>
+                  <p className="text-2xl font-bold text-primary">
+                    {vacationBalance.verbleibend.toLocaleString("de-AT", { maximumFractionDigits: 1 })}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {vacationBalance.einheit === "stunden" ? "Stunden" : "Tage"}
+                  </p>
                 </div>
               </div>
+              {vacationBalance.anspruch != null && vacationBalance.source === "lohnzettel" && (
+                <p className="text-xs text-muted-foreground mb-3">
+                  Jahresanspruch laut Lohnzettel: {vacationBalance.anspruch.toLocaleString("de-AT", { maximumFractionDigits: 1 })} {vacationBalance.einheit === "stunden" ? "Stunden" : "Tage"}
+                </p>
+              )}
 
               {vacationHistory.length > 0 && (
                 <div>
