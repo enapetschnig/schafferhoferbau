@@ -67,6 +67,8 @@ export function ProjectGanttSection({
               {/* Day cells */}
               {days.map((day, dayIdx) => {
                 const holiday = isCompanyHoliday(holidays, day);
+                const dow = day.getDay();
+                const isWeekend = dow === 0 || dow === 6;
                 const dayAssignments = assignments.filter(
                   (a) =>
                     a.project_id === project.id &&
@@ -81,7 +83,7 @@ export function ProjectGanttSection({
                   <div
                     key={day.toISOString()}
                     className={`p-0.5 border-r min-h-[40px] ${
-                      holiday ? "bg-gray-100" : ""
+                      holiday ? "bg-gray-100" : isWeekend ? "bg-muted/30" : ""
                     }`}
                   >
                     {workerCount > 0 && !holiday && (

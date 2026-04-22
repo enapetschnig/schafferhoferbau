@@ -40,7 +40,10 @@ const STATUS_LABELS: Record<string, string> = {
   abgeschlossen: "Abgeschlossen",
 };
 
-export function generateSafetyEvaluationPDF(data: SafetyEvaluationData): void {
+export function generateSafetyEvaluationPDF(
+  data: SafetyEvaluationData,
+  options: { returnAsBlob?: boolean } = {}
+): void | Blob {
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
@@ -220,5 +223,8 @@ export function generateSafetyEvaluationPDF(data: SafetyEvaluationData): void {
 
   const dateStr = new Date(data.created_at).toISOString().slice(0, 10);
   const titelClean = data.titel.replace(/[^a-zA-Z0-9äöüÄÖÜß ]/g, "_").slice(0, 40);
+  if (options.returnAsBlob) {
+    return doc.output("blob");
+  }
   doc.save(`${typLabel}_${titelClean}_${dateStr}.pdf`);
 }

@@ -58,7 +58,7 @@ export default function CloudData() {
       { name: "profiles", label: "Benutzer", icon: <Users className="h-4 w-4" /> },
       { name: "employees", label: "Mitarbeiter", icon: <Users className="h-4 w-4" /> },
       { name: "time_entries", label: "Stundeneintraege", icon: <Clock className="h-4 w-4" /> },
-      { name: "daily_reports", label: "Tagesberichte", icon: <FileText className="h-4 w-4" /> },
+      { name: "daily_reports", label: "Berichte", icon: <FileText className="h-4 w-4" /> },
       { name: "worker_assignments", label: "Plantafel-Zuweisungen", icon: <Clock className="h-4 w-4" /> },
       { name: "project_contacts", label: "Projektkontakte", icon: <Users className="h-4 w-4" /> },
       { name: "project_messages", label: "Chat-Nachrichten", icon: <FileText className="h-4 w-4" /> },

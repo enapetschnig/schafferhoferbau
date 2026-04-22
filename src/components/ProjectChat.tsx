@@ -2,10 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { Camera, Send, ChevronUp, Trash2, X, ChevronLeft, ChevronRight, Download, Pencil } from "lucide-react";
+import { Camera, Send, ChevronUp, Trash2, X, ChevronLeft, ChevronRight, Download, Pencil, Paperclip, FileText } from "lucide-react";
 import { ImageEditor } from "@/components/ImageEditor";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { normalizeImageOrientation } from "@/lib/imageOrientation";
 
 type ChatMessage = {
   id: string;
@@ -40,6 +41,7 @@ export function ProjectChat({ projectId, projectName, isAdmin }: { projectId: st
   const [showEmojiPicker, setShowEmojiPicker] = useState<string | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const pdfInputRef = useRef<HTMLInputElement>(null);
 
   // Get current user
   useEffect(() => {
@@ -314,12 +316,16 @@ export function ProjectChat({ projectId, projectName, isAdmin }: { projectId: st
     setPreviewImage(null);
   };
 
-  // Send photo
+  // Send photo or PDF. `image_url` haelt beide Typen (Bilder + PDFs) -
+  // beim Rendern wird anhand der Dateiendung unterschieden.
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !currentUserId) return;
+    const rawFile = e.target.files?.[0];
+    if (!rawFile || !currentUserId) return;
 
     setSending(true);
+    const isPdf = rawFile.type === "application/pdf" || rawFile.name.toLowerCase().endsWith(".pdf");
+    // Nur Bilder durch die EXIF-Rotation schicken - PDFs unveraendert
+    const file = isPdf ? rawFile : await normalizeImageOrientation(rawFile);
     const filePath = `${projectId}/${Date.now()}_${file.name}`;
 
     const { error: uploadError } = await supabase.storage
@@ -332,11 +338,13 @@ export function ProjectChat({ projectId, projectName, isAdmin }: { projectId: st
       return;
     }
 
-    // Also save to project-photos bucket
-    const photosPath = `${projectId}/${Date.now()}_${file.name}`;
-    await supabase.storage
-      .from("project-photos")
-      .upload(photosPath, file, { cacheControl: "3600", upsert: false });
+    // Bilder zusaetzlich in den Projekt-Fotoordner spiegeln (PDFs nicht)
+    if (!isPdf) {
+      const photosPath = `${projectId}/${Date.now()}_${file.name}`;
+      await supabase.storage
+        .from("project-photos")
+        .upload(photosPath, file, { cacheControl: "3600", upsert: false });
+    }
 
     const { data: urlData } = supabase.storage
       .from("project-chat")
@@ -346,18 +354,20 @@ export function ProjectChat({ projectId, projectName, isAdmin }: { projectId: st
       project_id: projectId,
       user_id: currentUserId,
       image_url: urlData.publicUrl,
+      message: isPdf ? rawFile.name : null,
     });
 
     if (error) {
-      toast({ variant: "destructive", title: "Fehler", description: "Foto konnte nicht gesendet werden" });
+      toast({ variant: "destructive", title: "Fehler", description: "Datei konnte nicht gesendet werden" });
     } else {
       // Notify project members (fire-and-forget)
-      sendNotifications("📷 Foto gesendet");
+      sendNotifications(isPdf ? "📎 PDF gesendet" : "📷 Foto gesendet");
     }
 
     setSending(false);
     // Reset file input
     if (fileInputRef.current) fileInputRef.current.value = "";
+    if (pdfInputRef.current) pdfInputRef.current.value = "";
   };
 
   const formatTime = (dateStr: string) => {
@@ -474,18 +484,42 @@ export function ProjectChat({ projectId, projectName, isAdmin }: { projectId: st
                     </p>
                   )}
 
-                  {/* Image - klickbar fuer Vollbild-Vorschau */}
-                  {msg.image_url && (
-                    <img
-                      src={msg.image_url}
-                      alt="Foto"
-                      className="rounded-lg max-w-full max-h-64 object-cover mb-1 cursor-pointer hover:opacity-90"
-                      onClick={(e) => { e.stopPropagation(); setPreviewImage(msg.image_url); }}
-                    />
-                  )}
+                  {/* Attachment - Bild klickbar fuer Vollbild, PDF klickbar fuer Inline-Viewer */}
+                  {msg.image_url && (() => {
+                    const pathname = (() => {
+                      try { return new URL(msg.image_url!).pathname.toLowerCase(); }
+                      catch { return msg.image_url!.toLowerCase(); }
+                    })();
+                    const isPdf = pathname.endsWith(".pdf");
+                    if (isPdf) {
+                      return (
+                        <button
+                          className="flex items-center gap-2 p-2 rounded-lg bg-background/50 border border-border hover:bg-background/80 transition-colors mb-1 max-w-full"
+                          onClick={(e) => { e.stopPropagation(); setPreviewImage(msg.image_url); }}
+                        >
+                          <FileText className="h-8 w-8 shrink-0 text-red-600" />
+                          <div className="text-left min-w-0">
+                            <p className="text-sm font-medium truncate">{msg.message || "PDF-Dokument"}</p>
+                            <p className="text-xs text-muted-foreground">Zum Anzeigen tippen</p>
+                          </div>
+                        </button>
+                      );
+                    }
+                    return (
+                      <img
+                        src={msg.image_url}
+                        alt="Foto"
+                        className="rounded-lg max-w-full max-h-64 object-cover mb-1 cursor-pointer hover:opacity-90"
+                        onClick={(e) => { e.stopPropagation(); setPreviewImage(msg.image_url); }}
+                      />
+                    );
+                  })()}
 
-                  {/* Text */}
-                  {msg.message && (
+                  {/* Text - bei PDF steht Dateiname im Attachment-Block, nicht nochmal darunter */}
+                  {msg.message && !(msg.image_url && (() => {
+                    try { return new URL(msg.image_url!).pathname.toLowerCase().endsWith(".pdf"); }
+                    catch { return msg.image_url!.toLowerCase().endsWith(".pdf"); }
+                  })()) && (
                     <p className="text-sm whitespace-pre-wrap break-words">{msg.message}</p>
                   )}
 
@@ -597,14 +631,32 @@ export function ProjectChat({ projectId, projectName, isAdmin }: { projectId: st
             className="hidden"
             onChange={handlePhotoUpload}
           />
+          <input
+            ref={pdfInputRef}
+            type="file"
+            accept="application/pdf"
+            className="hidden"
+            onChange={handlePhotoUpload}
+          />
           <Button
             variant="ghost"
             size="icon"
             className="shrink-0"
             onClick={() => fileInputRef.current?.click()}
             disabled={sending}
+            title="Foto senden"
           >
             <Camera className="h-5 w-5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="shrink-0"
+            onClick={() => pdfInputRef.current?.click()}
+            disabled={sending}
+            title="PDF senden"
+          >
+            <Paperclip className="h-5 w-5" />
           </Button>
           <Input
             value={newMessage}
@@ -633,57 +685,96 @@ export function ProjectChat({ projectId, projectName, isAdmin }: { projectId: st
       {/* Bild-Vorschau Lightbox */}
       <Dialog open={!!previewImage} onOpenChange={() => setPreviewImage(null)}>
         <DialogContent className="max-w-4xl h-[90vh] flex flex-col p-0 bg-black/95">
-          <div className="flex justify-between items-center px-4 py-2">
-            <span className="text-white text-sm">Bild-Vorschau</span>
-            <div className="flex gap-2">
-              {previewImage && (
-                <>
-                  <button
-                    onClick={() => setEditingImage(previewImage)}
-                    className="text-white hover:text-gray-300 flex items-center gap-1 px-2 py-1 bg-white/10 rounded"
-                    title="Bild bearbeiten"
-                  >
-                    <Pencil className="h-4 w-4" />
-                    <span className="text-xs hidden sm:inline">Bearbeiten</span>
-                  </button>
-                  <a href={previewImage} download className="text-white hover:text-gray-300">
-                    <Download className="h-5 w-5" />
-                  </a>
-                </>
-              )}
-              <button onClick={() => setPreviewImage(null)} className="text-white hover:text-gray-300">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-          </div>
-          <div className="flex-1 flex items-center justify-center p-4 overflow-auto">
-            {previewImage && (
-              <img src={previewImage} alt="Vorschau" className="max-w-full max-h-full object-contain rounded-lg" />
-            )}
-          </div>
-          {/* Swipe durch Chat-Bilder */}
           {(() => {
-            const allImages = messages.filter(m => m.image_url).map(m => m.image_url!);
-            const currentIdx = previewImage ? allImages.indexOf(previewImage) : -1;
-            if (allImages.length <= 1) return null;
+            const isPdfPreview = (() => {
+              if (!previewImage) return false;
+              try { return new URL(previewImage).pathname.toLowerCase().endsWith(".pdf"); }
+              catch { return previewImage.toLowerCase().endsWith(".pdf"); }
+            })();
+            // Swipe nur zwischen Bildern (ohne PDFs), sonst fremde Formate im Bild-Lightbox
+            const allImages = messages
+              .filter(m => {
+                if (!m.image_url) return false;
+                try { return !new URL(m.image_url).pathname.toLowerCase().endsWith(".pdf"); }
+                catch { return !m.image_url.toLowerCase().endsWith(".pdf"); }
+              })
+              .map(m => m.image_url!);
+            const currentIdx = previewImage && !isPdfPreview ? allImages.indexOf(previewImage) : -1;
+            const goPrev = () => { if (currentIdx > 0) setPreviewImage(allImages[currentIdx - 1]); };
+            const goNext = () => { if (currentIdx >= 0 && currentIdx < allImages.length - 1) setPreviewImage(allImages[currentIdx + 1]); };
             return (
-              <div className="flex justify-center gap-4 pb-4">
-                <button
-                  className="text-white hover:text-gray-300 disabled:opacity-30"
-                  disabled={currentIdx <= 0}
-                  onClick={() => setPreviewImage(allImages[currentIdx - 1])}
+              <>
+                <div className="flex justify-between items-center px-4 py-2">
+                  <span className="text-white text-sm">{isPdfPreview ? "PDF-Vorschau" : "Bild-Vorschau"}</span>
+                  <div className="flex gap-2">
+                    {previewImage && !isPdfPreview && (
+                      <button
+                        onClick={() => setEditingImage(previewImage)}
+                        className="text-white hover:text-gray-300 flex items-center gap-1 px-2 py-1 bg-white/10 rounded"
+                        title="Bild bearbeiten"
+                      >
+                        <Pencil className="h-4 w-4" />
+                        <span className="text-xs hidden sm:inline">Bearbeiten</span>
+                      </button>
+                    )}
+                    {previewImage && (
+                      <a href={previewImage} download className="text-white hover:text-gray-300">
+                        <Download className="h-5 w-5" />
+                      </a>
+                    )}
+                    <button onClick={() => setPreviewImage(null)} className="text-white hover:text-gray-300">
+                      <X className="h-5 w-5" />
+                    </button>
+                  </div>
+                </div>
+                <div
+                  className="flex-1 flex items-center justify-center p-4 overflow-auto select-none"
+                  onTouchStart={(e) => {
+                    if (isPdfPreview) return;
+                    (e.currentTarget as any)._touchStartX = e.touches[0].clientX;
+                  }}
+                  onTouchEnd={(e) => {
+                    if (isPdfPreview) return;
+                    const startX = (e.currentTarget as any)._touchStartX;
+                    if (typeof startX !== "number") return;
+                    const dx = e.changedTouches[0].clientX - startX;
+                    if (Math.abs(dx) < 50) return;
+                    if (dx < 0) goNext(); else goPrev();
+                  }}
                 >
-                  <ChevronLeft className="h-8 w-8" />
-                </button>
-                <span className="text-white text-sm self-center">{currentIdx + 1} / {allImages.length}</span>
-                <button
-                  className="text-white hover:text-gray-300 disabled:opacity-30"
-                  disabled={currentIdx >= allImages.length - 1}
-                  onClick={() => setPreviewImage(allImages[currentIdx + 1])}
-                >
-                  <ChevronRight className="h-8 w-8" />
-                </button>
-              </div>
+                  {previewImage && (
+                    isPdfPreview ? (
+                      <iframe
+                        src={previewImage}
+                        title="PDF-Vorschau"
+                        className="w-full h-full bg-white rounded-lg"
+                      />
+                    ) : (
+                      <img src={previewImage} alt="Vorschau" className="max-w-full max-h-full object-contain rounded-lg" />
+                    )
+                  )}
+                </div>
+                {/* Navigation zwischen Chat-Bildern */}
+                {!isPdfPreview && allImages.length > 1 && (
+                  <div className="flex justify-center gap-4 pb-4">
+                    <button
+                      className="text-white hover:text-gray-300 disabled:opacity-30"
+                      disabled={currentIdx <= 0}
+                      onClick={goPrev}
+                    >
+                      <ChevronLeft className="h-8 w-8" />
+                    </button>
+                    <span className="text-white text-sm self-center">{currentIdx + 1} / {allImages.length}</span>
+                    <button
+                      className="text-white hover:text-gray-300 disabled:opacity-30"
+                      disabled={currentIdx >= allImages.length - 1}
+                      onClick={goNext}
+                    >
+                      <ChevronRight className="h-8 w-8" />
+                    </button>
+                  </div>
+                )}
+              </>
             );
           })()}
         </DialogContent>

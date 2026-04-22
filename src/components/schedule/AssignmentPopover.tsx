@@ -1,10 +1,12 @@
 import { useState, useEffect } from "react";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
-import { Trash2, AlertTriangle } from "lucide-react";
+import { Trash2, AlertTriangle, Truck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -31,7 +33,7 @@ interface Props {
   existingAssignments?: Assignment[];
   projects: Project[];
   holidays?: CompanyHoliday[];
-  onAssign: (userId: string, date: Date, projectId: string, notizen?: string) => void;
+  onAssign: (userId: string, date: Date, projectId: string, notizen?: string, transportErforderlich?: boolean) => void;
   onRemove: (userId: string, date: Date, assignmentId?: string) => void;
 }
 
@@ -50,12 +52,14 @@ export function AssignmentPopover({
 }: Props) {
   const [selectedProject, setSelectedProject] = useState(assignment?.project_id || "");
   const [notizen, setNotizen] = useState(assignment?.notizen || "");
+  const [transportErforderlich, setTransportErforderlich] = useState(!!assignment?.transport_erforderlich);
 
   const isRangeMode = days && days.length > 1;
 
   useEffect(() => {
     setSelectedProject(assignment?.project_id || "");
     setNotizen(assignment?.notizen || "");
+    setTransportErforderlich(!!assignment?.transport_erforderlich);
   }, [assignment, open]);
 
   if (!profile || !date) return null;
@@ -64,10 +68,10 @@ export function AssignmentPopover({
     if (!selectedProject) return;
     if (isRangeMode) {
       for (const d of days) {
-        onAssign(profile.id, d, selectedProject, notizen || undefined);
+        onAssign(profile.id, d, selectedProject, notizen || undefined, transportErforderlich);
       }
     } else {
-      onAssign(profile.id, date, selectedProject, notizen || undefined);
+      onAssign(profile.id, date, selectedProject, notizen || undefined, transportErforderlich);
     }
     onOpenChange(false);
   };
@@ -142,6 +146,16 @@ export function AssignmentPopover({
             rows={2}
             className="text-sm resize-none"
           />
+
+          {/* Transport-Flag */}
+          <label className="flex items-center gap-2 p-2 rounded-md border cursor-pointer hover:bg-muted/30 transition-colors">
+            <Checkbox
+              checked={transportErforderlich}
+              onCheckedChange={(v) => setTransportErforderlich(!!v)}
+            />
+            <Truck className="h-4 w-4 text-muted-foreground" />
+            <Label className="text-sm font-normal cursor-pointer flex-1">Transport erforderlich</Label>
+          </label>
         </div>
 
         <DialogFooter>

@@ -24,6 +24,7 @@ import TimeAccountManagement from "@/components/TimeAccountManagement";
 import { ContactTemplatesManager } from "@/components/admin/ContactTemplatesManager";
 import { YearPlanningRolesPanel } from "@/components/admin/YearPlanningRolesPanel";
 import { WarehouseCategoriesManager } from "@/components/admin/WarehouseCategoriesManager";
+import { BatchEmployeeSettings } from "@/components/BatchEmployeeSettings";
 
 type Profile = {
   id: string;
@@ -74,7 +75,7 @@ interface Employee {
   notizen: string | null;
   land: string | null;
   kategorie?: string | null;
-  schwellenwert?: Record<string, number> | null;
+  schwellenwert?: Record<string, any> | null;
   sichtbarkeit?: Record<string, boolean> | null;
 }
 
@@ -1270,7 +1271,16 @@ export default function Admin() {
                   </div>
                 ))}
               </div>
-              <div className="flex justify-end">
+              <div className="flex justify-between items-center flex-wrap gap-2">
+                <BatchEmployeeSettings
+                  employees={employees.map((e) => ({
+                    id: e.id,
+                    vorname: e.vorname,
+                    nachname: e.nachname,
+                    kategorie: e.kategorie,
+                  }))}
+                  onSaved={fetchEmployees}
+                />
                 <Button
                   disabled={savingSettings}
                   onClick={async () => {
@@ -1357,7 +1367,7 @@ export default function Admin() {
                   { key: "projekte", label: "Projekte" },
                   { key: "meine_stunden", label: "Meine Stunden" },
                   { key: "regiearbeiten", label: "Regiearbeiten" },
-                  { key: "tagesberichte", label: "Tagesberichte" },
+                  { key: "tagesberichte", label: "Berichte" },
                   { key: "meine_dokumente", label: "Meine Dokumente" },
                   { key: "dokumentenbibliothek", label: "Dokumentenbibliothek" },
                   { key: "stundenubersicht", label: "Stundenübersicht" },
@@ -1368,6 +1378,7 @@ export default function Admin() {
                   { key: "arbeitsschutz", label: "Arbeitsschutz" },
                   { key: "lieferscheine", label: "Lieferscheine" },
                   { key: "lagerverwaltung", label: "Lagerverwaltung" },
+                  { key: "bestellungen", label: "Bestellungen" },
                   { key: "admin_bereich", label: "Admin-Bereich" },
                 ];
                 return (
@@ -1616,36 +1627,123 @@ export default function Admin() {
                     <p className="text-sm text-muted-foreground mb-3">
                       Tagesgrenze: Stunden bis zum Schwellenwert werden ausbezahlt, darueber liegende Stunden gehen in den Zeitausgleich.
                     </p>
-                    <div className="grid grid-cols-7 gap-2">
-                      {(["mo", "di", "mi", "do", "fr", "sa", "so"] as const).map((day) => {
-                        const labels: Record<string, string> = { mo: "Mo", di: "Di", mi: "Mi", do: "Do", fr: "Fr", sa: "Sa", so: "So" };
-                        const sw = (formData.schwellenwert as Record<string, number> | null) || {};
-                        return (
-                          <div key={day} className="text-center">
-                            <Label className="text-xs">{labels[day]}</Label>
-                            <Input
-                              type="number"
-                              min="0"
-                              max="24"
-                              step="0.5"
-                              className="text-center text-sm"
-                              value={sw[day] ?? ""}
-                              placeholder="-"
+                    {(() => {
+                      const labels: Record<string, string> = { mo: "Mo", di: "Di", mi: "Mi", do: "Do", fr: "Fr", sa: "Sa", so: "So" };
+                      const sw = (formData.schwellenwert as Record<string, any> | null) || {};
+                      const isBiweekly = sw.zyklus === "biweekly";
+                      const wocheB = (sw.woche_b as Record<string, number> | undefined) || {};
+
+                      const updateSw = (changes: Record<string, any>) => {
+                        const next = { ...sw, ...changes };
+                        // Clean empty object
+                        const hasAny =
+                          next.zyklus ||
+                          next.woche_b ||
+                          next.zyklus_anker ||
+                          ["mo", "di", "mi", "do", "fr", "sa", "so"].some((k) => typeof next[k] === "number");
+                        setFormData({ ...formData, schwellenwert: hasAny ? next : null });
+                      };
+
+                      return (
+                        <>
+                          <div className="flex items-center justify-between mb-3 p-3 rounded-lg border bg-muted/30">
+                            <div>
+                              <Label className="text-sm font-medium">14-Tage-Zyklus (Woche A / Woche B)</Label>
+                              <p className="text-xs text-muted-foreground mt-1">
+                                Fuer Lehrlinge mit wechselndem Kurz-/Langwochenrhythmus.
+                              </p>
+                            </div>
+                            <input
+                              type="checkbox"
+                              className="h-4 w-4"
+                              checked={isBiweekly}
                               onChange={(e) => {
-                                const val = e.target.value === "" ? undefined : parseFloat(e.target.value);
-                                const updated = { ...sw };
-                                if (val === undefined) {
-                                  delete updated[day];
+                                if (e.target.checked) {
+                                  updateSw({
+                                    zyklus: "biweekly",
+                                    woche_b: wocheB,
+                                    zyklus_anker: sw.zyklus_anker || new Date().toISOString().slice(0, 10),
+                                  });
                                 } else {
-                                  updated[day] = val;
+                                  const { zyklus, woche_b, zyklus_anker, ...rest } = sw;
+                                  setFormData({
+                                    ...formData,
+                                    schwellenwert: Object.keys(rest).length > 0 ? rest : null,
+                                  });
                                 }
-                                setFormData({ ...formData, schwellenwert: Object.keys(updated).length > 0 ? updated : null });
                               }}
                             />
                           </div>
-                        );
-                      })}
-                    </div>
+                          {isBiweekly && (
+                            <div className="mb-3">
+                              <Label className="text-xs">Zyklus-Anker (Montag der Woche A)</Label>
+                              <Input
+                                type="date"
+                                className="w-48"
+                                value={sw.zyklus_anker || ""}
+                                onChange={(e) => updateSw({ zyklus_anker: e.target.value })}
+                              />
+                            </div>
+                          )}
+                          <Label className="text-xs font-semibold">{isBiweekly ? "Woche A" : "Pro Wochentag"}</Label>
+                          <div className="grid grid-cols-7 gap-2 mt-1">
+                            {(["mo", "di", "mi", "do", "fr", "sa", "so"] as const).map((day) => (
+                              <div key={day} className="text-center">
+                                <Label className="text-xs">{labels[day]}</Label>
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  max="24"
+                                  step="0.5"
+                                  className="text-center text-sm"
+                                  value={typeof sw[day] === "number" ? sw[day] : ""}
+                                  placeholder="-"
+                                  onChange={(e) => {
+                                    const val = e.target.value === "" ? undefined : parseFloat(e.target.value);
+                                    const next = { ...sw };
+                                    if (val === undefined) {
+                                      delete next[day];
+                                    } else {
+                                      next[day] = val;
+                                    }
+                                    setFormData({
+                                      ...formData,
+                                      schwellenwert:
+                                        Object.keys(next).some((k) => next[k] !== undefined) ? next : null,
+                                    });
+                                  }}
+                                />
+                              </div>
+                            ))}
+                          </div>
+                          {isBiweekly && (
+                            <>
+                              <Label className="text-xs font-semibold mt-3 block">Woche B</Label>
+                              <div className="grid grid-cols-7 gap-2 mt-1">
+                                {(["mo", "di", "mi", "do", "fr", "sa", "so"] as const).map((day) => (
+                                  <div key={day} className="text-center">
+                                    <Label className="text-xs">{labels[day]}</Label>
+                                    <Input
+                                      type="number"
+                                      min="0"
+                                      max="24"
+                                      step="0.5"
+                                      className="text-center text-sm"
+                                      value={wocheB[day] ?? ""}
+                                      placeholder="-"
+                                      onChange={(e) => {
+                                        const val = e.target.value === "" ? 0 : parseFloat(e.target.value);
+                                        updateSw({ woche_b: { ...wocheB, [day]: val } });
+                                      }}
+                                    />
+                                  </div>
+                                ))}
+                              </div>
+                            </>
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
 
                   <Separator />

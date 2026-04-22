@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { ChevronDown, ChevronRight, Users } from "lucide-react";
+import { ChevronDown, ChevronRight, Users, Truck } from "lucide-react";
 import { GanttBar } from "./GanttBar";
 import {
   getAssignmentForDay,
@@ -105,6 +105,8 @@ export function TeamGanttSection({
             {/* Day cells */}
             {days.map((day, dayIdx) => {
               const holiday = isCompanyHoliday(holidays, day);
+              const dow = day.getDay();
+              const isWeekend = dow === 0 || dow === 6;
               const leave = isOnLeave(leaveRequests, profile.id, day);
               const dayAssignments = getAssignmentsForDay(
                 assignments,
@@ -126,7 +128,7 @@ export function TeamGanttSection({
                 <div
                   key={day.toISOString()}
                   className={`p-0.5 border-r min-h-[40px] select-none ${
-                    holiday ? "bg-gray-100" : ""
+                    holiday ? "bg-gray-100" : isWeekend ? "bg-muted/20" : ""
                   } ${
                     !editable && !holiday && !leave
                       ? "opacity-60"
@@ -168,12 +170,19 @@ export function TeamGanttSection({
                         <div className="text-[9px] text-gray-500 text-center truncate">{holiday.bezeichnung}</div>
                       )}
                       {dayAssignments.map((assignment) => (
-                        <GanttBar
-                          key={assignment.id}
-                          projectId={assignment.project_id}
-                          label={projectMap[assignment.project_id] || "–"}
-                          colorOverride={empColor}
-                        />
+                        <div key={assignment.id} className="relative">
+                          <GanttBar
+                            projectId={assignment.project_id}
+                            label={projectMap[assignment.project_id] || "–"}
+                            colorOverride={empColor}
+                          />
+                          {assignment.transport_erforderlich && (
+                            <Truck
+                              className="absolute top-0.5 right-0.5 h-3 w-3 text-orange-600 bg-white/80 rounded-sm"
+                              aria-label="Transport erforderlich"
+                            />
+                          )}
+                        </div>
                       ))}
                     </div>
                   ) : holiday ? (

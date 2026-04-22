@@ -68,6 +68,7 @@ const MyHours = () => {
   const [missingDays, setMissingDays] = useState<string[]>([]);
   const [badWeatherRecords, setBadWeatherRecords] = useState<{ datum: string; schlechtwetter_stunden: number }[]>([]);
   const [employeeSichtbarkeit, setEmployeeSichtbarkeit] = useState<Record<string, boolean>>({ auswertung: true, zusatzaufwendungen: false, fahrtengeld: true });
+  const [zusatzaufwendungen, setZusatzaufwendungen] = useState<{ id: string; bezeichnung: string; betrag: number | null }[]>([]);
 
   useEffect(() => {
     fetchEntries();
@@ -76,7 +77,22 @@ const MyHours = () => {
     checkIfExternal();
     fetchMissingDays();
     fetchBadWeather();
+    fetchZusatzaufwendungen();
   }, [selectedMonth]);
+
+  const fetchZusatzaufwendungen = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const [year, month] = selectedMonth.split('-').map(Number);
+    const { data } = await supabase
+      .from("report_extras")
+      .select("id, bezeichnung, betrag")
+      .eq("user_id", user.id)
+      .eq("jahr", year)
+      .eq("monat", month)
+      .order("created_at");
+    setZusatzaufwendungen(data || []);
+  };
 
   const checkIfExternal = async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -599,6 +615,33 @@ const MyHours = () => {
             )}
           </CardContent>
         </Card>
+
+        {/* Zusatzaufwendungen - nur wenn Sichtbarkeit erlaubt und System-Toggle aktiv */}
+        {employeeSichtbarkeit.zusatzaufwendungen && appSettings.showZusatzaufwendungen && zusatzaufwendungen.length > 0 && !isExternal && (
+          <Card className="mt-6">
+            <CardHeader>
+              <CardTitle className="text-base">
+                Zusatzaufwendungen {new Date(selectedMonth + "-01").toLocaleDateString("de-DE", { month: "long", year: "numeric" })}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-1.5">
+                {zusatzaufwendungen.map((z) => (
+                  <div key={z.id} className="flex items-center justify-between py-1.5 px-3 rounded bg-muted/30 text-sm">
+                    <span>{z.bezeichnung}</span>
+                    {z.betrag != null && <span className="font-medium">EUR {z.betrag.toFixed(2)}</span>}
+                  </div>
+                ))}
+                {zusatzaufwendungen.some((z) => z.betrag != null) && (
+                  <div className="flex items-center justify-between py-2 px-3 mt-2 border-t text-sm font-semibold">
+                    <span>Summe</span>
+                    <span>EUR {zusatzaufwendungen.reduce((s, z) => s + (z.betrag || 0), 0).toFixed(2)}</span>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Urlaubskonto - nicht für Externe */}
         {vacationBalance && !isExternal && (

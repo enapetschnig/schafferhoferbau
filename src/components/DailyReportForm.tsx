@@ -90,31 +90,45 @@ export function DailyReportForm({ open, onOpenChange, onSuccess, defaultProjectI
     if (data) setProjects(data);
   }, []);
 
-  // Projekt-Autofill aus Plantafel (bei neuen Berichten, keine defaultProjectId, kein Bearbeiten)
+  // Merker, ob der User das Projekt manuell veraendert hat.
+  // Der Autofill ueberschreibt keine manuellen Entscheidungen.
+  const [projectManuallySet, setProjectManuallySet] = useState(false);
+
+  // Projekt-Autofill aus Plantafel:
+  // - immer wenn Dialog geoeffnet wird (neuer Bericht, nicht Bearbeiten)
+  // - auch wenn Datum geaendert wird (Projekt fuer diesen Tag)
+  // - respektiert manuelle Auswahl (projectManuallySet)
   useEffect(() => {
-    if (editData || defaultProjectId || projectId) return;
+    if (!open) return;
+    if (editData) return;
+    if (defaultProjectId) return;
+    if (projectManuallySet) return;
     if (projects.length === 0) return;
+
     (async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-      const today = new Date().toISOString().split("T")[0];
       const { data } = await supabase
         .from("worker_assignments")
         .select("project_id")
         .eq("user_id", user.id)
-        .eq("datum", today)
+        .eq("datum", datum)
         .limit(1)
         .maybeSingle();
       if (data?.project_id && projects.some(p => p.id === data.project_id)) {
         setProjectId(data.project_id);
-        // Auch Typ automatisch setzen
         const proj = projects.find(p => p.id === data.project_id);
         if (proj?.baustellenart === "regie") setReportType("regiebericht");
         else if (proj?.baustellenart === "pauschale") setReportType("tagesbericht");
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projects, editData, defaultProjectId]);
+  }, [open, datum, projects, editData, defaultProjectId, projectManuallySet]);
+
+  // Beim Schliessen des Dialogs: manuelle-Flagge zuruecksetzen (naechstes Mal wieder autofillen)
+  useEffect(() => {
+    if (!open) setProjectManuallySet(false);
+  }, [open]);
 
   // Auto-Wetter fuer ausgewaehltes Projekt + Datum
   const selectedProject = projects.find(p => p.id === projectId);
@@ -346,7 +360,7 @@ export function DailyReportForm({ open, onOpenChange, onSuccess, defaultProjectI
     <Dialog open={open} onOpenChange={(o) => { if (!o) resetForm(); onOpenChange(o); }}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{editData ? "Bericht bearbeiten" : "Neuer Tagesbericht"}</DialogTitle>
+          <DialogTitle>{editData ? "Bericht bearbeiten" : "Neuer Bericht"}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
@@ -380,6 +394,7 @@ export function DailyReportForm({ open, onOpenChange, onSuccess, defaultProjectI
             <Label>Projekt *</Label>
             <Select value={projectId} onValueChange={(v) => {
               setProjectId(v);
+              setProjectManuallySet(true);
               // Auto-select report type based on Baustellenart (nur bei neuen Berichten)
               const proj = projects.find(p => p.id === v);
               if (!editData) {

@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Camera, Send, ChevronUp, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { normalizeImageOrientation } from "@/lib/imageOrientation";
 
 type BroadcastMessage = {
   id: string;
@@ -234,10 +235,12 @@ export function CompanyChat({
 
   // Send photo
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !currentUserId || !channelId || !channel) return;
+    const rawFile = e.target.files?.[0];
+    if (!rawFile || !currentUserId || !channelId || !channel) return;
 
     setSending(true);
+    // EXIF-Rotation in Pixeldaten einbacken
+    const file = await normalizeImageOrientation(rawFile);
     const filePath = `${Date.now()}_${file.name}`;
 
     const { error: uploadError } = await supabase.storage

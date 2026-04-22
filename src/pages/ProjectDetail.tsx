@@ -15,6 +15,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { PageHeader } from "@/components/PageHeader";
 import { FileViewer } from "@/components/FileViewer";
 import { Nachkalkulation } from "@/components/Nachkalkulation";
+import { normalizeImageOrientation } from "@/lib/imageOrientation";
 
 type DocumentType = "plans" | "reports" | "photos" | "chef" | "polier";
 
@@ -184,7 +185,9 @@ const ProjectDetail = () => {
 
     const { data: { user } } = await supabase.auth.getUser();
 
-    for (const file of Array.from(e.target.files)) {
+    for (const rawFile of Array.from(e.target.files)) {
+      // EXIF-Rotation in Pixeldaten einbacken (iPhone-/Android-Fotos korrekt ausrichten)
+      const file = await normalizeImageOrientation(rawFile);
       const bucket = bucketMap[type];
       const filePath = `${projectId}/${Date.now()}_${file.name}`;
       const { error } = await supabase.storage.from(bucket).upload(filePath, file);
@@ -355,17 +358,44 @@ const ProjectDetail = () => {
 
   const handleBulkDownload = async () => {
     if (selectedFiles.size === 0) return;
-    // Download einzeln (kein JSZip noetig)
-    for (const fileName of Array.from(selectedFiles)) {
-      const url = signedUrls[fileName];
+    const fileNames = Array.from(selectedFiles);
+
+    // Bei nur einer Datei: direkter Download
+    if (fileNames.length === 1) {
+      const url = signedUrls[fileNames[0]];
       if (url) {
         const a = document.createElement("a");
         a.href = url;
-        a.download = fileName;
+        a.download = fileNames[0];
         a.click();
+        toast({ title: "Datei wird heruntergeladen" });
       }
+      return;
     }
-    toast({ title: `${selectedFiles.size} Datei(en) werden heruntergeladen` });
+
+    toast({ title: `ZIP mit ${fileNames.length} Dateien wird erstellt...` });
+    try {
+      const { default: JSZip } = await import("jszip");
+      const zip = new JSZip();
+      for (const fileName of fileNames) {
+        const url = signedUrls[fileName];
+        if (!url) continue;
+        const resp = await fetch(url);
+        if (!resp.ok) continue;
+        const blob = await resp.blob();
+        zip.file(fileName, blob);
+      }
+      const zipBlob = await zip.generateAsync({ type: "blob" });
+      const zipName = `${projectName || "Projekt"}_${titleMap[type!] || type || "Dateien"}.zip`;
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(zipBlob);
+      a.download = zipName.replace(/[^a-zA-Z0-9._\-]/g, "_");
+      a.click();
+      URL.revokeObjectURL(a.href);
+      toast({ title: `ZIP mit ${fileNames.length} Dateien heruntergeladen` });
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Fehler beim ZIP-Export", description: err?.message });
+    }
   };
 
   const handleShareSelected = async () => {

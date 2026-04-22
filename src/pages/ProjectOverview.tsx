@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, FileText, FileCheck, Camera, ImagePlus, Lock, Plus, MapPin, Users, Copy, Pencil, Trash2, Phone, Mail, Shield, MessageCircle, Download, Upload } from "lucide-react";
+import { ArrowLeft, FileText, FileCheck, Camera, ImagePlus, Lock, Plus, MapPin, Users, Copy, Pencil, Trash2, Phone, Mail, Shield, MessageCircle, Download, Upload, GripVertical } from "lucide-react";
 import * as XLSX from "xlsx-js-style";
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -28,6 +31,83 @@ type Contact = {
   id: string; name: string; rolle: string | null; telefon: string | null;
   email: string | null; firma: string | null; phase: string; notizen: string | null;
 };
+
+interface SortableContactItemProps {
+  contact: Contact;
+  isAdmin: boolean;
+  onCopy: (c: Contact) => void;
+  onExportVCF: (c: Contact) => void;
+  onEdit: (c: Contact) => void;
+  onDelete: (id: string) => void;
+}
+
+function SortableContactItem({ contact, isAdmin, onCopy, onExportVCF, onEdit, onDelete }: SortableContactItemProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: contact.id });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.6 : 1,
+    zIndex: isDragging ? 10 : undefined,
+  } as React.CSSProperties;
+
+  return (
+    <div ref={setNodeRef} style={style} className="flex items-start gap-2 p-2 rounded-lg border text-sm bg-card">
+      {isAdmin && (
+        <button
+          type="button"
+          className="touch-none cursor-grab active:cursor-grabbing p-1 text-muted-foreground hover:text-foreground shrink-0"
+          {...attributes}
+          {...listeners}
+          aria-label="Kontakt verschieben"
+          title="Zum Sortieren ziehen"
+        >
+          <GripVertical className="h-4 w-4" />
+        </button>
+      )}
+      <div className="flex-1 min-w-0">
+        <div className="font-medium">
+          {contact.name}
+          {contact.firma && <span className="text-muted-foreground font-normal"> · {contact.firma}</span>}
+        </div>
+        {contact.rolle && (
+          <div className="text-xs text-muted-foreground">
+            {contact.rolle} · {contact.phase === "planungsphase" ? "Planungsphase" : contact.phase === "beide" ? "Alle Phasen" : "Bauphase"}
+          </div>
+        )}
+        <div className="flex flex-wrap gap-3 mt-1">
+          {contact.telefon && (
+            <a href={`tel:${contact.telefon}`} className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
+              <Phone className="h-3 w-3" /> {contact.telefon}
+            </a>
+          )}
+          {contact.email && (
+            <a href={`mailto:${contact.email}`} className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
+              <Mail className="h-3 w-3" /> {contact.email}
+            </a>
+          )}
+        </div>
+      </div>
+      <div className="flex gap-1 shrink-0">
+        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onCopy(contact)} title="Kontakt kopieren">
+          <Copy className="h-3.5 w-3.5" />
+        </Button>
+        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onExportVCF(contact)} title="Als VCF exportieren (WhatsApp/Kontakte)">
+          <Download className="h-3.5 w-3.5" />
+        </Button>
+        {isAdmin && (
+          <>
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onEdit(contact)}>
+              <Pencil className="h-3.5 w-3.5" />
+            </Button>
+            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => onDelete(contact.id)}>
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
 
 const ProjectOverview = () => {
   const { projectId } = useParams<{ projectId: string }>();
@@ -324,6 +404,29 @@ const ProjectOverview = () => {
     fetchContacts();
   };
 
+  // Drag-and-Drop Sensoren
+  const contactSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  const handleContactDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIdx = contacts.findIndex(c => c.id === active.id);
+    const newIdx = contacts.findIndex(c => c.id === over.id);
+    if (oldIdx < 0 || newIdx < 0) return;
+
+    const reordered = arrayMove(contacts, oldIdx, newIdx);
+    setContacts(reordered); // Optimistic UI
+
+    // sort_order in DB persistieren
+    const updates = reordered.map((c, i) => ({ id: c.id, sort_order: i }));
+    for (const u of updates) {
+      await supabase.from("project_contacts").update({ sort_order: u.sort_order }).eq("id", u.id);
+    }
+  };
+
   const handleSaveContact = async () => {
     if (!projectId || !contactForm.name.trim()) return;
     const payload = {
@@ -536,54 +639,281 @@ const ProjectOverview = () => {
   };
 
   const [downloading, setDownloading] = useState(false);
+
+  /**
+   * Vollstaendiger Projekt-Export nach Spec (Seite 10):
+   * - Projektname.xlsx (Projektdaten)
+   * - Kontakte.xlsx
+   * - Plaene und Auftraege/ (Alle Plaene, Alle Auftraege, Archivplaene)
+   * - Berichte/ (Tagesberichte, Zwischenberichte, Regieberichte — generierte PDFs)
+   * - Fotos/ (Aktuelle Fotos, Archiv)
+   * - Unterweisungen/ (unterschriebene Unterweisungen als PDF)
+   * - Polierordner/ und Chefordner/ (jeweils Aktuell + Archiv)
+   *
+   * Nach erfolgreichem Download wird ein Marker in localStorage gesetzt,
+   * damit das Projekt geloescht werden darf.
+   */
   const handleProjectZipDownload = async () => {
     if (!projectId || !isAdmin) return;
     setDownloading(true);
-    const { default: JSZip } = await import("jszip");
-    const zip = new JSZip();
-    const folder = zip.folder(projectName || "Projekt")!;
+    try {
+      const [{ default: JSZip }, XLSX, { generateDailyReportPDF }, { generateSafetyEvaluationPDF }] = await Promise.all([
+        import("jszip"),
+        import("xlsx-js-style"),
+        import("@/lib/generateDailyReportPDF"),
+        import("@/lib/generateSafetyEvaluationPDF"),
+      ]);
 
-    const buckets = [
-      { name: "Plaene_Auftraege", bucket: "project-plans" },
-      { name: "Regieberichte", bucket: "project-reports" },
-      { name: "Fotos", bucket: "project-photos" },
-      { name: "Chefordner", bucket: "project-chef" },
-      { name: "Polierordner", bucket: "project-polier" },
-    ];
+      const zip = new JSZip();
+      const sanitize = (s: string) => s.replace(/[^a-zA-Z0-9äöüÄÖÜß_\- ]/g, "_").slice(0, 80);
+      const folderName = sanitize(projectName || "Projekt");
+      const root = zip.folder(folderName)!;
 
-    for (const b of buckets) {
-      const { data: files } = await supabase.storage.from(b.bucket).list(projectId);
-      if (!files || files.length === 0) continue;
-      const subFolder = folder.folder(b.name)!;
-      for (const file of files) {
-        const { data } = await supabase.storage.from(b.bucket).download(`${projectId}/${file.name}`);
-        if (data) subFolder.file(file.name, data);
+      // === 1. Projektdaten als Excel ===
+      if (projectInfo) {
+        const projRows: Array<{ Feld: string; Wert: string }> = [
+          { Feld: "Projektname", Wert: projectName || "" },
+          { Feld: "Adresse", Wert: projectInfo.adresse || "" },
+          { Feld: "PLZ", Wert: projectInfo.plz || "" },
+          { Feld: "Bauherr 1", Wert: projectInfo.bauherr || "" },
+          { Feld: "Bauherr 1 Kontakt", Wert: projectInfo.bauherr_kontakt || "" },
+          { Feld: "Bauherr 2", Wert: projectInfo.bauherr2 || "" },
+          { Feld: "Bauherr 2 Kontakt", Wert: projectInfo.bauherr2_kontakt || "" },
+          { Feld: "Bauleiter", Wert: projectInfo.bauleiter || "" },
+          { Feld: "Kunde Telefon", Wert: projectInfo.kunde_telefon || "" },
+          { Feld: "Kunde E-Mail", Wert: projectInfo.kunde_email || "" },
+          { Feld: "Baustellenart", Wert: projectInfo.baustellenart || "" },
+          { Feld: "Anfahrt >100km", Wert: projectInfo.anfahrt_ueber_100km ? "Ja" : "Nein" },
+          { Feld: "Budget", Wert: projectInfo.budget != null ? String(projectInfo.budget) : "" },
+          { Feld: "Start", Wert: projectInfo.start_datum || "" },
+          { Feld: "Ende", Wert: projectInfo.end_datum || "" },
+          { Feld: "Beschreibung", Wert: projectInfo.beschreibung || "" },
+          { Feld: "Erreichbarkeit", Wert: projectInfo.erreichbarkeit || "" },
+          { Feld: "Besonderheiten", Wert: projectInfo.besonderheiten || "" },
+          { Feld: "Hinweise", Wert: projectInfo.hinweise || "" },
+        ];
+        const ws = XLSX.utils.json_to_sheet(projRows);
+        ws["!cols"] = [{ wch: 24 }, { wch: 80 }];
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Projekt");
+        root.file(`${folderName}.xlsx`, XLSX.write(wb, { type: "array", bookType: "xlsx" }));
       }
-    }
 
-    // Kontakte als Excel
-    if (contacts.length > 0) {
-      const XLSX = await import("xlsx-js-style");
-      const wsData = contacts.map(c => ({
-        Name: c.name, Firma: c.firma || "", Rolle: c.rolle || "",
-        Telefon: c.telefon || "", Email: c.email || "",
-      }));
-      const ws = XLSX.utils.json_to_sheet(wsData);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Kontakte");
-      const excelBuffer = XLSX.write(wb, { type: "array", bookType: "xlsx" });
-      folder.file("Kontakte.xlsx", excelBuffer);
-    }
+      // === 2. Kontakte als Excel ===
+      if (contacts.length > 0) {
+        const wsData = contacts.map(c => ({
+          Name: c.name,
+          Firma: c.firma || "",
+          Rolle: c.rolle || "",
+          Phase: c.phase,
+          Telefon: c.telefon || "",
+          Email: c.email || "",
+          Notizen: c.notizen || "",
+        }));
+        const ws = XLSX.utils.json_to_sheet(wsData);
+        ws["!cols"] = [{ wch: 25 }, { wch: 25 }, { wch: 18 }, { wch: 12 }, { wch: 16 }, { wch: 28 }, { wch: 40 }];
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Kontakte");
+        root.file("Kontakte.xlsx", XLSX.write(wb, { type: "array", bookType: "xlsx" }));
+      }
 
-    const blob = await zip.generateAsync({ type: "blob" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${projectName || "Projekt"}.zip`;
-    a.click();
-    URL.revokeObjectURL(url);
-    setDownloading(false);
-    toast({ title: "Download abgeschlossen" });
+      // Helfer: Docs eines Buckets anhand sub_type/archived gruppiert herunterladen
+      const downloadGrouped = async (
+        bucket: string,
+        groups: Array<{ folder: string; matcher: (d: { sub_type: string | null; archived: boolean | null }) => boolean }>
+      ) => {
+        const { data: docs } = await supabase
+          .from("documents")
+          .select("name, file_url, sub_type, archived")
+          .eq("project_id", projectId);
+        const { data: storageList } = await supabase.storage.from(bucket).list(projectId);
+        const fileSet = new Set((storageList || []).map(f => f.name));
+
+        for (const g of groups) {
+          const matchedDocs = (docs || []).filter(d => g.matcher(d) && d.file_url);
+          if (matchedDocs.length === 0) continue;
+          const sub = root.folder(g.folder)!;
+          for (const d of matchedDocs) {
+            const fileName = d.file_url!.split("/").pop()!;
+            if (!fileSet.has(fileName)) continue;
+            const { data } = await supabase.storage.from(bucket).download(`${projectId}/${fileName}`);
+            if (data) sub.file(d.name || fileName, data);
+          }
+        }
+      };
+
+      // === 3. Pläne und Aufträge ===
+      const planeFolder = root.folder("Plaene und Auftraege")!;
+      {
+        const { data: docs } = await supabase
+          .from("documents")
+          .select("name, file_url, sub_type, archived, text_content")
+          .eq("project_id", projectId)
+          .eq("typ", "plans");
+        const { data: storageList } = await supabase.storage.from("project-plans").list(projectId);
+        const fileSet = new Set((storageList || []).map(f => f.name));
+
+        const aktuellePlaene = planeFolder.folder("Alle Plaene")!;
+        const alleAuftraege = planeFolder.folder("Alle Auftraege")!;
+        const archivPlaene = planeFolder.folder("Archivplaene")!;
+
+        for (const d of docs || []) {
+          const target = d.archived
+            ? archivPlaene
+            : d.sub_type === "auftrag"
+            ? alleAuftraege
+            : d.sub_type === "besprechungsprotokoll"
+            ? aktuellePlaene // Besprechungsprotokolle zu "Alle Plaene" unter einem Unterordner
+            : aktuellePlaene;
+
+          if (d.file_url) {
+            const fileName = d.file_url.split("/").pop()!;
+            if (!fileSet.has(fileName)) continue;
+            const { data } = await supabase.storage.from("project-plans").download(`${projectId}/${fileName}`);
+            if (data) target.file(d.name || fileName, data);
+          } else if (d.text_content) {
+            // Text-Auftraege als .txt
+            const safeName = sanitize(d.name || "Auftrag") + ".txt";
+            target.file(safeName, d.text_content);
+          }
+        }
+      }
+
+      // === 4. Berichte (PDFs generiert) ===
+      const berichteFolder = root.folder("Berichte")!;
+      {
+        const { data: reports } = await supabase
+          .from("daily_reports")
+          .select("*, projects(name, adresse, plz)")
+          .eq("project_id", projectId)
+          .order("datum", { ascending: false });
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "";
+        const typeFolders: Record<string, any> = {
+          tagesbericht: berichteFolder.folder("Tagesberichte")!,
+          zwischenbericht: berichteFolder.folder("Zwischenberichte")!,
+          regiebericht: berichteFolder.folder("Regieberichte")!,
+        };
+        for (const r of reports || []) {
+          try {
+            const { data: activities } = await supabase
+              .from("daily_report_activities")
+              .select("geschoss, beschreibung")
+              .eq("daily_report_id", r.id)
+              .order("sort_order");
+            const { data: photos } = await supabase
+              .from("daily_report_photos")
+              .select("file_path, file_name")
+              .eq("daily_report_id", r.id);
+
+            const reportForPdf = { ...r, project: r.projects } as any;
+            const blob = await generateDailyReportPDF(
+              reportForPdf,
+              (activities || []) as any,
+              (photos || []) as any,
+              supabaseUrl,
+              { returnAsBlob: true }
+            );
+            if (blob) {
+              const date = new Date(r.datum).toISOString().slice(0, 10);
+              const typLabel = r.report_type === "tagesbericht" ? "Tagesbericht"
+                : r.report_type === "zwischenbericht" ? "Zwischenbericht"
+                : "Regiebericht";
+              const target = typeFolders[r.report_type] || berichteFolder;
+              target.file(`${typLabel}_${date}.pdf`, blob as Blob);
+            }
+          } catch (err) {
+            console.warn("Bericht-PDF fehlgeschlagen:", r.id, err);
+          }
+        }
+      }
+
+      // === 5. Fotos ===
+      await downloadGrouped("project-photos", [
+        { folder: "Fotos/Aktuelle Fotos", matcher: (d) => !d.archived },
+        { folder: "Fotos/Archiv", matcher: (d) => !!d.archived },
+      ]);
+
+      // === 6. Unterweisungen (PDFs generiert aus safety_evaluations + signatures) ===
+      {
+        const { data: evals } = await supabase
+          .from("safety_evaluations")
+          .select("id, titel, typ, kategorie, status, created_at, checklist_items, diskussion_notizen")
+          .eq("project_id", projectId);
+        if (evals && evals.length > 0) {
+          const unterFolder = root.folder("Unterweisungen")!;
+          for (const ev of evals as any[]) {
+            try {
+              const { data: sigs } = await supabase
+                .from("safety_evaluation_signatures")
+                .select("unterschrift, unterschrift_name, unterschrieben_am, personal_answers")
+                .eq("evaluation_id", ev.id);
+              if (!sigs || sigs.length === 0) continue; // nur unterschriebene exportieren
+              const { data: emps } = await supabase
+                .from("safety_evaluation_employees")
+                .select("user_id, profiles:user_id(vorname, nachname)")
+                .eq("evaluation_id", ev.id);
+
+              const blob = generateSafetyEvaluationPDF(
+                {
+                  titel: ev.titel,
+                  typ: ev.typ,
+                  kategorie: ev.kategorie,
+                  projektName: projectName || "Projekt",
+                  status: ev.status,
+                  created_at: ev.created_at,
+                  checklistItems: Array.isArray(ev.checklist_items) ? ev.checklist_items : [],
+                  answers: [],
+                  diskussionNotizen: ev.diskussion_notizen ?? null,
+                  signatures: sigs as any,
+                  employees: (emps || []).map((e: any) => ({
+                    vorname: e.profiles?.vorname || "",
+                    nachname: e.profiles?.nachname || "",
+                  })),
+                },
+                { returnAsBlob: true }
+              );
+              if (blob) {
+                const date = new Date(ev.created_at).toISOString().slice(0, 10);
+                const name = sanitize(ev.titel || "Unterweisung");
+                unterFolder.file(`${name}_${date}.pdf`, blob as Blob);
+              }
+            } catch (err) {
+              console.warn("Safety-PDF fehlgeschlagen:", ev.id, err);
+            }
+          }
+        }
+      }
+
+      // === 7. Polierordner + Chefordner mit Aktuell/Archiv ===
+      await downloadGrouped("project-polier", [
+        { folder: "Polierordner/Aktuell", matcher: (d) => !d.archived },
+        { folder: "Polierordner/Archiv", matcher: (d) => !!d.archived },
+      ]);
+      await downloadGrouped("project-chef", [
+        { folder: "Chefordner/Aktuell", matcher: (d) => !d.archived },
+        { folder: "Chefordner/Archiv", matcher: (d) => !!d.archived },
+      ]);
+
+      // ZIP generieren + Download
+      const blob = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${folderName}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+
+      // Marker setzen, damit das Projekt geloescht werden darf
+      try {
+        localStorage.setItem(`project_zip_downloaded_${projectId}`, new Date().toISOString());
+      } catch { /* ignore */ }
+
+      toast({ title: "Download abgeschlossen", description: "Projekt kann nun geloescht werden." });
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Fehler beim ZIP-Download", description: err?.message });
+    } finally {
+      setDownloading(false);
+    }
   };
 
   const visibleCategories = categories.filter((category) => {
@@ -747,50 +1077,35 @@ const ProjectOverview = () => {
           </CardHeader>
           {contacts.length > 0 ? (
             <CardContent className="pt-0 space-y-2">
-              {contacts.slice(0, showAllContacts ? contacts.length : 2).map(c => (
-                <div key={c.id} className="flex items-start gap-3 p-2 rounded-lg border text-sm">
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium">{c.name}{c.firma && <span className="text-muted-foreground font-normal"> · {c.firma}</span>}</div>
-                    {c.rolle && <div className="text-xs text-muted-foreground">{c.rolle} · {c.phase === "planungsphase" ? "Planungsphase" : c.phase === "beide" ? "Alle Phasen" : "Bauphase"}</div>}
-                    <div className="flex flex-wrap gap-3 mt-1">
-                      {c.telefon && (
-                        <a href={`tel:${c.telefon}`} className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
-                          <Phone className="h-3 w-3" /> {c.telefon}
-                        </a>
-                      )}
-                      {c.email && (
-                        <a href={`mailto:${c.email}`} className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
-                          <Mail className="h-3 w-3" /> {c.email}
-                        </a>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex gap-1 shrink-0">
-                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => copyContact(c)} title="Kontakt kopieren">
-                      <Copy className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => exportContactVCF(c)} title="Als VCF exportieren (WhatsApp/Kontakte)">
-                      <Download className="h-3.5 w-3.5" />
-                    </Button>
-                    {isAdmin && (
-                      <>
-                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => moveContact(c.id, "up")} title="Nach oben">
-                          <ArrowLeft className="h-3 w-3 rotate-90" />
-                        </Button>
-                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => moveContact(c.id, "down")} title="Nach unten">
-                          <ArrowLeft className="h-3 w-3 -rotate-90" />
-                        </Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditContact(c)}>
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleDeleteContact(c.id)}>
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </>
-                    )}
-                  </div>
-                </div>
-              ))}
+              {(() => {
+                const visibleContacts = contacts.slice(0, showAllContacts ? contacts.length : 2);
+                return (
+                  <DndContext
+                    sensors={contactSensors}
+                    collisionDetection={closestCenter}
+                    onDragEnd={handleContactDragEnd}
+                  >
+                    <SortableContext
+                      items={visibleContacts.map(c => c.id)}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      <div className="space-y-2">
+                        {visibleContacts.map(c => (
+                          <SortableContactItem
+                            key={c.id}
+                            contact={c}
+                            isAdmin={isAdmin}
+                            onCopy={copyContact}
+                            onExportVCF={exportContactVCF}
+                            onEdit={openEditContact}
+                            onDelete={handleDeleteContact}
+                          />
+                        ))}
+                      </div>
+                    </SortableContext>
+                  </DndContext>
+                );
+              })()}
               {contacts.length > 2 && (
                 <Button
                   variant="ghost"
@@ -800,6 +1115,11 @@ const ProjectOverview = () => {
                 >
                   {showAllContacts ? "Weniger anzeigen" : `+ ${contacts.length - 2} weitere Kontakte anzeigen`}
                 </Button>
+              )}
+              {isAdmin && contacts.length > 1 && (
+                <p className="text-[11px] text-muted-foreground text-center pt-1">
+                  Tipp: Kontakte per Drag-and-Drop am Griff <GripVertical className="inline h-3 w-3 -mt-0.5" /> neu sortieren.
+                </p>
               )}
             </CardContent>
           ) : (

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Plus, FileText, Filter, Download, CheckSquare, Square, Loader2 } from "lucide-react";
+import { Plus, FileText, Filter, Download, CheckSquare, Square, Loader2, Trash2 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { generateDailyReportPDF } from "@/lib/generateDailyReportPDF";
@@ -65,6 +65,7 @@ export default function DailyReports() {
   const [bulkIncludeIntern, setBulkIncludeIntern] = useState(false);
   const [bulkIncludeHours, setBulkIncludeHours] = useState(false);
   const [bulkDownloading, setBulkDownloading] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   const fetchReports = useCallback(async () => {
     setLoading(true);
@@ -162,9 +163,44 @@ export default function DailyReports() {
     }
   };
 
+  const handleBulkDelete = async () => {
+    if (selectedReports.size === 0) return;
+    const count = selectedReports.size;
+    if (!window.confirm(`${count} Bericht${count === 1 ? "" : "e"} wirklich unwiderruflich löschen?`)) return;
+    setBulkDeleting(true);
+    try {
+      const ids = Array.from(selectedReports);
+      let ok = 0;
+      for (const id of ids) {
+        // Fotos aus Storage entfernen
+        const { data: photos } = await supabase
+          .from("daily_report_photos")
+          .select("file_path")
+          .eq("daily_report_id", id);
+        if (photos && photos.length > 0) {
+          await supabase.storage
+            .from("daily-report-photos")
+            .remove(photos.map((p: any) => p.file_path));
+        }
+        // Report loeschen (Activities + Photos haengen per FK; falls ohne Cascade: vorher loeschen)
+        await supabase.from("daily_report_activities").delete().eq("daily_report_id", id);
+        await supabase.from("daily_report_photos").delete().eq("daily_report_id", id);
+        const { error } = await supabase.from("daily_reports").delete().eq("id", id);
+        if (!error) ok++;
+      }
+      toast({ title: `${ok} Bericht${ok === 1 ? "" : "e"} gelöscht` });
+      setSelectedReports(new Set());
+      fetchReports();
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Fehler beim Löschen", description: err?.message });
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
+
   return (
     <div className="container mx-auto p-4 max-w-4xl">
-      <PageHeader title="Tagesberichte" backPath={projectFilter ? `/projects/${projectFilter}` : undefined} />
+      <PageHeader title="Berichte" backPath={projectFilter ? `/projects/${projectFilter}` : undefined} />
 
       <div className="flex flex-wrap justify-between items-center gap-3 mb-3">
         <div className="flex gap-2 flex-wrap">
@@ -221,13 +257,17 @@ export default function DailyReports() {
       </div>
 
       {selectedReports.size > 0 && (
-        <div className="flex items-center gap-2 mb-3 p-2 bg-muted rounded-lg">
+        <div className="flex items-center gap-2 mb-3 p-2 bg-muted rounded-lg flex-wrap">
           <Badge variant="secondary">{selectedReports.size} ausgewählt</Badge>
-          <Button size="sm" variant="outline" onClick={() => setShowBulkDownloadDialog(true)}>
+          <Button size="sm" variant="outline" onClick={() => setShowBulkDownloadDialog(true)} disabled={bulkDeleting}>
             <Download className="h-3.5 w-3.5 mr-1" /> Als PDF herunterladen
           </Button>
-          <Button size="sm" variant="ghost" onClick={() => setSelectedReports(new Set())}>
-            Auswahl löschen
+          <Button size="sm" variant="destructive" onClick={handleBulkDelete} disabled={bulkDeleting}>
+            {bulkDeleting ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Trash2 className="h-3.5 w-3.5 mr-1" />}
+            Löschen
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setSelectedReports(new Set())} disabled={bulkDeleting}>
+            Auswahl aufheben
           </Button>
         </div>
       )}

@@ -75,7 +75,7 @@ export default function DailyReportDetail() {
   const [signatureData, setSignatureData] = useState<string | null>(null);
 
   const handleDelete = async () => {
-    if (!id || !window.confirm("Tagesbericht wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.")) return;
+    if (!id || !window.confirm("Bericht wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.")) return;
     if (photos.length > 0) {
       await supabase.storage.from("daily-report-photos").remove(photos.map(p => p.file_path));
     }
@@ -84,7 +84,7 @@ export default function DailyReportDetail() {
       toast({ variant: "destructive", title: "Fehler beim Löschen", description: error.message });
       return;
     }
-    toast({ title: "Gelöscht", description: "Tagesbericht wurde gelöscht." });
+    toast({ title: "Gelöscht", description: "Bericht wurde gelöscht." });
     navigate("/daily-reports");
   };
 
@@ -281,7 +281,7 @@ export default function DailyReportDetail() {
 
     // Validate
     if (report.report_type === "tagesbericht" && photos.length < 4) {
-      toast({ variant: "destructive", title: "Fotos fehlen", description: "Mindestens 4 Fotos sind für einen Tagesbericht erforderlich." });
+      toast({ variant: "destructive", title: "Fotos fehlen", description: "Mindestens 4 Fotos sind für einen Bericht erforderlich." });
       return;
     }
 
@@ -624,7 +624,7 @@ export default function DailyReportDetail() {
         open={showSerialDialog}
         onOpenChange={setShowSerialDialog}
         onFinish={handleSerialUpload}
-        title="Fotos für Tagesbericht"
+        title="Fotos für Bericht"
       />
     </div>
   );

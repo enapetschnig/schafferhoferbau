@@ -343,11 +343,12 @@ export default function Index() {
       });
     }
 
-    // Filter: nur Chats der letzten Woche anzeigen
+    // Filter: nur Chats der letzten Woche anzeigen (aeltere Projekte werden automatisch
+    // ausgeblendet, egal ob ungelesen - strikte 7-Tage-Regel)
     const oneWeekAgo = new Date();
     oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
     const recentPreviews = previews.filter(
-      (p) => new Date(p.timestamp).getTime() >= oneWeekAgo.getTime() || p.unreadCount > 0
+      (p) => new Date(p.timestamp).getTime() >= oneWeekAgo.getTime()
     );
 
     // Sort: unread first, then by timestamp
@@ -862,9 +863,11 @@ export default function Index() {
             <div className="flex items-center gap-2 sm:gap-3">
               <img src="/schafferhofer-logo.png" alt="Schafferhofer Bau" className="h-14 sm:h-20 w-auto max-w-[180px] sm:max-w-[240px] object-contain" />
               <div className="hidden sm:block h-8 w-px bg-border" />
-              <div className="flex flex-col">
-                <span className="text-xs sm:text-sm text-muted-foreground">Hallo</span>
-                <span className="text-sm sm:text-base font-semibold">{userName || "Benutzer"}</span>
+              <div className="flex flex-col leading-tight">
+                <span className="text-sm sm:text-base text-muted-foreground">Hallo</span>
+                <span className="text-base sm:text-xl font-bold text-primary">
+                  {(userName || "Benutzer").split(" ")[0]}
+                </span>
               </div>
             </div>
             <DropdownMenu>
@@ -1451,7 +1454,7 @@ export default function Index() {
           </Card>
           )}
 
-          {/* Tagesberichte */}
+          {/* Berichte */}
           {menuVisible("tagesberichte") && (
           <Card
             className="cursor-pointer hover:shadow-lg transition-all hover:border-primary/50"
@@ -1462,9 +1465,9 @@ export default function Index() {
               <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center">
                 <ClipboardList className="h-6 w-6 text-primary" />
               </div>
-              <CardTitle className="text-lg sm:text-xl">Tagesberichte</CardTitle>
+              <CardTitle className="text-lg sm:text-xl">Berichte</CardTitle>
               <CardDescription className="text-sm">
-                Tages- & Zwischenberichte erstellen
+                Tages-, Regie- oder Zwischenberichte erstellen
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -1666,6 +1669,35 @@ export default function Index() {
                 <CardTitle className="text-lg sm:text-xl">Lagerverwaltung</CardTitle>
                 <CardDescription className="text-sm">
                   Lagerbestand & Lieferscheine
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button className="w-full" size="sm" variant="outline">Öffnen</Button>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Bestellungen */}
+          {menuVisible("bestellungen") && (
+            <Card
+              className="cursor-pointer hover:shadow-lg transition-all hover:border-primary/50 relative"
+              onClick={() => navigate("/bestellungen")}
+            >
+              <CardHeader className="space-y-2 pb-3 relative">
+                {isAdmin && <span className="absolute top-3 right-3 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground border">Alle</span>}
+                {pendingBestellungen > 0 && (
+                  <span className="absolute top-3 right-3 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-orange-500 text-white">
+                    {pendingBestellungen}
+                  </span>
+                )}
+                <div className="h-12 w-12 rounded-lg bg-orange-500/10 flex items-center justify-center">
+                  <Package className="h-6 w-6 text-orange-500" />
+                </div>
+                <CardTitle className="text-lg sm:text-xl">Bestellungen</CardTitle>
+                <CardDescription className="text-sm">
+                  {isAdmin
+                    ? "Anfragen verwalten & Lieferungen beauftragen"
+                    : "Fehlende Materialien melden & Lieferungen kontrollieren"}
                 </CardDescription>
               </CardHeader>
               <CardContent>

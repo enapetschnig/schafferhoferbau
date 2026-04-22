@@ -30,6 +30,12 @@ export interface WeekSchedule {
  * Schwellenwert = Tages-Obergrenze fuer Lohnstunden.
  * Stunden bis zum Schwellenwert = Lohnverrechnung (ausbezahlt).
  * Stunden ueber dem Schwellenwert = Zeitausgleich (nicht ausbezahlt).
+ *
+ * Optionaler 14-Tage-Zyklus fuer Lehrlinge:
+ *   { mo:..., so:..., zyklus: "biweekly", woche_b: { mo:..., so:... }, zyklus_anker: "2026-01-05" }
+ * Die root-Wochentage gelten als Woche A. Woche_b wird alternativ verwendet,
+ * abhaengig davon, ob die ISO-Montagswoche des Datums eine gerade oder ungerade
+ * Anzahl Wochen vom Anker entfernt liegt.
  */
 export interface Schwellenwert {
   mo: number;
@@ -39,6 +45,11 @@ export interface Schwellenwert {
   fr: number;
   sa: number;
   so: number;
+  zyklus?: "weekly" | "biweekly";
+  woche_b?: {
+    mo: number; di: number; mi: number; do: number; fr: number; sa: number; so: number;
+  };
+  zyklus_anker?: string;
 }
 
 export interface HoursSplit {
@@ -208,7 +219,19 @@ export function calculateKilometergeld(km: number, rate: number = 0.42): number 
 }
 
 /**
+ * Liefert den ISO-Montag (Wochenstart) fuer ein beliebiges Datum (Zeit 00:00).
+ */
+function getIsoMonday(date: Date): Date {
+  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const day = d.getDay(); // 0 = Sonntag, 1 = Montag
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diff);
+  return d;
+}
+
+/**
  * Gibt den Schwellenwert fuer einen bestimmten Tag zurueck.
+ * Beruecksichtigt 14-Tage-Zyklus (z.B. fuer Lehrlinge Kurz-/Langwoche).
  * Wenn kein Schwellenwert gesetzt ist, werden die Regelarbeitszeit-Stunden verwendet.
  */
 export function getSchwellenwert(
@@ -218,6 +241,23 @@ export function getSchwellenwert(
 ): number {
   if (schwellenwert) {
     const dayKey = getDayKey(date);
+    const isBiweekly =
+      schwellenwert.zyklus === "biweekly" &&
+      schwellenwert.woche_b &&
+      schwellenwert.zyklus_anker;
+    if (isBiweekly) {
+      const anker = new Date(schwellenwert.zyklus_anker!);
+      const ankerMonday = getIsoMonday(anker);
+      const currentMonday = getIsoMonday(date);
+      const diffDays = Math.round(
+        (currentMonday.getTime() - ankerMonday.getTime()) / 86_400_000
+      );
+      const weekIndex = Math.floor(diffDays / 7);
+      const parity = ((weekIndex % 2) + 2) % 2; // 0 = Woche A, 1 = Woche B
+      if (parity === 1) {
+        return schwellenwert.woche_b![dayKey] ?? 0;
+      }
+    }
     return schwellenwert[dayKey] ?? 0;
   }
   // Fallback: Regelarbeitszeit-Stunden als Schwellenwert

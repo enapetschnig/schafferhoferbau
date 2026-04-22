@@ -355,8 +355,29 @@ const Projects = () => {
     setProjectToClose(null);
   };
 
+  // Spec: "Das Projekt kann erst geloescht werden, nachdem der vollstaendige Download
+  // abgeschlossen ist." Wir setzen beim ZIP-Export einen Marker in localStorage.
+  const hasZipDownload = (id: string) => {
+    try {
+      return !!localStorage.getItem(`project_zip_downloaded_${id}`);
+    } catch {
+      return false;
+    }
+  };
+
   const handleDeleteProject = async () => {
     if (!projectToDelete || deleting) return;
+
+    // Gate: Ohne ZIP-Download kein Loeschen
+    if (!hasZipDownload(projectToDelete.id)) {
+      toast({
+        variant: "destructive",
+        title: "ZIP-Download erforderlich",
+        description: "Bitte zuerst das Projekt als ZIP herunterladen, bevor es geloescht werden kann.",
+      });
+      return;
+    }
+
     setDeleting(true);
 
     const { id, name } = projectToDelete;
@@ -402,6 +423,9 @@ const Projects = () => {
         .eq('id', id);
 
       if (error) throw error;
+
+      // Marker aufraeumen
+      try { localStorage.removeItem(`project_zip_downloaded_${id}`); } catch { /* ignore */ }
 
       toast({
         title: "Erfolg",
@@ -1145,12 +1169,35 @@ const Projects = () => {
               Diese Aktion kann nicht rückgängig gemacht werden!
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {projectToDelete && !hasZipDownload(projectToDelete.id) && (
+            <div className="flex items-start gap-2 p-3 rounded-md border border-orange-300 bg-orange-50 dark:bg-orange-950/30 text-sm">
+              <span className="text-xl" aria-hidden>⚠️</span>
+              <div className="flex-1">
+                <p className="font-medium text-orange-900 dark:text-orange-100">ZIP-Download noch nicht erfolgt</p>
+                <p className="text-xs text-orange-800 dark:text-orange-200 mt-0.5">
+                  Oeffne zuerst das Projekt und lade es ueber den <strong>ZIP</strong>-Button komplett herunter.
+                  Erst dann kann das Projekt geloescht werden.
+                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="mt-2"
+                  onClick={() => {
+                    if (projectToDelete) navigate(`/projects/${projectToDelete.id}`);
+                    setProjectToDelete(null);
+                  }}
+                >
+                  Zum Projekt gehen
+                </Button>
+              </div>
+            </div>
+          )}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>Abbrechen</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDeleteProject}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              disabled={deleting}
+              disabled={deleting || !projectToDelete || !hasZipDownload(projectToDelete.id)}
             >
               {deleting ? 'Wird gelöscht...' : 'Ja, endgültig löschen'}
             </AlertDialogAction>

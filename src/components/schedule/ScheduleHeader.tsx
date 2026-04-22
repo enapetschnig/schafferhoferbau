@@ -31,7 +31,7 @@ export function ScheduleHeader({
   children,
   showYearToggle = true,
 }: Props) {
-  const weekEnd = addDays(weekStart, 4);
+  const weekEnd = addDays(weekStart, 6);
 
   return (
     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">

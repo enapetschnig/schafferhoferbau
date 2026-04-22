@@ -12,6 +12,12 @@ import { useToast } from "@/hooks/use-toast";
 import { SignaturePad } from "@/components/SignaturePad";
 import { FileText, ChevronRight, ChevronLeft, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 
+type ChecklistItem = {
+  id: string;
+  category?: string;
+  question: string;
+};
+
 type Evaluation = {
   id: string;
   titel: string;
@@ -28,9 +34,10 @@ export default function SafetyCompletion() {
   const { toast } = useToast();
 
   const [evaluation, setEvaluation] = useState<Evaluation | null>(null);
-  const [step, setStep] = useState<"intro" | "pdfs" | "fragen" | "bestaetigung" | "unterschrift" | "fertig">("intro");
+  const [step, setStep] = useState<"intro" | "pdfs" | "checkliste" | "fragen" | "bestaetigung" | "unterschrift" | "fertig">("intro");
   const [pdfIdx, setPdfIdx] = useState(0);
   const [antworten, setAntworten] = useState<Record<string, number>>({}); // frage_id -> gewaehlte option
+  const [checklistTicks, setChecklistTicks] = useState<Record<string, boolean>>({}); // item_id -> abgehakt
   const [bestaetigt, setBestaetigt] = useState(false);
   const [signatureData, setSignatureData] = useState<string | null>(null);
   const [signatureName, setSignatureName] = useState("");
@@ -83,11 +90,15 @@ export default function SafetyCompletion() {
 
   const pdfs = evaluation.pdf_urls || [];
   const fragen = evaluation.fragen || [];
+  const checklist: ChecklistItem[] = Array.isArray(evaluation.checklist_items) ? evaluation.checklist_items : [];
   const allQuestionsAnswered = fragen.every(f => antworten[f.id] != null);
+  const allChecklistTicked = checklist.every(it => checklistTicks[it.id]);
   const richtige = fragen.filter(f => antworten[f.id] === f.korrekt).length;
+  const checklistCategories = [...new Set(checklist.map(it => it.category || ""))];
 
   const steps: typeof step[] = ["intro"];
   if (pdfs.length > 0) steps.push("pdfs");
+  if (checklist.length > 0) steps.push("checkliste");
   if (fragen.length > 0) steps.push("fragen");
   steps.push("bestaetigung", "unterschrift");
   const stepIdx = steps.indexOf(step);
@@ -112,7 +123,14 @@ export default function SafetyCompletion() {
       korrekt: f.korrekt,
       ist_richtig: antworten[f.id] === f.korrekt,
     }));
-    const { error } = await supabase.from("safety_evaluation_signatures").insert({
+    // Checklist-Ticks in personal_answers speichern (kompatibel zu altem Schema)
+    const personal_answers = checklist.map(it => ({
+      item_id: it.id,
+      category: it.category || null,
+      question: it.question,
+      checked: !!checklistTicks[it.id],
+    }));
+    const { error } = await (supabase.from("safety_evaluation_signatures") as any).insert({
       evaluation_id: evaluation.id,
       user_id: userId,
       unterschrift: signatureData,
@@ -120,12 +138,39 @@ export default function SafetyCompletion() {
       unterschrieben_am: new Date().toISOString(),
       fragen_antworten,
       inhalte_bestaetigt: bestaetigt,
+      personal_answers,
     });
-    setSaving(false);
     if (error) {
+      setSaving(false);
       toast({ variant: "destructive", title: "Fehler", description: error.message });
       return;
     }
+
+    // Status der Unterweisung aktualisieren: wenn alle zugewiesenen MA unterschrieben haben
+    // -> safety_evaluations.status = "abgeschlossen"
+    try {
+      const [{ count: empCount }, { count: sigCount }] = await Promise.all([
+        supabase
+          .from("safety_evaluation_employees")
+          .select("*", { count: "exact", head: true })
+          .eq("evaluation_id", evaluation.id),
+        supabase
+          .from("safety_evaluation_signatures")
+          .select("*", { count: "exact", head: true })
+          .eq("evaluation_id", evaluation.id),
+      ]);
+      if (empCount !== null && sigCount !== null && empCount > 0 && sigCount >= empCount) {
+        await supabase
+          .from("safety_evaluations")
+          .update({ status: "abgeschlossen" })
+          .eq("id", evaluation.id);
+      }
+    } catch (e) {
+      // Status-Update ist best-effort, blockiert den Mitarbeiter nicht
+      console.warn("Status-Update fehlgeschlagen:", e);
+    }
+
+    setSaving(false);
     setStep("fertig");
     toast({ title: "Bestätigung gespeichert" });
   };
@@ -165,6 +210,7 @@ export default function SafetyCompletion() {
               </p>
               <ul className="text-sm space-y-1.5 list-inside">
                 {pdfs.length > 0 && <li>📄 {pdfs.length} PDF-Dokument{pdfs.length === 1 ? "" : "e"} lesen</li>}
+                {checklist.length > 0 && <li>☑️ {checklist.length} Prüfpunkt{checklist.length === 1 ? "" : "e"} abhaken</li>}
                 {fragen.length > 0 && <li>❓ {fragen.length} Frage{fragen.length === 1 ? "" : "n"} beantworten</li>}
                 <li>✅ Inhalte bestätigen</li>
                 <li>✍️ Digital unterschreiben</li>
@@ -195,6 +241,54 @@ export default function SafetyCompletion() {
                 <Button variant="ghost" onClick={prev}><ChevronLeft className="w-4 h-4 mr-1" /> Zurück</Button>
                 <Button className="flex-1" onClick={next}>Gelesen — weiter <ChevronRight className="w-4 h-4 ml-1" /></Button>
               </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {step === "checkliste" && checklist.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Checkliste ({Object.values(checklistTicks).filter(Boolean).length}/{checklist.length} abgehakt)</CardTitle>
+              <CardDescription>Bitte alle Punkte bestätigen</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {checklistCategories.map((cat) => (
+                <div key={cat}>
+                  {cat && (
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2 border-b pb-1">
+                      {cat}
+                    </p>
+                  )}
+                  <div className="space-y-2">
+                    {checklist.filter(it => (it.category || "") === cat).map((item) => (
+                      <label
+                        key={item.id}
+                        className={`flex items-start gap-3 p-2.5 rounded-md border cursor-pointer transition-colors ${
+                          checklistTicks[item.id] ? "border-primary bg-primary/5" : "hover:bg-muted/50"
+                        }`}
+                      >
+                        <Checkbox
+                          checked={checklistTicks[item.id] ?? false}
+                          onCheckedChange={(val) =>
+                            setChecklistTicks(prev => ({ ...prev, [item.id]: !!val }))
+                          }
+                          className="mt-0.5 shrink-0"
+                        />
+                        <span className="text-sm leading-snug">{item.question}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              <div className="flex gap-2 pt-2 border-t">
+                <Button variant="ghost" onClick={prev}><ChevronLeft className="w-4 h-4 mr-1" /> Zurück</Button>
+                <Button className="flex-1" onClick={next} disabled={!allChecklistTicked}>
+                  Weiter <ChevronRight className="w-4 h-4 ml-1" />
+                </Button>
+              </div>
+              {!allChecklistTicked && (
+                <p className="text-xs text-muted-foreground text-center">Bitte alle Punkte abhaken</p>
+              )}
             </CardContent>
           </Card>
         )}
@@ -268,6 +362,7 @@ export default function SafetyCompletion() {
                 <span className="text-sm">
                   Ich bestätige, dass ich die Inhalte gelesen und verstanden habe
                   {pdfs.length > 0 && ` (${pdfs.length} PDF${pdfs.length === 1 ? "" : "s"})`}
+                  {checklist.length > 0 && `, die ${checklist.length} Prüfpunkt${checklist.length === 1 ? "" : "e"} abgehakt`}
                   {fragen.length > 0 && ` und die Fragen bearbeitet`}.
                 </span>
               </label>

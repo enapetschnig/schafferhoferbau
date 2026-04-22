@@ -6,7 +6,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { FileText, Camera, Upload, Download, Eye, Trash2 } from "lucide-react";
+import { FileText, Camera, Upload, Download, Eye, Trash2, Archive } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "@/hooks/use-toast";
 import { FileViewer } from "@/components/FileViewer";
 
@@ -23,6 +24,9 @@ export default function MyDocuments() {
   const [loading, setLoading] = useState(true);
   const [userId, setUserId] = useState<string>("");
   const [viewingFile, setViewingFile] = useState<{ name: string; path: string; bucketName: string } | null>(null);
+  const [selectedPayslips, setSelectedPayslips] = useState<Set<string>>(new Set());
+  const [selectedSickNotes, setSelectedSickNotes] = useState<Set<string>>(new Set());
+  const [downloadingZip, setDownloadingZip] = useState(false);
 
   useEffect(() => {
     fetchUserAndDocuments();
@@ -143,6 +147,76 @@ export default function MyDocuments() {
     });
   };
 
+  const toggleSelection = (type: "lohnzettel" | "krankmeldung", path: string) => {
+    const setter = type === "lohnzettel" ? setSelectedPayslips : setSelectedSickNotes;
+    setter((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  };
+
+  const selectAll = (type: "lohnzettel" | "krankmeldung") => {
+    const docs = type === "lohnzettel" ? payslips : sickNotes;
+    const selected = type === "lohnzettel" ? selectedPayslips : selectedSickNotes;
+    const setter = type === "lohnzettel" ? setSelectedPayslips : setSelectedSickNotes;
+    if (selected.size === docs.length) setter(new Set());
+    else setter(new Set(docs.map((d) => d.path)));
+  };
+
+  const handleBulkDownload = async (type: "lohnzettel" | "krankmeldung") => {
+    const docs = type === "lohnzettel" ? payslips : sickNotes;
+    const selected = type === "lohnzettel" ? selectedPayslips : selectedSickNotes;
+    const setter = type === "lohnzettel" ? setSelectedPayslips : setSelectedSickNotes;
+    const chosen = docs.filter((d) => selected.has(d.path));
+    if (chosen.length === 0) return;
+
+    // Ein Dokument: direkter Download ohne ZIP
+    if (chosen.length === 1) {
+      const { data } = await supabase.storage
+        .from("employee-documents")
+        .createSignedUrl(chosen[0].path, 3600);
+      if (data?.signedUrl) {
+        const a = document.createElement("a");
+        a.href = data.signedUrl;
+        a.download = chosen[0].name;
+        a.click();
+      }
+      setter(new Set());
+      return;
+    }
+
+    setDownloadingZip(true);
+    try {
+      const { default: JSZip } = await import("jszip");
+      const zip = new JSZip();
+      for (const doc of chosen) {
+        const { data } = await supabase.storage
+          .from("employee-documents")
+          .createSignedUrl(doc.path, 3600);
+        if (!data?.signedUrl) continue;
+        const resp = await fetch(data.signedUrl);
+        if (!resp.ok) continue;
+        const blob = await resp.blob();
+        zip.file(doc.name, blob);
+      }
+      const zipBlob = await zip.generateAsync({ type: "blob" });
+      const label = type === "lohnzettel" ? "Lohnzettel" : "Krankmeldungen";
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(zipBlob);
+      a.download = `${label}_${new Date().toISOString().slice(0, 10)}.zip`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      toast({ title: `${chosen.length} Dateien als ZIP heruntergeladen` });
+      setter(new Set());
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Fehler", description: err?.message });
+    } finally {
+      setDownloadingZip(false);
+    }
+  };
+
   const handleDelete = async (doc: Document, type: "lohnzettel" | "krankmeldung") => {
     if (!confirm(`Möchten Sie "${doc.name}" wirklich löschen?`)) return;
 
@@ -191,28 +265,57 @@ export default function MyDocuments() {
                 {payslips.length === 0 ? (
                   <p className="text-sm text-muted-foreground">Keine Lohnzettel vorhanden</p>
                 ) : (
-                  <div className="space-y-2">
-                    {payslips.map((doc) => (
-                      <div
-                        key={doc.path}
-                        className="flex items-center justify-between p-3 border rounded-md hover:bg-accent"
+                  <>
+                    <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => selectAll("lohnzettel")}
                       >
-                        <div className="flex items-center gap-3 flex-1 min-w-0">
-                          <FileText className="w-5 h-5 text-primary shrink-0" />
-                          <span className="text-sm truncate">{doc.name}</span>
+                        {selectedPayslips.size === payslips.length ? "Auswahl leeren" : "Alle auswaehlen"}
+                      </Button>
+                      <Button
+                        size="sm"
+                        disabled={selectedPayslips.size === 0 || downloadingZip}
+                        onClick={() => handleBulkDownload("lohnzettel")}
+                      >
+                        <Archive className="w-4 h-4 mr-1" />
+                        {selectedPayslips.size > 1
+                          ? `${selectedPayslips.size} als ZIP laden`
+                          : selectedPayslips.size === 1
+                          ? "1 Datei laden"
+                          : "Auswahl laden"}
+                      </Button>
+                    </div>
+                    <div className="space-y-2">
+                      {payslips.map((doc) => (
+                        <div
+                          key={doc.path}
+                          className={`flex items-center justify-between p-3 border rounded-md transition-colors ${
+                            selectedPayslips.has(doc.path) ? "bg-primary/5 border-primary/30" : "hover:bg-accent"
+                          }`}
+                        >
+                          <div className="flex items-center gap-3 flex-1 min-w-0">
+                            <Checkbox
+                              checked={selectedPayslips.has(doc.path)}
+                              onCheckedChange={() => toggleSelection("lohnzettel", doc.path)}
+                            />
+                            <FileText className="w-5 h-5 text-primary shrink-0" />
+                            <span className="text-sm truncate">{doc.name}</span>
+                          </div>
+                          <div className="flex gap-2 shrink-0">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleView(doc, "lohnzettel")}
+                            >
+                              <Eye className="w-4 h-4" />
+                            </Button>
+                          </div>
                         </div>
-                        <div className="flex gap-2 shrink-0">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleView(doc, "lohnzettel")}
-                          >
-                            <Eye className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  </>
                 )}
               </CardContent>
             </Card>
@@ -269,35 +372,64 @@ export default function MyDocuments() {
                 {sickNotes.length === 0 ? (
                   <p className="text-sm text-muted-foreground">Keine Krankmeldungen vorhanden</p>
                 ) : (
-                  <div className="space-y-2">
-                    {sickNotes.map((doc) => (
-                      <div
-                        key={doc.path}
-                        className="flex items-center justify-between p-3 border rounded-md hover:bg-accent"
+                  <>
+                    <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => selectAll("krankmeldung")}
                       >
-                        <div className="flex items-center gap-3 flex-1 min-w-0">
-                          <FileText className="w-5 h-5 text-primary shrink-0" />
-                          <span className="text-sm truncate">{doc.name}</span>
+                        {selectedSickNotes.size === sickNotes.length ? "Auswahl leeren" : "Alle auswaehlen"}
+                      </Button>
+                      <Button
+                        size="sm"
+                        disabled={selectedSickNotes.size === 0 || downloadingZip}
+                        onClick={() => handleBulkDownload("krankmeldung")}
+                      >
+                        <Archive className="w-4 h-4 mr-1" />
+                        {selectedSickNotes.size > 1
+                          ? `${selectedSickNotes.size} als ZIP laden`
+                          : selectedSickNotes.size === 1
+                          ? "1 Datei laden"
+                          : "Auswahl laden"}
+                      </Button>
+                    </div>
+                    <div className="space-y-2">
+                      {sickNotes.map((doc) => (
+                        <div
+                          key={doc.path}
+                          className={`flex items-center justify-between p-3 border rounded-md transition-colors ${
+                            selectedSickNotes.has(doc.path) ? "bg-primary/5 border-primary/30" : "hover:bg-accent"
+                          }`}
+                        >
+                          <div className="flex items-center gap-3 flex-1 min-w-0">
+                            <Checkbox
+                              checked={selectedSickNotes.has(doc.path)}
+                              onCheckedChange={() => toggleSelection("krankmeldung", doc.path)}
+                            />
+                            <FileText className="w-5 h-5 text-primary shrink-0" />
+                            <span className="text-sm truncate">{doc.name}</span>
+                          </div>
+                          <div className="flex gap-2 shrink-0">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleView(doc, "krankmeldung")}
+                            >
+                              <Eye className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleDelete(doc, "krankmeldung")}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
                         </div>
-                        <div className="flex gap-2 shrink-0">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleView(doc, "krankmeldung")}
-                          >
-                            <Eye className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleDelete(doc, "krankmeldung")}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  </>
                 )}
               </CardContent>
             </Card>

@@ -7,6 +7,7 @@ export type Assignment = {
   project_id: string;
   datum: string;
   notizen: string | null;
+  transport_erforderlich?: boolean | null;
 };
 
 export type Resource = {

@@ -19,14 +19,16 @@ export function GanttTimeline({ days, holidays }: Props) {
       <div className="p-2 border-r font-medium text-sm sticky left-0 bg-card z-30" />
       {days.map((day) => {
         const holiday = isCompanyHoliday(holidays, day);
+        const dow = day.getDay(); // 0=So, 6=Sa
+        const isWeekend = dow === 0 || dow === 6;
         return (
           <div
             key={day.toISOString()}
             className={`p-1.5 text-center border-r text-xs ${
-              holiday ? "bg-gray-200 text-gray-500" : ""
+              holiday ? "bg-gray-200 text-gray-500" : isWeekend ? "bg-muted/40" : ""
             }`}
           >
-            <div className="font-medium">
+            <div className={`font-medium ${isWeekend && !holiday ? "text-muted-foreground" : ""}`}>
               {format(day, "EEE", { locale: de })}
             </div>
             <div className="text-muted-foreground">

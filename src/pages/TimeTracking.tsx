@@ -188,9 +188,9 @@ const TimeTracking = () => {
 
   useEffect(() => { fetchEmployeeSchedule(); }, [fetchEmployeeSchedule]);
 
-  // Auto-fill project from Plantafel when no entries exist for the day
+  // Auto-fill project from Plantafel + Taetigkeit aus Tagesbericht, wenn noch leer
   useEffect(() => {
-    const autoFillFromPlantafel = async () => {
+    const autoFill = async () => {
       if (existingDayEntries.length > 0 || loadingDayEntries) return;
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
@@ -204,15 +204,46 @@ const TimeTracking = () => {
         .limit(1)
         .maybeSingle();
 
-      if (assignment?.project_id && timeBlocks.length > 0 && !timeBlocks[0].projectId) {
+      const prefillProjectId = assignment?.project_id ?? null;
+
+      // Taetigkeit aus daily_reports: erst Vorarbeiter-Bericht dieses Projekts,
+      // sonst irgendein Regiebericht des MA an dem Tag
+      let prefillTaetigkeit: string | null = null;
+      if (prefillProjectId) {
+        const { data: projReport } = await supabase
+          .from("daily_reports")
+          .select("beschreibung")
+          .eq("project_id", prefillProjectId)
+          .eq("datum", selectedDate)
+          .limit(1)
+          .maybeSingle();
+        if (projReport?.beschreibung) prefillTaetigkeit = projReport.beschreibung;
+      }
+      if (!prefillTaetigkeit) {
+        const { data: ownReport } = await supabase
+          .from("daily_reports")
+          .select("beschreibung")
+          .eq("user_id", userId)
+          .eq("datum", selectedDate)
+          .limit(1)
+          .maybeSingle();
+        if (ownReport?.beschreibung) prefillTaetigkeit = ownReport.beschreibung;
+      }
+
+      if ((prefillProjectId || prefillTaetigkeit) && timeBlocks.length > 0) {
         setTimeBlocks((prev) => {
           const updated = [...prev];
-          updated[0] = { ...updated[0], projectId: assignment.project_id };
+          const first = updated[0];
+          updated[0] = {
+            ...first,
+            projectId: first.projectId || prefillProjectId || first.projectId,
+            taetigkeit: first.taetigkeit || prefillTaetigkeit || first.taetigkeit,
+          };
           return updated;
         });
       }
     };
-    autoFillFromPlantafel();
+    autoFill();
   }, [selectedDate, existingDayEntries, loadingDayEntries]);
 
   // Fetch existing entries for selected date

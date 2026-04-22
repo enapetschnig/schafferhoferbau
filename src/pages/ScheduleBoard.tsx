@@ -27,6 +27,7 @@ import { DayDetailSheet } from "@/components/schedule/DayDetailSheet";
 import { CompanyHolidayManager } from "@/components/schedule/CompanyHolidayManager";
 import { YearPlanningView } from "@/components/schedule/YearPlanningView";
 import { ResourcesManager } from "@/components/schedule/ResourcesManager";
+import { WeekExcelIO } from "@/components/schedule/WeekExcelIO";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Package } from "lucide-react";
 
@@ -72,8 +73,9 @@ export default function ScheduleBoard() {
     }
   }, [permLoading, canSeeYearPlanning, mode]);
 
-  const weekDays = Array.from({ length: 5 }, (_, i) => addDays(weekStart, i));
-  const weekEnd = addDays(weekStart, 4);
+  // Volle Kalenderwoche Mo-So (7 Tage) — Spec: Plantafel soll auch Fr/Sa/So zeigen
+  const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+  const weekEnd = addDays(weekStart, 6);
 
   const debounceTimers = useRef<Record<string, NodeJS.Timeout>>({});
 
@@ -104,14 +106,27 @@ export default function ScheduleBoard() {
   }, [weekStart, mode, permLoading]);
 
   // --- Assignment handlers ---
-  const handleAssign = async (uid: string, date: Date, projectId: string, notizen?: string) => {
+  const handleAssign = async (
+    uid: string,
+    date: Date,
+    projectId: string,
+    notizen?: string,
+    transportErforderlich?: boolean,
+  ) => {
     const datum = format(date, "yyyy-MM-dd");
 
     // Upsert: wenn gleicher MA + Tag + Projekt existiert -> update, sonst insert
     const { data, error } = await supabase
       .from("worker_assignments")
       .upsert(
-        { user_id: uid, project_id: projectId, datum, created_by: userId, notizen: notizen ?? null },
+        {
+          user_id: uid,
+          project_id: projectId,
+          datum,
+          created_by: userId,
+          notizen: notizen ?? null,
+          transport_erforderlich: transportErforderlich ?? false,
+        },
         { onConflict: "user_id,datum,project_id" }
       )
       .select()
@@ -390,6 +405,16 @@ export default function ScheduleBoard() {
               <Package className="h-4 w-4 mr-1" /> Ressourcen
             </Button>
           )}
+          {(isAdmin || isVorarbeiter) && mode === "week" && (
+            <WeekExcelIO
+              weekStart={weekStart}
+              profiles={profiles}
+              projects={projects}
+              assignments={assignments}
+              userId={userId}
+              onImported={() => fetchData(weekStart, weekEnd, mode)}
+            />
+          )}
         </ScheduleHeader>
 
         {mode === "week" ? (
@@ -466,10 +491,10 @@ export default function ScheduleBoard() {
         existingAssignments={popoverExistingAssignments}
         projects={projects}
         holidays={companyHolidays}
-        onAssign={async (uid, date, projectId, notizen) => {
+        onAssign={async (uid, date, projectId, notizen, transportErforderlich) => {
           const daysToAssign = popoverDays.length > 1 ? popoverDays : [date];
           for (const d of daysToAssign) {
-            await handleAssign(uid, d, projectId, notizen);
+            await handleAssign(uid, d, projectId, notizen, transportErforderlich);
           }
         }}
         onRemove={handleRemove}

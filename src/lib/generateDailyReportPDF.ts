@@ -61,8 +61,9 @@ export async function generateDailyReportPDF(
   report: DailyReportForPDF,
   activities: ActivityForPDF[],
   photos: PhotoForPDF[],
-  supabaseUrl: string
-): Promise<void> {
+  supabaseUrl: string,
+  options: { returnAsBlob?: boolean } = {}
+): Promise<void | Blob> {
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const pageWidth = doc.internal.pageSize.getWidth();
   const margin = 20;
@@ -297,5 +298,8 @@ export async function generateDailyReportPDF(
 
   const projectSlug = report.project?.name.replace(/[^a-zA-Z0-9äöüÄÖÜß]/g, "_") || "Projekt";
   const dateSlug = new Date(report.datum).toLocaleDateString("de-AT").replace(/\./g, "-");
+  if (options.returnAsBlob) {
+    return doc.output("blob");
+  }
   doc.save(`${title}_${projectSlug}_${dateSlug}.pdf`);
 }
