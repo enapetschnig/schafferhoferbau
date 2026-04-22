@@ -98,6 +98,7 @@ const ProjectDetail = () => {
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
   const [editingImage, setEditingImage] = useState<string | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
+  const [sharing, setSharing] = useState(false);
   const [viewerState, setViewerState] = useState<{
     open: boolean;
     fileName: string;
@@ -399,40 +400,91 @@ const ProjectDetail = () => {
   };
 
   const handleShareSelected = async () => {
-    if (selectedFiles.size === 0) return;
+    if (selectedFiles.size === 0 || sharing) return;
     const selected = Array.from(selectedFiles);
+    setSharing(true);
 
-    // Versuche Web Share API mit Files (nur HTTPS + supported browsers)
-    const canShareFiles = typeof navigator !== "undefined" &&
-      "canShare" in navigator && "share" in navigator;
+    const canShareFiles =
+      typeof navigator !== "undefined" &&
+      "canShare" in navigator &&
+      "share" in navigator;
+    const title = `${projectName} · ${titleMap[type!]}`;
 
     try {
-      const filesToShare: File[] = [];
-      for (const fileName of selected.slice(0, 10)) {
+      // Strategie A: bis 10 Dateien, einzeln per Web Share API teilen (iOS/Android).
+      // Darueber hinaus ueberfordern die meisten Ziel-Apps; dann ZIP teilen.
+      if (canShareFiles && selected.length <= 10) {
+        toast({ title: `${selected.length} Datei(en) werden vorbereitet...` });
+        const filesToShare: File[] = [];
+        for (const fileName of selected) {
+          const url = signedUrls[fileName];
+          if (!url) continue;
+          const resp = await fetch(url);
+          if (!resp.ok) continue;
+          const blob = await resp.blob();
+          filesToShare.push(new File([blob], fileName, { type: blob.type }));
+        }
+        if (filesToShare.length > 0 && (navigator as any).canShare({ files: filesToShare })) {
+          await (navigator as any).share({
+            files: filesToShare,
+            title,
+            text: `${filesToShare.length} Datei(en) aus ${projectName}`,
+          });
+          toast({ title: "Dateien geteilt" });
+          return;
+        }
+      }
+
+      // Strategie B: viele Dateien oder Web Share API nicht verfuegbar.
+      // -> ZIP bauen und versuchen, das ZIP als ein File zu teilen.
+      toast({ title: `${selected.length} Dateien werden als ZIP gepackt...` });
+      const { default: JSZip } = await import("jszip");
+      const zip = new JSZip();
+      for (const fileName of selected) {
         const url = signedUrls[fileName];
         if (!url) continue;
         const resp = await fetch(url);
+        if (!resp.ok) continue;
         const blob = await resp.blob();
-        filesToShare.push(new File([blob], fileName, { type: blob.type }));
+        zip.file(fileName, blob);
       }
+      const zipBlob = await zip.generateAsync({ type: "blob" });
+      const zipName = `${projectName || "Projekt"}_${titleMap[type!] || type || "Dateien"}.zip`.replace(
+        /[^a-zA-Z0-9._\-]/g,
+        "_"
+      );
+      const zipFile = new File([zipBlob], zipName, { type: "application/zip" });
 
-      if (canShareFiles && filesToShare.length > 0 && (navigator as any).canShare({ files: filesToShare })) {
+      if (canShareFiles && (navigator as any).canShare({ files: [zipFile] })) {
         await (navigator as any).share({
-          files: filesToShare,
-          title: `${projectName} · ${titleMap[type!]}`,
-          text: `${filesToShare.length} Datei(en) aus ${projectName}`,
+          files: [zipFile],
+          title,
+          text: `${selected.length} Dateien aus ${projectName} (ZIP)`,
         });
-        toast({ title: "Dateien geteilt" });
+        toast({ title: "ZIP geteilt" });
         return;
       }
+
+      // Strategie C: Fallback → ZIP direkt herunterladen
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(zipBlob);
+      a.download = zipName;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      toast({
+        title: "Teilen nicht unterstuetzt",
+        description: `ZIP mit ${selected.length} Dateien heruntergeladen — du kannst es manuell weitergeben.`,
+      });
     } catch (err: any) {
       if (err?.name === "AbortError") return; // User hat abgebrochen
-      // fallthrough zu Download-Fallback
+      toast({
+        variant: "destructive",
+        title: "Fehler beim Weiterleiten",
+        description: err?.message,
+      });
+    } finally {
+      setSharing(false);
     }
-
-    // Fallback: Download als Paket
-    toast({ title: "Teilen nicht unterstuetzt", description: "Dateien werden heruntergeladen, du kannst sie dann manuell teilen." });
-    await handleBulkDownload();
   };
 
   const handleSaveTextAuftrag = async () => {
@@ -629,8 +681,9 @@ const ProjectDetail = () => {
                       <Button size="sm" variant="outline" onClick={handleBulkDownload}>
                         <Download className="h-3.5 w-3.5 mr-1" /> Herunterladen
                       </Button>
-                      <Button size="sm" variant="outline" onClick={handleShareSelected}>
-                        <Share2 className="h-3.5 w-3.5 mr-1" /> Weiterleiten
+                      <Button size="sm" variant="outline" onClick={handleShareSelected} disabled={sharing}>
+                        <Share2 className="h-3.5 w-3.5 mr-1" />
+                        {sharing ? "Wird vorbereitet..." : "Weiterleiten"}
                       </Button>
                       {!isArchivTab && (
                         <Button size="sm" variant="destructive" onClick={async () => {

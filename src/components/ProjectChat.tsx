@@ -484,55 +484,39 @@ export function ProjectChat({ projectId, projectName, isAdmin }: { projectId: st
                     </p>
                   )}
 
-                  {/* Attachment - Bild klickbar fuer Vollbild, PDF klickbar fuer Inline-Viewer */}
-                  {msg.image_url && (() => {
-                    const pathname = (() => {
-                      try { return new URL(msg.image_url!).pathname.toLowerCase(); }
-                      catch { return msg.image_url!.toLowerCase(); }
-                    })();
-                    const isPdf = pathname.endsWith(".pdf");
-                    if (isPdf) {
-                      return (
-                        <button
-                          className="flex items-center gap-2 p-2 rounded-lg bg-background/50 border border-border hover:bg-background/80 transition-colors mb-1 max-w-full"
-                          onClick={(e) => { e.stopPropagation(); setPreviewImage(msg.image_url); }}
-                        >
-                          <FileText className="h-8 w-8 shrink-0 text-red-600" />
-                          <div className="text-left min-w-0">
-                            <p className="text-sm font-medium truncate">{msg.message || "PDF-Dokument"}</p>
-                            <p className="text-xs text-muted-foreground">Zum Anzeigen tippen</p>
-                          </div>
-                        </button>
-                      );
-                    }
-                    return (
-                      <img
-                        src={msg.image_url}
-                        alt="Foto"
-                        className="rounded-lg max-w-full max-h-64 object-cover mb-1 cursor-pointer hover:opacity-90"
-                        onClick={(e) => { e.stopPropagation(); setPreviewImage(msg.image_url); }}
-                      />
-                    );
-                  })()}
-
-                  {/* Text - bei PDF steht Dateiname im Attachment-Block, nicht nochmal darunter */}
-                  {msg.message && !(msg.image_url && (() => {
-                    try { return new URL(msg.image_url!).pathname.toLowerCase().endsWith(".pdf"); }
-                    catch { return msg.image_url!.toLowerCase().endsWith(".pdf"); }
-                  })()) && (
-                    <p className="text-sm whitespace-pre-wrap break-words">{msg.message}</p>
-                  )}
-
-                  {/* Emoji-Reaktionen */}
                   {(() => {
+                    const isPdf = msg.image_url
+                      ? (() => {
+                          try { return new URL(msg.image_url).pathname.toLowerCase().endsWith(".pdf"); }
+                          catch { return msg.image_url.toLowerCase().endsWith(".pdf"); }
+                        })()
+                      : false;
+                    const hasAttachment = !!msg.image_url;
+                    // Reaktions-Leiste fuer diese Message - direkt am Anhang, wenn einer da ist
                     const msgReactions = reactions.filter(r => r.message_id === msg.id);
                     const grouped: Record<string, string[]> = {};
                     msgReactions.forEach(r => {
                       if (!grouped[r.emoji]) grouped[r.emoji] = [];
                       grouped[r.emoji].push(r.user_id);
                     });
-                    return (
-                      <div className="flex flex-wrap gap-1 mt-1">
+                    const toggleReaction = async (emoji: string) => {
+                      if (!currentUserId) return;
+                      const existing = msgReactions.find(r => r.emoji === emoji && r.user_id === currentUserId);
+                      if (existing) {
+                        await supabase.from("message_reactions").delete().eq("id", existing.id);
+                        setReactions(prev => prev.filter(p => p.id !== existing.id));
+                      } else {
+                        const { data } = await supabase.from("message_reactions").insert({
+                          message_id: msg.id, user_id: currentUserId, emoji,
+                        }).select().single();
+                        if (data) setReactions(prev => [...prev, data as Reaction]);
+                      }
+                    };
+                    const ReactionBar = (
+                      <div
+                        className="flex flex-wrap gap-1 mt-1"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         {Object.entries(grouped).map(([emoji, userIds]) => (
                           <button
                             key={emoji}
@@ -541,22 +525,7 @@ export function ProjectChat({ projectId, projectName, isAdmin }: { projectId: st
                                 ? "bg-primary/20 border-primary/40"
                                 : "bg-muted/50 border-muted-foreground/20"
                             } hover:bg-primary/30`}
-                            onClick={async (e) => {
-                              e.stopPropagation();
-                              if (!currentUserId) return;
-                              if (userIds.includes(currentUserId)) {
-                                const r = msgReactions.find(r => r.emoji === emoji && r.user_id === currentUserId);
-                                if (r) {
-                                  await supabase.from("message_reactions").delete().eq("id", r.id);
-                                  setReactions(prev => prev.filter(p => p.id !== r.id));
-                                }
-                              } else {
-                                const { data } = await supabase.from("message_reactions").insert({
-                                  message_id: msg.id, user_id: currentUserId, emoji
-                                }).select().single();
-                                if (data) setReactions(prev => [...prev, data as Reaction]);
-                              }
-                            }}
+                            onClick={(e) => { e.stopPropagation(); toggleReaction(emoji); }}
                           >
                             {emoji} {userIds.length > 1 ? userIds.length : ""}
                           </button>
@@ -564,6 +533,7 @@ export function ProjectChat({ projectId, projectName, isAdmin }: { projectId: st
                         <button
                           className="text-xs px-1.5 py-0.5 rounded-full border border-dashed border-muted-foreground/30 hover:bg-muted/50 text-muted-foreground"
                           onClick={(e) => { e.stopPropagation(); setShowEmojiPicker(showEmojiPicker === msg.id ? null : msg.id); }}
+                          title={hasAttachment ? "Reaktion auf dieses Bild/PDF" : "Reaktion"}
                         >
                           +
                         </button>
@@ -573,21 +543,7 @@ export function ProjectChat({ projectId, projectName, isAdmin }: { projectId: st
                               <button
                                 key={emoji}
                                 className="text-lg hover:scale-125 transition-transform px-0.5"
-                                onClick={async (e) => {
-                                  e.stopPropagation();
-                                  if (!currentUserId) return;
-                                  const existing = msgReactions.find(r => r.emoji === emoji && r.user_id === currentUserId);
-                                  if (existing) {
-                                    await supabase.from("message_reactions").delete().eq("id", existing.id);
-                                    setReactions(prev => prev.filter(p => p.id !== existing.id));
-                                  } else {
-                                    const { data } = await supabase.from("message_reactions").insert({
-                                      message_id: msg.id, user_id: currentUserId, emoji
-                                    }).select().single();
-                                    if (data) setReactions(prev => [...prev, data as Reaction]);
-                                  }
-                                  setShowEmojiPicker(null);
-                                }}
+                                onClick={(e) => { e.stopPropagation(); toggleReaction(emoji); setShowEmojiPicker(null); }}
                               >
                                 {emoji}
                               </button>
@@ -595,6 +551,45 @@ export function ProjectChat({ projectId, projectName, isAdmin }: { projectId: st
                           </div>
                         )}
                       </div>
+                    );
+
+                    return (
+                      <>
+                        {/* Attachment-Container: Bild/PDF + Reactions direkt darunter als visuelle Einheit */}
+                        {hasAttachment && (
+                          <div className="mb-1">
+                            {isPdf ? (
+                              <button
+                                className="flex items-center gap-2 p-2 rounded-lg bg-background/50 border border-border hover:bg-background/80 transition-colors max-w-full w-full"
+                                onClick={(e) => { e.stopPropagation(); setPreviewImage(msg.image_url); }}
+                              >
+                                <FileText className="h-8 w-8 shrink-0 text-red-600" />
+                                <div className="text-left min-w-0 flex-1">
+                                  <p className="text-sm font-medium truncate">{msg.message || "PDF-Dokument"}</p>
+                                  <p className="text-xs text-muted-foreground">Zum Anzeigen tippen</p>
+                                </div>
+                              </button>
+                            ) : (
+                              <img
+                                src={msg.image_url!}
+                                alt="Foto"
+                                className="rounded-lg max-w-full max-h-64 object-cover cursor-pointer hover:opacity-90"
+                                onClick={(e) => { e.stopPropagation(); setPreviewImage(msg.image_url); }}
+                              />
+                            )}
+                            {/* Reactions direkt AM Anhang - so ist die Zuordnung zum Bild/PDF eindeutig */}
+                            {ReactionBar}
+                          </div>
+                        )}
+
+                        {/* Text - bei PDF steht Dateiname bereits im Attachment-Block */}
+                        {msg.message && !(hasAttachment && isPdf) && (
+                          <p className="text-sm whitespace-pre-wrap break-words">{msg.message}</p>
+                        )}
+
+                        {/* Reaktions-Leiste nur am Textende anzeigen, wenn KEIN Anhang da ist */}
+                        {!hasAttachment && ReactionBar}
+                      </>
                     );
                   })()}
 
