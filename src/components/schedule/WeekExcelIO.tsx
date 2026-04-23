@@ -126,13 +126,15 @@ export function WeekExcelIO({
       };
       const upserts: Upsert[] = [];
       const affectedUsers = new Set<string>();
+      const skippedNames = new Set<string>();
+      const skippedProjects = new Set<string>();
 
       for (const row of rows) {
-        const name = String(row["Mitarbeiter"] || row["MA"] || "").trim().toLowerCase();
-        if (!name) continue;
-        const prof = profileByName.get(name);
+        const rawName = String(row["Mitarbeiter"] || row["MA"] || "").trim();
+        if (!rawName) continue;
+        const prof = profileByName.get(rawName.toLowerCase());
         if (!prof) {
-          console.warn("Unbekannter Mitarbeiter:", name);
+          skippedNames.add(rawName);
           continue;
         }
         affectedUsers.add(prof.id);
@@ -145,10 +147,10 @@ export function WeekExcelIO({
           const parts = val.split("|").map((s) => s.trim()).filter(Boolean);
           for (const part of parts) {
             const transport = /^transport:/i.test(part);
-            const projName = part.replace(/^transport:/i, "").trim().toLowerCase();
-            const proj = projectByName.get(projName);
+            const rawProjName = part.replace(/^transport:/i, "").trim();
+            const proj = projectByName.get(rawProjName.toLowerCase());
             if (!proj) {
-              console.warn("Unbekanntes Projekt:", projName);
+              skippedProjects.add(rawProjName);
               continue;
             }
             upserts.push({
@@ -181,10 +183,25 @@ export function WeekExcelIO({
           .insert(upserts);
         if (error) throw error;
       }
-      toast({
-        title: `Import abgeschlossen`,
-        description: `${upserts.length} Zuordnungen fuer ${affectedUsers.size} Mitarbeiter uebernommen`,
-      });
+      const skips: string[] = [];
+      if (skippedNames.size > 0) {
+        skips.push(`Unbekannte Mitarbeiter: ${[...skippedNames].slice(0, 5).join(", ")}${skippedNames.size > 5 ? "…" : ""}`);
+      }
+      if (skippedProjects.size > 0) {
+        skips.push(`Unbekannte Projekte: ${[...skippedProjects].slice(0, 5).join(", ")}${skippedProjects.size > 5 ? "…" : ""}`);
+      }
+      if (skips.length > 0) {
+        toast({
+          variant: "destructive",
+          title: `Import mit Warnungen (${upserts.length} uebernommen)`,
+          description: skips.join(" · "),
+        });
+      } else {
+        toast({
+          title: `Import abgeschlossen`,
+          description: `${upserts.length} Zuordnungen fuer ${affectedUsers.size} Mitarbeiter uebernommen`,
+        });
+      }
       onImported();
     } catch (err: any) {
       toast({ variant: "destructive", title: "Import fehlgeschlagen", description: err?.message });

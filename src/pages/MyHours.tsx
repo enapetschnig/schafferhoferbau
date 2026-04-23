@@ -783,12 +783,18 @@ const MyHours = () => {
                 <div>
                   <h4 className="text-sm font-medium mb-2">Urlaubsverlauf</h4>
                   <div className="space-y-1.5 max-h-48 overflow-y-auto">
-                    {vacationHistory.map((v, i) => (
-                      <div key={i} className="flex items-center justify-between py-1.5 px-3 rounded bg-muted/30 text-sm">
-                        <span>{new Date(v.datum).toLocaleDateString("de-DE", { weekday: "short", day: "2-digit", month: "long", year: "numeric" })}</span>
-                        <Badge variant="secondary">-1 Tag</Badge>
-                      </div>
-                    ))}
+                    {vacationHistory.map((v, i) => {
+                      // Badge zeigt abgezogenen Wert - bei Stunden-Modus die echten Stunden, sonst "1 Tag"
+                      const badge = vacationBalance?.einheit === "stunden"
+                        ? `-${(v.stunden || 0).toLocaleString("de-AT", { maximumFractionDigits: 1 })} Std.`
+                        : "-1 Tag";
+                      return (
+                        <div key={i} className="flex items-center justify-between py-1.5 px-3 rounded bg-muted/30 text-sm">
+                          <span>{new Date(v.datum).toLocaleDateString("de-DE", { weekday: "short", day: "2-digit", month: "long", year: "numeric" })}</span>
+                          <Badge variant="secondary">{badge}</Badge>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}

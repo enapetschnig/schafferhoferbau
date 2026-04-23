@@ -787,6 +787,33 @@ const ProjectOverview = () => {
           .select("*, projects(name, adresse, plz)")
           .eq("project_id", projectId)
           .order("datum", { ascending: false });
+        const reportIds = (reports || []).map((r: any) => r.id);
+        // Batch-Load: alle Activities und Photos in 2 Queries statt 2*N
+        const [{ data: allActivities }, { data: allPhotos }] = reportIds.length
+          ? await Promise.all([
+              supabase
+                .from("daily_report_activities")
+                .select("daily_report_id, geschoss, beschreibung, sort_order")
+                .in("daily_report_id", reportIds)
+                .order("sort_order"),
+              supabase
+                .from("daily_report_photos")
+                .select("daily_report_id, file_path, file_name")
+                .in("daily_report_id", reportIds),
+            ])
+          : [{ data: [] as any[] }, { data: [] as any[] }];
+        const activitiesByReport = new Map<string, any[]>();
+        for (const a of allActivities || []) {
+          const arr = activitiesByReport.get(a.daily_report_id) || [];
+          arr.push(a);
+          activitiesByReport.set(a.daily_report_id, arr);
+        }
+        const photosByReport = new Map<string, any[]>();
+        for (const p of allPhotos || []) {
+          const arr = photosByReport.get(p.daily_report_id) || [];
+          arr.push(p);
+          photosByReport.set(p.daily_report_id, arr);
+        }
         const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "";
         const typeFolders: Record<string, any> = {
           tagesbericht: berichteFolder.folder("Tagesberichte")!,
@@ -795,21 +822,13 @@ const ProjectOverview = () => {
         };
         for (const r of reports || []) {
           try {
-            const { data: activities } = await supabase
-              .from("daily_report_activities")
-              .select("geschoss, beschreibung")
-              .eq("daily_report_id", r.id)
-              .order("sort_order");
-            const { data: photos } = await supabase
-              .from("daily_report_photos")
-              .select("file_path, file_name")
-              .eq("daily_report_id", r.id);
-
+            const activities = activitiesByReport.get(r.id) || [];
+            const photos = photosByReport.get(r.id) || [];
             const reportForPdf = { ...r, project: r.projects } as any;
             const blob = await generateDailyReportPDF(
               reportForPdf,
-              (activities || []) as any,
-              (photos || []) as any,
+              activities as any,
+              photos as any,
               supabaseUrl,
               { returnAsBlob: true }
             );
@@ -841,18 +860,35 @@ const ProjectOverview = () => {
           .eq("project_id", projectId);
         if (evals && evals.length > 0) {
           const unterFolder = root.folder("Unterweisungen")!;
+          const evalIds = evals.map((e: any) => e.id);
+          // Batch-Load statt 2 Queries pro Evaluation
+          const [{ data: allSigs }, { data: allEmps }] = await Promise.all([
+            supabase
+              .from("safety_evaluation_signatures")
+              .select("evaluation_id, unterschrift, unterschrift_name, unterschrieben_am, personal_answers")
+              .in("evaluation_id", evalIds),
+            supabase
+              .from("safety_evaluation_employees")
+              .select("evaluation_id, user_id, profiles:user_id(vorname, nachname)")
+              .in("evaluation_id", evalIds),
+          ]);
+          const sigsByEval = new Map<string, any[]>();
+          for (const s of allSigs || []) {
+            const arr = sigsByEval.get(s.evaluation_id) || [];
+            arr.push(s);
+            sigsByEval.set(s.evaluation_id, arr);
+          }
+          const empsByEval = new Map<string, any[]>();
+          for (const e of allEmps || []) {
+            const arr = empsByEval.get(e.evaluation_id) || [];
+            arr.push(e);
+            empsByEval.set(e.evaluation_id, arr);
+          }
           for (const ev of evals as any[]) {
             try {
-              const { data: sigs } = await supabase
-                .from("safety_evaluation_signatures")
-                .select("unterschrift, unterschrift_name, unterschrieben_am, personal_answers")
-                .eq("evaluation_id", ev.id);
-              if (!sigs || sigs.length === 0) continue; // nur unterschriebene exportieren
-              const { data: emps } = await supabase
-                .from("safety_evaluation_employees")
-                .select("user_id, profiles:user_id(vorname, nachname)")
-                .eq("evaluation_id", ev.id);
-
+              const sigs = sigsByEval.get(ev.id) || [];
+              if (sigs.length === 0) continue; // nur unterschriebene exportieren
+              const emps = empsByEval.get(ev.id) || [];
               const blob = generateSafetyEvaluationPDF(
                 {
                   titel: ev.titel,
@@ -865,7 +901,7 @@ const ProjectOverview = () => {
                   answers: [],
                   diskussionNotizen: ev.diskussion_notizen ?? null,
                   signatures: sigs as any,
-                  employees: (emps || []).map((e: any) => ({
+                  employees: emps.map((e: any) => ({
                     vorname: e.profiles?.vorname || "",
                     nachname: e.profiles?.nachname || "",
                   })),

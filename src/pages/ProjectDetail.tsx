@@ -378,13 +378,24 @@ const ProjectDetail = () => {
     try {
       const { default: JSZip } = await import("jszip");
       const zip = new JSZip();
+      let ok = 0;
+      const failed: string[] = [];
       for (const fileName of fileNames) {
         const url = signedUrls[fileName];
-        if (!url) continue;
-        const resp = await fetch(url);
-        if (!resp.ok) continue;
-        const blob = await resp.blob();
-        zip.file(fileName, blob);
+        if (!url) { failed.push(fileName); continue; }
+        try {
+          const resp = await fetch(url);
+          if (!resp.ok) { failed.push(fileName); continue; }
+          const blob = await resp.blob();
+          zip.file(fileName, blob);
+          ok++;
+        } catch {
+          failed.push(fileName);
+        }
+      }
+      if (ok === 0) {
+        toast({ variant: "destructive", title: "Keine Datei konnte geladen werden" });
+        return;
       }
       const zipBlob = await zip.generateAsync({ type: "blob" });
       const zipName = `${projectName || "Projekt"}_${titleMap[type!] || type || "Dateien"}.zip`;
@@ -393,7 +404,15 @@ const ProjectDetail = () => {
       a.download = zipName.replace(/[^a-zA-Z0-9._\-]/g, "_");
       a.click();
       URL.revokeObjectURL(a.href);
-      toast({ title: `ZIP mit ${fileNames.length} Dateien heruntergeladen` });
+      if (failed.length > 0) {
+        toast({
+          variant: "destructive",
+          title: `ZIP mit ${ok}/${fileNames.length} Dateien heruntergeladen`,
+          description: `Fehlgeschlagen: ${failed.slice(0, 3).join(", ")}${failed.length > 3 ? `, …` : ""}`,
+        });
+      } else {
+        toast({ title: `ZIP mit ${ok} Dateien heruntergeladen` });
+      }
     } catch (err: any) {
       toast({ variant: "destructive", title: "Fehler beim ZIP-Export", description: err?.message });
     }

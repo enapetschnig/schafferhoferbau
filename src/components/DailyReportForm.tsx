@@ -596,7 +596,11 @@ export function DailyReportForm({ open, onOpenChange, onSuccess, defaultProjectI
 
           {/* Actions */}
           <div className="flex justify-end gap-2 pt-2">
-            <Button variant="outline" onClick={() => { resetForm(); onOpenChange(false); }}>
+            <Button
+              variant="outline"
+              disabled={saving}
+              onClick={() => { resetForm(); onOpenChange(false); }}
+            >
               Abbrechen
             </Button>
             <Button onClick={handleSave} disabled={saving}>

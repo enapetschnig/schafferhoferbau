@@ -619,7 +619,12 @@ export const DisturbanceForm = ({ open, onOpenChange, onSuccess, editData }: Dis
 
         {/* Sticky Actions */}
         <div className="flex gap-3 justify-end pt-4 border-t bg-background flex-shrink-0">
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={saving}
+            onClick={() => onOpenChange(false)}
+          >
             Abbrechen
           </Button>
           <Button onClick={(e) => { 

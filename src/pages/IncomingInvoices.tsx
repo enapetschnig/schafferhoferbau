@@ -345,25 +345,42 @@ export default function IncomingInvoices() {
       const { default: JSZip } = await import("jszip");
       const zip = new JSZip();
       const chosen = invoices.filter((inv) => selectedInvoiceIds.has(inv.id));
+      // Alle Download-Tasks flach sammeln und parallel ziehen — massiv schneller
+      // als die bisherige sequentielle For-Schleife (oft 10x+ schneller im WLAN)
+      type Task = { url: string; fileName: string };
+      const tasks: Task[] = [];
       for (const inv of chosen) {
         const files = [inv.photo_url, ...(inv.zusatz_seiten_urls || [])].filter(Boolean) as string[];
-        for (let i = 0; i < files.length; i++) {
-          try {
-            const resp = await fetch(files[i]);
-            if (!resp.ok) continue;
-            const blob = await resp.blob();
-            const ext = files[i].split(".").pop()?.split("?")[0] || "pdf";
-            const base = [
-              (inv.dokument_datum || inv.created_at).slice(0, 10),
-              (inv.lieferant || "Lieferant").replace(/[^a-zA-Z0-9äöüÄÖÜß]/g, "_"),
-              (inv.dokument_nummer || inv.id.slice(0, 6)).replace(/[^a-zA-Z0-9äöüÄÖÜß-]/g, "_"),
-            ].join("_");
-            const fileName = files.length === 1 ? `${base}.${ext}` : `${base}_seite${i + 1}.${ext}`;
-            zip.file(fileName, blob);
-          } catch (err) {
-            console.warn("ZIP-Entry fehlgeschlagen:", files[i], err);
-          }
+        const base = [
+          (inv.dokument_datum || inv.created_at).slice(0, 10),
+          (inv.lieferant || "Lieferant").replace(/[^a-zA-Z0-9äöüÄÖÜß]/g, "_"),
+          (inv.dokument_nummer || inv.id.slice(0, 6)).replace(/[^a-zA-Z0-9äöüÄÖÜß-]/g, "_"),
+        ].join("_");
+        files.forEach((url, i) => {
+          const ext = url.split(".").pop()?.split("?")[0] || "pdf";
+          const fileName = files.length === 1 ? `${base}.${ext}` : `${base}_seite${i + 1}.${ext}`;
+          tasks.push({ url, fileName });
+        });
+      }
+      let failedCount = 0;
+      const results = await Promise.allSettled(
+        tasks.map(async (t) => {
+          const resp = await fetch(t.url);
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+          return { fileName: t.fileName, blob: await resp.blob() };
+        })
+      );
+      for (const r of results) {
+        if (r.status === "fulfilled") {
+          zip.file(r.value.fileName, r.value.blob);
+        } else {
+          failedCount++;
+          console.warn("ZIP-Entry fehlgeschlagen:", r.reason);
         }
+      }
+      if (failedCount === tasks.length) {
+        toast({ variant: "destructive", title: "Keine Datei konnte geladen werden" });
+        return;
       }
       const blob = await zip.generateAsync({ type: "blob" });
       const a = document.createElement("a");
@@ -371,7 +388,10 @@ export default function IncomingInvoices() {
       a.download = `Rechnungen_${monthNames[filterMonth - 1]}_${filterYear}.zip`;
       a.click();
       URL.revokeObjectURL(a.href);
-      toast({ title: `${chosen.length} Rechnungen als ZIP heruntergeladen` });
+      toast({
+        title: `${chosen.length} Rechnungen als ZIP heruntergeladen`,
+        description: failedCount > 0 ? `${failedCount} Datei(en) konnten nicht geladen werden` : undefined,
+      });
       setSelectedInvoiceIds(new Set());
     } catch (err: any) {
       toast({ variant: "destructive", title: "ZIP-Export fehlgeschlagen", description: err?.message });

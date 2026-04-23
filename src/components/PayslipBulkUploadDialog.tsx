@@ -282,7 +282,25 @@ export function PayslipBulkUploadDialog({ open, onOpenChange }: Props) {
     setStep(3);
 
     try {
-      const validAssignments = assignments.filter((a) => a.matched_user_id);
+      // Dedupe: wenn die KI denselben MA zweimal erkannt hat (z.B. "Max Mueller"
+      // und "M. Mueller"), behalten wir nur den ersten Eintrag
+      const seen = new Set<string>();
+      const duplicateNames: string[] = [];
+      const validAssignments = assignments.filter((a) => {
+        if (!a.matched_user_id) return false;
+        if (seen.has(a.matched_user_id)) {
+          duplicateNames.push(a.employee_name);
+          return false;
+        }
+        seen.add(a.matched_user_id);
+        return true;
+      });
+      if (duplicateNames.length > 0) {
+        toast({
+          title: "Duplikate uebersprungen",
+          description: `${duplicateNames.length} doppelte Zuordnung(en): ${duplicateNames.join(", ")}`,
+        });
+      }
       const total = validAssignments.length;
       let done = 0;
 
