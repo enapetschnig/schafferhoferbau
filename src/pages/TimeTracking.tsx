@@ -247,6 +247,19 @@ const TimeTracking = () => {
   }, [selectedDate, existingDayEntries, loadingDayEntries]);
 
   // Fetch existing entries for selected date
+  // Einen einzelnen Zeiteintrag loeschen (nach Bestaetigung) — Fehlbuchungen
+  // konnten bisher nur durch Ueberschreiben korrigiert werden.
+  const handleDeleteSingleEntry = async (entryId: string, label: string) => {
+    if (!window.confirm(`Buchung "${label}" wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.`)) return;
+    const { error } = await supabase.from("time_entries").delete().eq("id", entryId);
+    if (error) {
+      toast({ variant: "destructive", title: "Fehler", description: error.message });
+      return;
+    }
+    toast({ title: "Buchung gelöscht" });
+    fetchExistingDayEntries(selectedDate);
+  };
+
   const fetchExistingDayEntries = async (date: string) => {
     setLoadingDayEntries(true);
     const { data: { user } } = await supabase.auth.getUser();
@@ -1241,15 +1254,33 @@ const TimeTracking = () => {
                     <div className="space-y-1.5">
                       {existingDayEntries.map((entry) => (
                         <div key={entry.id} className="flex items-center justify-between text-sm bg-background/60 rounded px-2 py-1.5">
-                          <div className="flex items-center gap-2">
-                            <Badge variant="outline" className="font-mono text-xs">
+                          <div className="flex items-center gap-2 min-w-0 flex-1">
+                            <Badge variant="outline" className="font-mono text-xs shrink-0">
                               {entry.start_time.substring(0, 5)} - {entry.end_time.substring(0, 5)}
                             </Badge>
-                            <span className="truncate max-w-[150px]">
+                            <span className="truncate">
                               {entry.project_name ? `${entry.project_name}` : entry.taetigkeit}
                             </span>
                           </div>
-                          <span className="font-medium">{Number(entry.stunden).toFixed(2)}h</span>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="font-medium">{Number(entry.stunden).toFixed(2)}h</span>
+                            {!targetUserId && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                onClick={() =>
+                                  handleDeleteSingleEntry(
+                                    entry.id,
+                                    `${entry.start_time.substring(0, 5)}-${entry.end_time.substring(0, 5)} ${entry.project_name || entry.taetigkeit}`
+                                  )
+                                }
+                                title="Einzelne Buchung löschen"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            )}
+                          </div>
                         </div>
                       ))}
                     </div>

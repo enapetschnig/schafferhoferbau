@@ -137,31 +137,23 @@ export function DailyReportForm({ open, onOpenChange, onSuccess, defaultProjectI
     : null;
   const { data: autoWeather, loading: weatherLoading } = useProjectWeather(weatherLocation, datum);
 
-  // Auto-fuelle Temperatur wenn noch leer
+  // Auto-fuelle Wetter (Chip) wenn noch leer.
+  // Temperatur wird bewusst NICHT mehr automatisch ueberschrieben — der User
+  // soll die Min/Max-Werte manuell via Stepper setzen oder explizit ueber
+  // den "Wetter uebernehmen"-Button (CloudSun) laden.
   useEffect(() => {
     if (!autoWeather) return;
-    if (editData) return; // beim Bearbeiten nicht ueberschreiben
-    let tempFilled = false;
-    let wetterFilled = false;
-    if (temperaturMin === null) { setTemperaturMin(autoWeather.min); tempFilled = true; }
-    if (temperaturMax === null) { setTemperaturMax(autoWeather.max); tempFilled = true; }
-    if (wetter.length === 0) {
-      const code = autoWeather.weatherCode;
-      const chip =
-        code <= 3 ? "sonnig"
-        : code <= 48 ? "bewoelkt"
-        : code <= 67 ? "regen"
-        : code <= 77 ? "schnee"
-        : "gewitter";
-      setWetter([chip]);
-      wetterFilled = true;
-    }
-    if (tempFilled || wetterFilled) {
-      setAutoFilledFields(prev => ({
-        temp: prev.temp || tempFilled,
-        wetter: prev.wetter || wetterFilled,
-      }));
-    }
+    if (editData) return;
+    if (wetter.length > 0) return;
+    const code = autoWeather.weatherCode;
+    const chip =
+      code <= 3 ? "sonnig"
+      : code <= 48 ? "bewoelkt"
+      : code <= 67 ? "regen"
+      : code <= 77 ? "schnee"
+      : "gewitter";
+    setWetter([chip]);
+    setAutoFilledFields(prev => ({ ...prev, wetter: true }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoWeather]);
 

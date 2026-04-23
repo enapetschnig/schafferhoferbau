@@ -33,7 +33,8 @@ export function WarehouseProductsTab() {
     fetchProducts();
   }, []);
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (id: string, name: string) => {
+    if (!window.confirm(`Produkt "${name}" wirklich unwiderruflich löschen?`)) return;
     const { error } = await supabase.from("warehouse_products").delete().eq("id", id);
     if (error) {
       toast({
@@ -148,7 +149,7 @@ export function WarehouseProductsTab() {
                             variant="ghost"
                             size="sm"
                             className="h-8 w-8 p-0 text-destructive"
-                            onClick={() => handleDelete(p.id)}
+                            onClick={() => handleDelete(p.id, p.name)}
                           >
                             <Trash2 className="w-4 h-4" />
                           </Button>

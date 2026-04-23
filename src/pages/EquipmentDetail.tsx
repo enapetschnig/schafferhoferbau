@@ -132,11 +132,13 @@ export default function EquipmentDetail() {
 
   const handleDelete = async () => {
     if (!id) return;
+    const name = item?.name || "Gerät";
+    if (!window.confirm(`Gerät "${name}" wirklich unwiderruflich löschen?\n\nAlle Zuordnungen und Wartungs-Historie gehen mit verloren.`)) return;
     const { error } = await supabase.from("equipment").delete().eq("id", id);
     if (error) {
       toast({ variant: "destructive", title: "Fehler", description: error.message });
     } else {
-      toast({ title: "Gelöscht" });
+      toast({ title: "Gerät gelöscht" });
       navigate("/equipment");
     }
   };

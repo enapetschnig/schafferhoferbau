@@ -216,6 +216,8 @@ export function VoiceAIInput({
     </div>
   );
 
+  // autoComplete="off" verhindert Browser-Autofill mit zufaellig uebernommenen
+  // Texten aus anderen Feldern (z.B. Tagesbericht-Beschreibung → Taetigkeit)
   const inputElement = multiline ? (
     <Textarea
       rows={rows}
@@ -223,6 +225,7 @@ export function VoiceAIInput({
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
       disabled={disabled}
+      autoComplete="off"
       className={cn("flex-1", inputClassName)}
     />
   ) : (
@@ -231,6 +234,7 @@ export function VoiceAIInput({
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
       disabled={disabled}
+      autoComplete="off"
       className={cn("flex-1", inputClassName)}
     />
   );
