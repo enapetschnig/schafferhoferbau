@@ -601,12 +601,37 @@ export default function Index() {
       .limit(1)
       .maybeSingle();
 
+    // Standort fuer Wetter-Abfrage bestimmen:
+    // 1) Heute auf Baustelle eingeteilt → Projekt-Adresse
+    // 2) Sonst Firmenzentrale Schafferhofer Bau in Bruck an der Mur
+    const HQ_LOCATION = {
+      lat: 47.4147,
+      lon: 15.2769,
+      locationLabel: "Leobner Str. 58 · 8600 Bruck an der Mur",
+      projectName: "Firmenzentrale",
+    };
+
+    let wetterTarget: {
+      lat: number; lon: number; locationLabel: string; projectName: string;
+      searchTerm: string | null;
+    };
+
     if (todayAssign?.projects) {
       const proj = todayAssign.projects as any;
       const locationParts = [proj.plz, proj.adresse].filter(Boolean);
-      const location = locationParts.join(" · ") || "";
+      wetterTarget = {
+        lat: HQ_LOCATION.lat, // wird unten via Geocoding ueberschrieben wenn moeglich
+        lon: HQ_LOCATION.lon,
+        locationLabel: locationParts.join(" · ") || "",
+        projectName: proj.name || "Baustelle",
+        searchTerm: proj.adresse
+          ? `${proj.adresse}${proj.plz ? ` ${proj.plz}` : ""} Austria`
+          : proj.plz
+          ? `${proj.plz} Austria`
+          : null,
+      };
 
-      // Tagesziel fuer heute laden
+      // Tagesziel fuer heute laden (nur wenn Projekt-Zuordnung vorhanden)
       const todayStr = new Date().toISOString().split("T")[0];
       const { data: targetData } = await supabase
         .from("project_daily_targets")
@@ -623,81 +648,88 @@ export default function Index() {
       } else {
         setTodayGoal(null);
       }
-      try {
-        // PLZ/Adresse zu Koordinaten aufloesen (Open-Meteo Geocoding)
-        let lat = 47.07, lon = 15.44; // Fallback: Graz
-        const searchTerm = proj.plz ? `${proj.plz} Austria` : (proj.adresse ? `${proj.adresse} Austria` : null);
-        if (searchTerm) {
-          const geoResp = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(searchTerm)}&count=1&language=de&format=json`);
-          const geoData = await geoResp.json();
-          if (geoData?.results?.[0]) {
-            lat = geoData.results[0].latitude;
-            lon = geoData.results[0].longitude;
-          }
-        }
+    } else {
+      // Kein Projekt heute → Firmenzentrale als Fallback
+      wetterTarget = {
+        ...HQ_LOCATION,
+        searchTerm: null, // HQ-Koordinaten sind fix hinterlegt
+      };
+      setTodayGoal(null);
+    }
 
-        const resp = await fetch(
-          `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
-          `&current=temperature_2m,weather_code` +
-          `&daily=temperature_2m_min,temperature_2m_max,weather_code` +
-          `&hourly=temperature_2m,weather_code,precipitation,wind_speed_10m` +
-          `&forecast_days=3&timezone=Europe/Vienna`
+    try {
+      let lat = wetterTarget.lat;
+      let lon = wetterTarget.lon;
+      if (wetterTarget.searchTerm) {
+        const geoResp = await fetch(
+          `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(wetterTarget.searchTerm)}&count=1&language=de&format=json`
         );
-        const weather = await resp.json();
-        const describe = (code: number) =>
-          code <= 3 ? "Sonnig" : code <= 48 ? "Bewölkt" : code <= 67 ? "Regen" : code <= 77 ? "Schnee" : "Gewitter";
-        const iconFor = (code: number) =>
-          code <= 3 ? "☀️" : code <= 48 ? "☁️" : code <= 67 ? "🌧️" : code <= 77 ? "❄️" : "⛈️";
+        const geoData = await geoResp.json();
+        if (geoData?.results?.[0]) {
+          lat = geoData.results[0].latitude;
+          lon = geoData.results[0].longitude;
+        }
+      }
 
-        if (weather?.current) {
-          const currentCode = weather.current.weather_code;
-          // 3-Tage-Vorhersage aufbauen
-          const forecast: WeatherDayDetail[] = [];
-          const dayLabels = ["Heute", "Morgen", "Übermorgen"];
-          const daily = weather.daily;
-          const hourly = weather.hourly;
+      const resp = await fetch(
+        `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
+        `&current=temperature_2m,weather_code` +
+        `&daily=temperature_2m_min,temperature_2m_max,weather_code` +
+        `&hourly=temperature_2m,weather_code,precipitation,wind_speed_10m` +
+        `&forecast_days=3&timezone=Europe/Vienna`
+      );
+      const weather = await resp.json();
+      const describe = (code: number) =>
+        code <= 3 ? "Sonnig" : code <= 48 ? "Bewölkt" : code <= 67 ? "Regen" : code <= 77 ? "Schnee" : "Gewitter";
+      const iconFor = (code: number) =>
+        code <= 3 ? "☀️" : code <= 48 ? "☁️" : code <= 67 ? "🌧️" : code <= 77 ? "❄️" : "⛈️";
 
-          for (let i = 0; i < 3 && daily?.time?.[i]; i++) {
-            const dayDate = daily.time[i]; // YYYY-MM-DD
-            // Stunden-Daten fuer diesen Tag filtern
-            const dayHourly: WeatherDayDetail["hourly"] = [];
-            if (hourly?.time) {
-              for (let h = 0; h < hourly.time.length; h++) {
-                if (String(hourly.time[h]).startsWith(dayDate)) {
-                  dayHourly.push({
-                    time: hourly.time[h],
-                    temp: Math.round(hourly.temperature_2m[h]),
-                    weatherCode: hourly.weather_code[h],
-                    precipitation: hourly.precipitation?.[h] ?? 0,
-                    wind: Math.round(hourly.wind_speed_10m?.[h] ?? 0),
-                  });
-                }
+      if (weather?.current) {
+        const currentCode = weather.current.weather_code;
+        const forecast: WeatherDayDetail[] = [];
+        const dayLabels = ["Heute", "Morgen", "Übermorgen"];
+        const daily = weather.daily;
+        const hourly = weather.hourly;
+
+        for (let i = 0; i < 3 && daily?.time?.[i]; i++) {
+          const dayDate = daily.time[i];
+          const dayHourly: WeatherDayDetail["hourly"] = [];
+          if (hourly?.time) {
+            for (let h = 0; h < hourly.time.length; h++) {
+              if (String(hourly.time[h]).startsWith(dayDate)) {
+                dayHourly.push({
+                  time: hourly.time[h],
+                  temp: Math.round(hourly.temperature_2m[h]),
+                  weatherCode: hourly.weather_code[h],
+                  precipitation: hourly.precipitation?.[h] ?? 0,
+                  wind: Math.round(hourly.wind_speed_10m?.[h] ?? 0),
+                });
               }
             }
-            const dcode = daily.weather_code[i];
-            forecast.push({
-              date: dayDate,
-              label: dayLabels[i],
-              min: Math.round(daily.temperature_2m_min[i]),
-              max: Math.round(daily.temperature_2m_max[i]),
-              description: describe(dcode),
-              icon: iconFor(dcode),
-              weatherCode: dcode,
-              hourly: dayHourly,
-            });
           }
-
-          setWeatherData({
-            temp: Math.round(weather.current.temperature_2m),
-            description: describe(currentCode),
-            icon: iconFor(currentCode),
-            location,
-            projectName: proj.name || "Baustelle",
-            forecast,
+          const dcode = daily.weather_code[i];
+          forecast.push({
+            date: dayDate,
+            label: dayLabels[i],
+            min: Math.round(daily.temperature_2m_min[i]),
+            max: Math.round(daily.temperature_2m_max[i]),
+            description: describe(dcode),
+            icon: iconFor(dcode),
+            weatherCode: dcode,
+            hourly: dayHourly,
           });
         }
-      } catch { /* Wetter optional */ }
-    }
+
+        setWeatherData({
+          temp: Math.round(weather.current.temperature_2m),
+          description: describe(currentCode),
+          icon: iconFor(currentCode),
+          location: wetterTarget.locationLabel,
+          projectName: wetterTarget.projectName,
+          forecast,
+        });
+      }
+    } catch { /* Wetter optional */ }
 
     setLoading(false);
   };
