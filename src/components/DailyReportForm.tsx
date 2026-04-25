@@ -80,8 +80,16 @@ export function DailyReportForm({ open, onOpenChange, onSuccess, defaultProjectI
     taetigkeit: "",
   });
   const [timeEntrySkip, setTimeEntrySkip] = useState(false);
-  // Wizard nur beim Neuanlegen und nicht beim Zwischenbericht
-  const isWizard = !editData && reportType !== "zwischenbericht";
+  // Wizard beim Neuanlegen fuer alle Berichtstypen.
+  // Tages-/Regiebericht: Bericht -> Zeit -> Fotos (3 Schritte)
+  // Zwischenbericht: Bericht -> Fotos (2 Schritte, Zeiterfassung wird uebersprungen)
+  const isWizard = !editData;
+  const hasTimeStep = reportType !== "zwischenbericht";
+  const stepKeys = hasTimeStep
+    ? (["bericht", "zeit", "fotos"] as const)
+    : (["bericht", "fotos"] as const);
+  const totalSteps = stepKeys.length;
+  const currentStepKey = stepKeys[Math.min(step, totalSteps) - 1];
 
   useEffect(() => {
     (async () => {
@@ -89,6 +97,11 @@ export function DailyReportForm({ open, onOpenChange, onSuccess, defaultProjectI
       if (user) setAuthUserId(user.id);
     })();
   }, []);
+
+  // Step clampen wenn der User vom 3-Step-Typ auf 2-Step-Typ (Zwischenbericht) wechselt
+  useEffect(() => {
+    if (step > totalSteps) setStep(totalSteps as 1 | 2 | 3);
+  }, [totalSteps, step]);
 
   const fetchEmployees = useCallback(async () => {
     const { data } = await supabase
@@ -380,8 +393,8 @@ export function DailyReportForm({ open, onOpenChange, onSuccess, defaultProjectI
       );
     }
 
-    // Zeiterfassung schreiben (nur Wizard-Flow, wenn nicht uebersprungen)
-    if (isWizard && !timeEntrySkip && !editData) {
+    // Zeiterfassung schreiben — nur bei Tages-/Regiebericht (Zwischenbericht hat keinen Zeit-Step)
+    if (isWizard && hasTimeStep && !timeEntrySkip && !editData) {
       const pauseMin = parseInt(timeEntryData.pauseMinutes, 10) || 0;
       const stunden = calcEntryHours(timeEntryData.startTime, timeEntryData.endTime, pauseMin);
       if (stunden > 0) {
@@ -456,12 +469,19 @@ export function DailyReportForm({ open, onOpenChange, onSuccess, defaultProjectI
           {/* Wizard-Schritt-Indikator + Typ-Badge */}
           {isWizard && (
             <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                <span className={step === 1 ? "font-semibold text-primary" : ""}>1. Bericht</span>
-                <ChevronRight className="h-3 w-3" />
-                <span className={step === 2 ? "font-semibold text-primary" : ""}>2. Zeiterfassung</span>
-                <ChevronRight className="h-3 w-3" />
-                <span className={step === 3 ? "font-semibold text-primary" : ""}>3. Fotos</span>
+              <div className="flex items-center gap-1 text-xs text-muted-foreground flex-wrap">
+                {stepKeys.map((key, idx) => {
+                  const num = idx + 1;
+                  const label = key === "bericht" ? "Bericht" : key === "zeit" ? "Zeiterfassung" : "Fotos";
+                  return (
+                    <span key={key} className="flex items-center gap-1">
+                      {idx > 0 && <ChevronRight className="h-3 w-3" />}
+                      <span className={step === num ? "font-semibold text-primary" : ""}>
+                        {num}. {label}
+                      </span>
+                    </span>
+                  );
+                })}
               </div>
               <span className="text-xs font-medium px-2 py-0.5 rounded bg-primary/10 text-primary whitespace-nowrap">
                 {typeLabels[reportType]}
@@ -469,8 +489,8 @@ export function DailyReportForm({ open, onOpenChange, onSuccess, defaultProjectI
             </div>
           )}
 
-          {/* === STEP 1: Berichtstyp + Projekt + Datum === */}
-          {(!isWizard || step === 1) && (
+          {/* === STEP 1: Bericht (alle Felder) === */}
+          {(!isWizard || currentStepKey === "bericht") && (
           <>
           {/* Berichtstyp als intuitive Button-Gruppe ganz oben */}
           <div className="space-y-1">
@@ -704,8 +724,8 @@ export function DailyReportForm({ open, onOpenChange, onSuccess, defaultProjectI
           </>
           )}
 
-          {/* === STEP 2: Zeiterfassung (mit Vorbefuellung) === */}
-          {isWizard && step === 2 && (
+          {/* === STEP 2: Zeiterfassung (mit Vorbefuellung) — nur Tages-/Regiebericht === */}
+          {isWizard && currentStepKey === "zeit" && (
             <TimeEntryStep
               userId={authUserId}
               projectId={projectId}
@@ -723,8 +743,8 @@ export function DailyReportForm({ open, onOpenChange, onSuccess, defaultProjectI
             />
           )}
 
-          {/* === STEP 3: Fotos === */}
-          {isWizard && step === 3 && (
+          {/* === Fotos-Step (Step 2 bei Zwischenbericht, Step 3 sonst) === */}
+          {isWizard && currentStepKey === "fotos" && (
             <div className="space-y-3">
               <Label className="text-base font-semibold">Fotos hinzufügen (optional)</Label>
               <p className="text-xs text-muted-foreground">
@@ -784,7 +804,7 @@ export function DailyReportForm({ open, onOpenChange, onSuccess, defaultProjectI
           {isWizard ? (
             <div className="flex justify-between gap-2 pt-2 border-t">
               {step > 1 ? (
-                <Button variant="outline" onClick={() => setStep((s) => (s - 1) as 1 | 2 | 3)} disabled={saving}>
+                <Button variant="outline" onClick={() => setStep((s) => Math.max(1, s - 1) as 1 | 2 | 3)} disabled={saving}>
                   <ChevronLeft className="w-4 h-4 mr-1" /> Zurück
                 </Button>
               ) : (
@@ -792,10 +812,10 @@ export function DailyReportForm({ open, onOpenChange, onSuccess, defaultProjectI
                   Abbrechen
                 </Button>
               )}
-              {step < 3 ? (
+              {step < totalSteps ? (
                 <Button
-                  onClick={() => setStep((s) => (s + 1) as 1 | 2 | 3)}
-                  disabled={step === 1 && (!projectId || !datum)}
+                  onClick={() => setStep((s) => Math.min(totalSteps, s + 1) as 1 | 2 | 3)}
+                  disabled={currentStepKey === "bericht" && (!projectId || !datum)}
                 >
                   Weiter <ChevronRight className="w-4 h-4 ml-1" />
                 </Button>

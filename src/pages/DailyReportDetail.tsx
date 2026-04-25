@@ -380,7 +380,9 @@ export default function DailyReportDetail() {
           <ArrowLeft className="w-4 h-4" />
         </Button>
         <h1 className="text-2xl font-bold">
-          {report.report_type === "tagesbericht" ? "Tagesbericht" : "Zwischenbericht"}
+          {report.report_type === "tagesbericht" ? "Tagesbericht"
+            : report.report_type === "regiebericht" ? "Regiebericht"
+            : "Zwischenbericht"}
         </h1>
         <Badge variant={isSigned ? "default" : "outline"}>
           {report.status === "offen" ? "Offen" : report.status === "gesendet" ? "Gesendet" : "Abgeschlossen"}

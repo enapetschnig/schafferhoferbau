@@ -86,7 +86,9 @@ export async function generateDailyReportPDF(
   doc.line(margin, y, margin + contentWidth, y);
   y += 5;
 
-  const title = report.report_type === "tagesbericht" ? "Tagesbericht" : "Zwischenbericht";
+  const title = report.report_type === "tagesbericht" ? "Tagesbericht"
+    : report.report_type === "regiebericht" ? "Regiebericht"
+    : "Zwischenbericht";
   doc.setFontSize(16);
   doc.setTextColor(100, 100, 100);
   doc.text(title, margin, y);
