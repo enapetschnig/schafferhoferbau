@@ -24,6 +24,19 @@ export interface WeekSchedule {
   fr: DaySchedule;
   sa: DaySchedule;
   so: DaySchedule;
+  // Optionaler 14-Tage-Zyklus. Wenn aktiv, gelten die obigen Tage als "Kurze Woche" (A);
+  // `woche_b` definiert die "Lange Woche" (B). Anker = Montag der ersten A-Woche.
+  zyklus?: "weekly" | "biweekly";
+  woche_b?: {
+    mo: DaySchedule;
+    di: DaySchedule;
+    mi: DaySchedule;
+    do: DaySchedule;
+    fr: DaySchedule;
+    sa: DaySchedule;
+    so: DaySchedule;
+  };
+  zyklus_anker?: string;
 }
 
 /**
@@ -91,17 +104,59 @@ const DAY_KEYS: Record<number, keyof WeekSchedule> = {
   6: "sa",
 };
 
-function getDayKey(date: Date): keyof WeekSchedule {
-  return DAY_KEYS[date.getDay()];
+function getDayKey(date: Date): "mo" | "di" | "mi" | "do" | "fr" | "sa" | "so" {
+  return DAY_KEYS[date.getDay()] as "mo" | "di" | "mi" | "do" | "fr" | "sa" | "so";
+}
+
+/**
+ * Gibt den effektiven DaySchedule fuer ein Datum zurueck.
+ * Bei aktivem 14-Tage-Zyklus wird zwischen Woche A (root) und Woche B (woche_b) unterschieden,
+ * basierend auf dem Anker-Datum.
+ */
+export function getEffectiveDay(schedule: WeekSchedule | null | undefined, date: Date): DaySchedule | null {
+  const s = schedule || DEFAULT_SCHEDULE;
+  const dayKey = getDayKey(date);
+  const isBiweekly = s.zyklus === "biweekly" && s.woche_b && s.zyklus_anker;
+  if (isBiweekly) {
+    const anker = new Date(s.zyklus_anker!);
+    const ankerMonday = getIsoMonday(anker);
+    const currentMonday = getIsoMonday(date);
+    const diffDays = Math.round((currentMonday.getTime() - ankerMonday.getTime()) / 86_400_000);
+    const weekIndex = Math.floor(diffDays / 7);
+    const parity = ((weekIndex % 2) + 2) % 2;
+    if (parity === 1) {
+      return s.woche_b![dayKey] ?? null;
+    }
+  }
+  return s[dayKey] ?? null;
+}
+
+/**
+ * Gibt die effektive WeekSchedule (Zwei-Wochen-Sicht) fuer ein Datum zurueck.
+ * Liefert eine flache WeekSchedule (mo..so), passend fuer Funktionen, die kein biweekly-Wissen haben.
+ */
+export function getEffectiveSchedule(schedule: WeekSchedule | null | undefined, date: Date): WeekSchedule {
+  const s = schedule || DEFAULT_SCHEDULE;
+  const isBiweekly = s.zyklus === "biweekly" && s.woche_b && s.zyklus_anker;
+  if (!isBiweekly) return s;
+  const anker = new Date(s.zyklus_anker!);
+  const ankerMonday = getIsoMonday(anker);
+  const currentMonday = getIsoMonday(date);
+  const diffDays = Math.round((currentMonday.getTime() - ankerMonday.getTime()) / 86_400_000);
+  const weekIndex = Math.floor(diffDays / 7);
+  const parity = ((weekIndex % 2) + 2) % 2;
+  if (parity === 1) {
+    return { ...s, ...s.woche_b! };
+  }
+  return s;
 }
 
 /**
  * Gibt die Normalarbeitszeit für einen Tag zurück, basierend auf individuellem Zeitplan
  */
 export function getNormalWorkingHours(date: Date, schedule?: WeekSchedule | null): number {
-  const s = schedule || DEFAULT_SCHEDULE;
-  const dayKey = getDayKey(date);
-  return s[dayKey]?.hours ?? 0;
+  const day = getEffectiveDay(schedule, date);
+  return day?.hours ?? 0;
 }
 
 /**
@@ -121,18 +176,18 @@ export function getTotalWorkingHours(date: Date, schedule?: WeekSchedule | null)
 /**
  * Gibt das Wochensoll zurück basierend auf individuellem Zeitplan
  */
-export function getWeeklyTargetHours(schedule?: WeekSchedule | null): number {
+export function getWeeklyTargetHours(schedule?: WeekSchedule | null, dateForBiweekly?: Date): number {
   const s = schedule || DEFAULT_SCHEDULE;
-  return Object.values(s).reduce((sum, day) => sum + (day?.hours ?? 0), 0);
+  const eff = dateForBiweekly ? getEffectiveSchedule(s, dateForBiweekly) : s;
+  const dayKeys = ["mo", "di", "mi", "do", "fr", "sa", "so"] as const;
+  return dayKeys.reduce((sum, k) => sum + ((eff as any)[k]?.hours ?? 0), 0);
 }
 
 /**
  * Gibt Standard-Arbeitszeiten für einen Tag zurück basierend auf individuellem Zeitplan
  */
 export function getDefaultWorkTimes(date: Date, schedule?: WeekSchedule | null): WorkTimePreset | null {
-  const s = schedule || DEFAULT_SCHEDULE;
-  const dayKey = getDayKey(date);
-  const day = s[dayKey];
+  const day = getEffectiveDay(schedule, date);
 
   if (!day || !day.start || !day.end || day.hours === 0) return null;
 

@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -56,7 +57,8 @@ const KATEGORIE_LABELS: Record<string, string> = {
 };
 
 const DAY_LABELS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
-const DAY_KEYS: (keyof WeekSchedule)[] = ["mo", "di", "mi", "do", "fr", "sa", "so"];
+type DayKey = "mo" | "di" | "mi" | "do" | "fr" | "sa" | "so";
+const DAY_KEYS: DayKey[] = ["mo", "di", "mi", "do", "fr", "sa", "so"];
 
 export default function Employees() {
   const navigate = useNavigate();
@@ -500,94 +502,156 @@ export default function Employees() {
 
                   <Separator />
 
-                  {/* Regelarbeitszeit */}
-                  {formData.kategorie !== "extern" && (
-                  <div>
-                    <h3 className="text-lg font-semibold mb-3">Regelarbeitszeit</h3>
-                    <div className="flex items-center gap-3 mb-3">
-                      <Label className="text-sm whitespace-nowrap">Wochenstunden-Soll:</Label>
-                      <Input
-                        type="number"
-                        min="0"
-                        max="60"
-                        step="0.5"
-                        value={formData.wochen_soll_stunden ?? 39}
-                        onChange={(e) => {
-                          setFormData({ ...formData, wochen_soll_stunden: parseFloat(e.target.value) || 0 });
-                        }}
-                        className="h-9 w-24"
-                      />
-                      <span className="text-sm text-muted-foreground">h/Woche</span>
-                    </div>
-                    <div className="grid grid-cols-7 gap-2">
-                      {DAY_KEYS.map((key, idx) => {
-                        const schedule = (formData.regelarbeitszeit as WeekSchedule) || DEFAULT_SCHEDULE;
-                        const day = schedule[key] || { start: null, end: null, pause: 0, hours: 0 };
-                        return (
-                          <div key={key} className="space-y-1 text-center">
-                            <Label className="text-xs font-bold">{DAY_LABELS[idx]}</Label>
-                            <Input
-                              type="time"
-                              value={day.start || ""}
-                              onChange={(e) => {
-                                const newSchedule = { ...schedule };
-                                newSchedule[key] = { ...day, start: e.target.value || null };
-                                setFormData({ ...formData, regelarbeitszeit: newSchedule });
-                              }}
-                              className="h-8 text-xs px-1"
-                              placeholder="--:--"
-                            />
-                            <Input
-                              type="time"
-                              value={day.end || ""}
-                              onChange={(e) => {
-                                const newSchedule = { ...schedule };
-                                newSchedule[key] = { ...day, end: e.target.value || null };
-                                setFormData({ ...formData, regelarbeitszeit: newSchedule });
-                              }}
-                              className="h-8 text-xs px-1"
-                              placeholder="--:--"
-                            />
-                            <Input
-                              type="number"
-                              min="0"
-                              max="24"
-                              step="0.25"
-                              value={day.hours}
-                              onChange={(e) => {
-                                const newSchedule = { ...schedule };
-                                const hours = parseFloat(e.target.value) || 0;
-                                newSchedule[key] = { ...day, hours };
-                                const total = Object.values(newSchedule).reduce((s, d) => s + (d?.hours ?? 0), 0);
+                  {/* Regelarbeitszeit (mit optionaler 14-taegiger Durchrechnung) */}
+                  {formData.kategorie !== "extern" && (() => {
+                    const schedule = (formData.regelarbeitszeit as WeekSchedule) || DEFAULT_SCHEDULE;
+                    const isBiweekly = schedule.zyklus === "biweekly";
+                    const ankerDefault = (() => {
+                      // Default-Anker: aktueller Montag
+                      const d = new Date();
+                      const day = d.getDay();
+                      const diff = (day + 6) % 7; // Mo=0
+                      d.setDate(d.getDate() - diff);
+                      return d.toISOString().split("T")[0];
+                    })();
+
+                    const renderWeekGrid = (variant: "A" | "B") => {
+                      const weekData = variant === "A"
+                        ? schedule
+                        : (schedule.woche_b as any) || ({} as any);
+                      return (
+                        <div className="grid grid-cols-7 gap-2">
+                          {DAY_KEYS.map((key, idx) => {
+                            const day = weekData[key] || { start: null, end: null, pause: 0, hours: 0 };
+                            const updateDay = (field: "start" | "end" | "hours" | "pause", val: any) => {
+                              const newSchedule: any = { ...schedule };
+                              if (variant === "A") {
+                                newSchedule[key] = { ...day, [field]: val };
+                              } else {
+                                newSchedule.woche_b = { ...(schedule.woche_b || {}), [key]: { ...day, [field]: val } };
+                              }
+                              // Wochensoll bei A neu berechnen (B beeinflusst eigene Periode)
+                              if (variant === "A" && field === "hours") {
+                                const total = DAY_KEYS.reduce((s, k) => s + ((newSchedule[k] as any)?.hours ?? 0), 0);
                                 setFormData({ ...formData, regelarbeitszeit: newSchedule, wochen_soll_stunden: total });
-                              }}
-                              className="h-8 text-xs px-1"
-                              placeholder="h"
-                            />
-                            <Input
-                              type="number"
-                              min="0"
-                              max="120"
-                              step="5"
-                              value={day.pause || 0}
-                              onChange={(e) => {
-                                const newSchedule = { ...schedule };
-                                const pause = parseInt(e.target.value) || 0;
-                                newSchedule[key] = { ...day, pause };
+                              } else {
                                 setFormData({ ...formData, regelarbeitszeit: newSchedule });
+                              }
+                            };
+                            return (
+                              <div key={key} className="space-y-1 text-center">
+                                <Label className="text-xs font-bold">{DAY_LABELS[idx]}</Label>
+                                <Input
+                                  type="time"
+                                  value={day.start || ""}
+                                  onChange={(e) => updateDay("start", e.target.value || null)}
+                                  className="h-8 text-xs px-1"
+                                  placeholder="--:--"
+                                />
+                                <Input
+                                  type="time"
+                                  value={day.end || ""}
+                                  onChange={(e) => updateDay("end", e.target.value || null)}
+                                  className="h-8 text-xs px-1"
+                                  placeholder="--:--"
+                                />
+                                <Input
+                                  type="number" min="0" max="24" step="0.25"
+                                  value={day.hours ?? 0}
+                                  onChange={(e) => updateDay("hours", parseFloat(e.target.value) || 0)}
+                                  className="h-8 text-xs px-1"
+                                  placeholder="h"
+                                />
+                                <Input
+                                  type="number" min="0" max="120" step="5"
+                                  value={day.pause || 0}
+                                  onChange={(e) => updateDay("pause", parseInt(e.target.value) || 0)}
+                                  className="h-8 text-xs px-1"
+                                  placeholder="min"
+                                />
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    };
+
+                    return (
+                      <div>
+                        <h3 className="text-lg font-semibold mb-3">Regelarbeitszeit</h3>
+                        <div className="flex items-center gap-3 mb-3">
+                          <Label className="text-sm whitespace-nowrap">Wochenstunden-Soll:</Label>
+                          <Input
+                            type="number" min="0" max="60" step="0.5"
+                            value={formData.wochen_soll_stunden ?? 39}
+                            onChange={(e) => setFormData({ ...formData, wochen_soll_stunden: parseFloat(e.target.value) || 0 })}
+                            className="h-9 w-24"
+                          />
+                          <span className="text-sm text-muted-foreground">h/Woche</span>
+                        </div>
+
+                        <label className="flex items-center gap-2 mb-3 p-2 rounded-md border cursor-pointer hover:bg-muted/30">
+                          <Checkbox
+                            checked={isBiweekly}
+                            onCheckedChange={(v) => {
+                              const checked = !!v;
+                              const newSchedule: any = { ...schedule };
+                              if (checked) {
+                                newSchedule.zyklus = "biweekly";
+                                if (!newSchedule.woche_b) {
+                                  // Default Woche B: Kopie der Woche A
+                                  newSchedule.woche_b = DAY_KEYS.reduce((acc, k) => {
+                                    acc[k] = { ...(schedule as any)[k] };
+                                    return acc;
+                                  }, {} as any);
+                                }
+                                if (!newSchedule.zyklus_anker) {
+                                  newSchedule.zyklus_anker = ankerDefault;
+                                }
+                              } else {
+                                newSchedule.zyklus = "weekly";
+                                delete newSchedule.woche_b;
+                                delete newSchedule.zyklus_anker;
+                              }
+                              setFormData({ ...formData, regelarbeitszeit: newSchedule });
+                            }}
+                          />
+                          <span className="text-sm">14-tägige Durchrechnung (kurze / lange Woche im Wechsel)</span>
+                        </label>
+
+                        {isBiweekly && (
+                          <div className="mb-3 flex items-center gap-3">
+                            <Label className="text-sm whitespace-nowrap">Anker (Mo der ersten Kurze-Woche-Periode):</Label>
+                            <Input
+                              type="date"
+                              value={schedule.zyklus_anker || ankerDefault}
+                              onChange={(e) => {
+                                setFormData({ ...formData, regelarbeitszeit: { ...schedule, zyklus_anker: e.target.value } as any });
                               }}
-                              className="h-8 text-xs px-1"
-                              placeholder="min"
+                              className="h-9 w-44"
                             />
                           </div>
-                        );
-                      })}
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Von / Bis / Stunden / Pause (min) pro Tag
-                    </p>
-                  </div>
-                  )}
+                        )}
+
+                        {isBiweekly ? (
+                          <Tabs defaultValue="A" className="w-full">
+                            <TabsList>
+                              <TabsTrigger value="A">Kurze Woche (A)</TabsTrigger>
+                              <TabsTrigger value="B">Lange Woche (B)</TabsTrigger>
+                            </TabsList>
+                            <TabsContent value="A" className="pt-3">{renderWeekGrid("A")}</TabsContent>
+                            <TabsContent value="B" className="pt-3">{renderWeekGrid("B")}</TabsContent>
+                          </Tabs>
+                        ) : (
+                          renderWeekGrid("A")
+                        )}
+
+                        <p className="text-xs text-muted-foreground mt-2">
+                          Pro Tag von oben nach unten: Beginn / Ende / Stunden / Pause (Minuten).
+                        </p>
+                      </div>
+                    );
+                  })()}
 
                   {formData.kategorie !== "extern" && (
                   <>

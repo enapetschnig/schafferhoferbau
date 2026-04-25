@@ -398,22 +398,48 @@ export function DailyReportForm({ open, onOpenChange, onSuccess, defaultProjectI
       const pauseMin = parseInt(timeEntryData.pauseMinutes, 10) || 0;
       const stunden = calcEntryHours(timeEntryData.startTime, timeEntryData.endTime, pauseMin);
       if (stunden > 0) {
-        const { error: teErr } = await supabase.from("time_entries").insert({
-          user_id: user.id,
-          datum,
-          project_id: projectId,
-          taetigkeit: timeEntryData.taetigkeit.trim() || null,
-          stunden,
-          start_time: timeEntryData.startTime,
-          end_time: timeEntryData.endTime,
-          pause_minutes: pauseMin,
-          location_type: "baustelle",
-        } as any);
-        if (teErr) {
-          console.error("time_entries insert error", teErr);
-          toast({ variant: "destructive", title: "Zeiterfassung-Fehler", description: formatErr(teErr, "Konnte Zeit nicht speichern (Bericht wurde aber gespeichert)") });
+        // Server-Side-Check auf Ueberschneidungen (Race-Condition-safe)
+        const { data: existing } = await supabase
+          .from("time_entries")
+          .select("start_time, end_time")
+          .eq("user_id", user.id)
+          .eq("datum", datum);
+        const toMin = (s: string) => {
+          const [h, m] = (s || "").split(":").map((n) => parseInt(n, 10));
+          return (h || 0) * 60 + (m || 0);
+        };
+        const newStart = toMin(timeEntryData.startTime);
+        const newEnd = toMin(timeEntryData.endTime);
+        const hasOverlap = (existing || []).some((e: any) => {
+          if (!e.start_time || !e.end_time) return false;
+          const eStart = toMin(e.start_time);
+          const eEnd = toMin(e.end_time);
+          return newStart < eEnd && eStart < newEnd;
+        });
+        if (hasOverlap) {
+          toast({
+            variant: "destructive",
+            title: "Zeiterfassung-Konflikt",
+            description: "Es gibt bereits einen Zeiteintrag, der sich mit dieser Zeit überschneidet — Bericht wurde gespeichert, aber kein Zeiteintrag angelegt.",
+          });
         } else {
-          toast({ title: `Zeit gespeichert: ${stunden.toFixed(2)} h` });
+          const { error: teErr } = await supabase.from("time_entries").insert({
+            user_id: user.id,
+            datum,
+            project_id: projectId,
+            taetigkeit: timeEntryData.taetigkeit.trim() || null,
+            stunden,
+            start_time: timeEntryData.startTime,
+            end_time: timeEntryData.endTime,
+            pause_minutes: pauseMin,
+            location_type: "baustelle",
+          } as any);
+          if (teErr) {
+            console.error("time_entries insert error", teErr);
+            toast({ variant: "destructive", title: "Zeiterfassung-Fehler", description: formatErr(teErr, "Konnte Zeit nicht speichern (Bericht wurde aber gespeichert)") });
+          } else {
+            toast({ title: `Zeit gespeichert: ${stunden.toFixed(2)} h` });
+          }
         }
       }
     }
