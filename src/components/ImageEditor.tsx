@@ -177,7 +177,7 @@ export function ImageEditor({ open, onClose, imageUrl, onSave, onShareToChat, ti
     mergeCanvas.width = outW;
     mergeCanvas.height = outH;
     const ctx = mergeCanvas.getContext("2d");
-    if (!ctx) throw new Error("Canvas-Kontext nicht verfuegbar");
+    if (!ctx) throw new Error("Canvas-Kontext nicht verfügbar");
     const originalImg = new Image();
     await new Promise<void>((resolve, reject) => {
       originalImg.onload = () => resolve();

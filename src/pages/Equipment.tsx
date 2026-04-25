@@ -303,7 +303,7 @@ export default function EquipmentPage() {
       imported++;
     }
 
-    toast({ title: `${imported} Geraete importiert` });
+    toast({ title: `${imported} Geräte importiert` });
     fetchData();
     e.target.value = "";
   };
@@ -336,7 +336,7 @@ export default function EquipmentPage() {
       });
 
       if (error) throw error;
-      if (!result?.equipment) throw new Error("KI-Antwort ungueltig");
+      if (!result?.equipment) throw new Error("KI-Antwort ungültig");
 
       setAiImportResult(result);
       setAiImportSelectedIdxs(new Set(result.equipment.map((_: any, i: number) => i)));
@@ -376,7 +376,7 @@ export default function EquipmentPage() {
       toast({ variant: "destructive", title: "Fehler", description: error.message });
       return;
     }
-    toast({ title: `${toInsert.length} Geraete importiert` });
+    toast({ title: `${toInsert.length} Geräte importiert` });
     setAiImportOpen(false);
     setAiImportResult(null);
     fetchData();

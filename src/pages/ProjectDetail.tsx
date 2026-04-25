@@ -55,9 +55,9 @@ const titleMap: Record<DocumentType, string> = {
 // Tab-Konfiguration pro Typ
 const tabConfig: Record<DocumentType, { key: string; label: string; subType?: string }[]> = {
   plans: [
-    { key: "plaene", label: "Aktuelle Plaene", subType: "plan" },
+    { key: "plaene", label: "Aktuelle Pläne", subType: "plan" },
     { key: "protokolle", label: "Besprechungsprotokolle", subType: "besprechungsprotokoll" },
-    { key: "auftraege", label: "Auftraege", subType: "auftrag" },
+    { key: "auftraege", label: "Aufträge", subType: "auftrag" },
     { key: "archiv", label: "Archiv" },
   ],
   photos: [
@@ -491,7 +491,7 @@ const ProjectDetail = () => {
       a.click();
       URL.revokeObjectURL(a.href);
       toast({
-        title: "Teilen nicht unterstuetzt",
+        title: "Teilen nicht unterstützt",
         description: `ZIP mit ${selected.length} Dateien heruntergeladen — du kannst es manuell weitergeben.`,
       });
     } catch (err: any) {
@@ -593,7 +593,7 @@ const ProjectDetail = () => {
     });
   };
 
-  if (!type) return <div>Ungueltiger Dokumenttyp</div>;
+  if (!type) return <div>Ungültiger Dokumenttyp</div>;
   if (loading) return <div className="min-h-screen flex items-center justify-center"><p>Lädt...</p></div>;
 
   const filteredFiles = getFilteredFiles()
@@ -764,7 +764,7 @@ const ProjectDetail = () => {
                           className="text-xs text-muted-foreground hover:text-foreground"
                           onClick={() => setSortOrder(prev => prev === "desc" ? "asc" : "desc")}
                         >
-                          {sortOrder === "desc" ? "Neueste zuerst" : "Aelteste zuerst"}
+                          {sortOrder === "desc" ? "Neueste zuerst" : "Älteste zuerst"}
                         </button>
                       </div>
                     </div>

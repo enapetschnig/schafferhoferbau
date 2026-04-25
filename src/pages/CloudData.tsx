@@ -19,7 +19,7 @@ export default function CloudData() {
     // Storage Buckets pruefen
     const buckets = [
       { bucket: "project-photos", label: "Projekt-Fotos", icon: <Image className="h-5 w-5 text-blue-500" /> },
-      { bucket: "project-plans", label: "Plaene & Auftraege", icon: <FileText className="h-5 w-5 text-green-500" /> },
+      { bucket: "project-plans", label: "Pläne & Aufträge", icon: <FileText className="h-5 w-5 text-green-500" /> },
       { bucket: "project-reports", label: "Regieberichte", icon: <FileText className="h-5 w-5 text-orange-500" /> },
       { bucket: "project-chef", label: "Chefordner", icon: <FolderOpen className="h-5 w-5 text-red-500" /> },
       { bucket: "project-polier", label: "Polierordner", icon: <FolderOpen className="h-5 w-5 text-amber-500" /> },
@@ -57,14 +57,14 @@ export default function CloudData() {
       { name: "projects", label: "Projekte", icon: <FolderOpen className="h-4 w-4" /> },
       { name: "profiles", label: "Benutzer", icon: <Users className="h-4 w-4" /> },
       { name: "employees", label: "Mitarbeiter", icon: <Users className="h-4 w-4" /> },
-      { name: "time_entries", label: "Stundeneintraege", icon: <Clock className="h-4 w-4" /> },
+      { name: "time_entries", label: "Stundeneinträge", icon: <Clock className="h-4 w-4" /> },
       { name: "daily_reports", label: "Berichte", icon: <FileText className="h-4 w-4" /> },
       { name: "worker_assignments", label: "Plantafel-Zuweisungen", icon: <Clock className="h-4 w-4" /> },
       { name: "project_contacts", label: "Projektkontakte", icon: <Users className="h-4 w-4" /> },
       { name: "project_messages", label: "Chat-Nachrichten", icon: <FileText className="h-4 w-4" /> },
       { name: "incoming_documents", label: "Eingangsrechnungen", icon: <FileText className="h-4 w-4" /> },
       { name: "bestellungen", label: "Bestellungen", icon: <Package className="h-4 w-4" /> },
-      { name: "equipment", label: "Geraete", icon: <Shield className="h-4 w-4" /> },
+      { name: "equipment", label: "Geräte", icon: <Shield className="h-4 w-4" /> },
       { name: "notifications", label: "Benachrichtigungen", icon: <FileText className="h-4 w-4" /> },
     ];
 
@@ -106,7 +106,7 @@ export default function CloudData() {
                   <Database className="h-8 w-8 text-green-500" />
                   <div>
                     <p className="text-2xl font-bold">{totalRecords.toLocaleString()}</p>
-                    <p className="text-sm text-muted-foreground">Datenbankeintraege</p>
+                    <p className="text-sm text-muted-foreground">Datenbankeinträge</p>
                   </div>
                 </CardContent>
               </Card>
@@ -165,7 +165,7 @@ export default function CloudData() {
 
             <p className="text-xs text-muted-foreground text-center mt-6">
               Alle Daten werden in der Supabase Cloud (EU-Server) gespeichert.
-              Fuer Fragen zur Datenspeicherung wenden Sie sich an den Administrator.
+              Für Fragen zur Datenspeicherung wenden Sie sich an den Administrator.
             </p>
           </>
         )}

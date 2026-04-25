@@ -297,7 +297,7 @@ export function PayslipBulkUploadDialog({ open, onOpenChange }: Props) {
       });
       if (duplicateNames.length > 0) {
         toast({
-          title: "Duplikate uebersprungen",
+          title: "Duplikate übersprungen",
           description: `${duplicateNames.length} doppelte Zuordnung(en): ${duplicateNames.join(", ")}`,
         });
       }
@@ -488,7 +488,7 @@ export function PayslipBulkUploadDialog({ open, onOpenChange }: Props) {
               {/* Globaler Datum-Override: setzt Freigabedatum fuer alle Zeilen */}
               <div className="flex items-center gap-2 p-2 rounded-md border bg-muted/30">
                 <Calendar className="h-4 w-4 text-muted-foreground shrink-0" />
-                <span className="text-xs text-muted-foreground">Freigabedatum fuer alle:</span>
+                <span className="text-xs text-muted-foreground">Freigabedatum für alle:</span>
                 <Input
                   type="date"
                   value={releaseDate}
@@ -558,7 +558,7 @@ export function PayslipBulkUploadDialog({ open, onOpenChange }: Props) {
                           value={a.release_date}
                           onChange={(e) => updateAssignmentReleaseDate(i, e.target.value)}
                           className="h-8 text-xs w-36"
-                          title="Freigabedatum fuer diesen Mitarbeiter"
+                          title="Freigabedatum für diesen Mitarbeiter"
                         />
                       </div>
                     </div>

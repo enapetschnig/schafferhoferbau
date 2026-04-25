@@ -886,7 +886,7 @@ export function YearPlanningView({
         <DialogFooter className="flex justify-between">
           {editingBlock && (
             <Button variant="destructive" size="sm" onClick={() => { handleDeleteBlock(editingBlock.id); setShowBlockDialog(false); }}>
-              <Trash2 className="h-3.5 w-3.5 mr-1" /> Loeschen
+              <Trash2 className="h-3.5 w-3.5 mr-1" /> Löschen
             </Button>
           )}
           <Button size="sm" onClick={handleSaveBlock} disabled={!blockForm.title.trim()}>

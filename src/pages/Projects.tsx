@@ -373,7 +373,7 @@ const Projects = () => {
       toast({
         variant: "destructive",
         title: "ZIP-Download erforderlich",
-        description: "Bitte zuerst das Projekt als ZIP herunterladen, bevor es geloescht werden kann.",
+        description: "Bitte zuerst das Projekt als ZIP herunterladen, bevor es gelöscht werden kann.",
       });
       return;
     }

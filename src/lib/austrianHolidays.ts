@@ -56,7 +56,7 @@ export function getAustrianHolidays(year: number): Holiday[] {
 
   return [
     { datum: `${year}-01-01`, bezeichnung: "Neujahr" },
-    { datum: `${year}-01-06`, bezeichnung: "Heilige Drei Koenige" },
+    { datum: `${year}-01-06`, bezeichnung: "Heilige Drei Könige" },
     { datum: formatDate(osterMontag), bezeichnung: "Ostermontag" },
     { datum: `${year}-05-01`, bezeichnung: "Staatsfeiertag" },
     { datum: formatDate(christiHimmelfahrt), bezeichnung: "Christi Himmelfahrt" },
@@ -65,7 +65,7 @@ export function getAustrianHolidays(year: number): Holiday[] {
     { datum: `${year}-08-15`, bezeichnung: "Maria Himmelfahrt" },
     { datum: `${year}-10-26`, bezeichnung: "Nationalfeiertag" },
     { datum: `${year}-11-01`, bezeichnung: "Allerheiligen" },
-    { datum: `${year}-12-08`, bezeichnung: "Maria Empfaengnis" },
+    { datum: `${year}-12-08`, bezeichnung: "Maria Empfängnis" },
     { datum: `${year}-12-25`, bezeichnung: "Christtag" },
     { datum: `${year}-12-26`, bezeichnung: "Stefanitag" },
   ];

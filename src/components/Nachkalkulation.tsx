@@ -140,7 +140,7 @@ export function Nachkalkulation({ projectId }: Props) {
       </CardHeader>
       <CardContent>
         {loading ? <p className="text-sm text-muted-foreground">Lade...</p> : positionen.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-4">Noch keine Positionen. Excel importieren oder manuell hinzufuegen.</p>
+          <p className="text-sm text-muted-foreground text-center py-4">Noch keine Positionen. Excel importieren oder manuell hinzufügen.</p>
         ) : (
           <div className="overflow-x-auto">
             <Table>

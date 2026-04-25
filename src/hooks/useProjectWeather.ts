@@ -89,7 +89,7 @@ export function useProjectWeather(location: string | null | undefined, date: str
         // Vorsicht: `!d.temperature_2m_min?.[0] == null` wuerde wegen Operator-
         // Praezedenz immer `false` ergeben. Richtig: direkt nullish-check.
         if (!d || d.temperature_2m_min?.[0] == null) {
-          throw new Error("Keine Wetterdaten fuer dieses Datum");
+          throw new Error("Keine Wetterdaten für dieses Datum");
         }
 
         const min = Math.round(d.temperature_2m_min[0]);

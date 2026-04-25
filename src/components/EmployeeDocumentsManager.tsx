@@ -27,7 +27,7 @@ const documentTypes = [
   { id: "krankmeldung" as DocumentType, label: "Krankmeldungen", icon: FileX },
 ];
 
-const MONTH_NAMES = ["Jaenner","Februar","Maerz","April","Mai","Juni","Juli","August","September","Oktober","November","Dezember"];
+const MONTH_NAMES = ["Jänner","Februar","März","April","Mai","Juni","Juli","August","September","Oktober","November","Dezember"];
 
 export default function EmployeeDocumentsManager({ employeeId, userId }: Props) {
   const [freigabeTag, setFreigabeTag] = useState(10);
@@ -159,8 +159,8 @@ export default function EmployeeDocumentsManager({ employeeId, userId }: Props) 
         await supabase.from("notifications").insert({
           user_id: targetUserId,
           type: "lohnzettel_upload",
-          title: "Neuer Lohnzettel verfuegbar",
-          message: `Ein neuer Lohnzettel wurde fuer Sie hochgeladen (sichtbar ab ${freigabeTag}. ${MONTH_NAMES[freigabeMonat - 1]}).`,
+          title: "Neuer Lohnzettel verfügbar",
+          message: `Ein neuer Lohnzettel wurde für Sie hochgeladen (sichtbar ab ${freigabeTag}. ${MONTH_NAMES[freigabeMonat - 1]}).`,
           metadata: { file_name: files[0].name, count: files.length },
         });
       }

@@ -298,7 +298,7 @@ export default function DocumentLibrary() {
       <Dialog open={showLinkDialog} onOpenChange={setShowLinkDialog}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Link hinzufuegen</DialogTitle>
+            <DialogTitle>Link hinzufügen</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div>

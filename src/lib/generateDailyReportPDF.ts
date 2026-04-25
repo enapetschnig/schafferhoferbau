@@ -27,12 +27,12 @@ export interface PhotoForPDF {
 }
 
 const WETTER_LABELS_PDF: Record<string, string> = {
-  sonnig: "Sonnig", bewoelkt: "Bewolkt", regen: "Regen",
+  sonnig: "Sonnig", bewoelkt: "Bewölkt", regen: "Regen",
   schnee: "Schnee", wind: "Wind", frost: "Frost",
 };
 
 const GESCHOSS_LABELS: Record<string, string> = {
-  aussen: "Aussen", keller: "Keller", eg: "EG", og: "OG", dg: "DG",
+  aussen: "Außen", keller: "Keller", eg: "EG", og: "OG", dg: "DG",
 };
 
 function formatDate(dateStr: string): string {
@@ -138,7 +138,7 @@ export async function generateDailyReportPDF(
     checkPageBreak(20);
     doc.setFontSize(12);
     doc.setFont("helvetica", "bold");
-    doc.text("Taetigkeiten", margin, y);
+    doc.text("Tätigkeiten", margin, y);
     y += 7;
 
     // Group by geschoss
@@ -251,7 +251,7 @@ export async function generateDailyReportPDF(
       y += 2;
       doc.setFont("helvetica", "bold");
       doc.setTextColor(0, 128, 0);
-      doc.text("Sicherheitscheckliste vollstaendig bestaetigt", margin, y);
+      doc.text("Sicherheitscheckliste vollständig bestätigt", margin, y);
       doc.setTextColor(0, 0, 0);
       y += 8;
     } else {

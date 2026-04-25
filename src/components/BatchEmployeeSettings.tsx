@@ -59,11 +59,11 @@ export function BatchEmployeeSettings({ employees, onSaved }: Props) {
 
   const apply = async () => {
     if (selected.size === 0) {
-      toast({ variant: "destructive", title: "Niemand ausgewaehlt" });
+      toast({ variant: "destructive", title: "Niemand ausgewählt" });
       return;
     }
     if (!applyRegelarbeitszeit && !applySchwellenwert) {
-      toast({ variant: "destructive", title: "Nichts zu aendern" });
+      toast({ variant: "destructive", title: "Nichts zu ändern" });
       return;
     }
     setSaving(true);
@@ -104,9 +104,9 @@ export function BatchEmployeeSettings({ employees, onSaved }: Props) {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Batch-Einstellungen fuer Mitarbeiter</DialogTitle>
+            <DialogTitle>Batch-Einstellungen für Mitarbeiter</DialogTitle>
             <DialogDescription>
-              Setze Regelarbeitszeit und/oder Schwellenwert fuer mehrere Mitarbeiter gleichzeitig.
+              Setze Regelarbeitszeit und/oder Schwellenwert für mehrere Mitarbeiter gleichzeitig.
             </DialogDescription>
           </DialogHeader>
 
@@ -116,7 +116,7 @@ export function BatchEmployeeSettings({ employees, onSaved }: Props) {
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between flex-wrap gap-2">
                   <div>
-                    <CardTitle className="text-base">Mitarbeiter auswaehlen ({selected.size}/{employees.length})</CardTitle>
+                    <CardTitle className="text-base">Mitarbeiter auswählen ({selected.size}/{employees.length})</CardTitle>
                   </div>
                   <div className="flex gap-2 flex-wrap">
                     <Button size="sm" variant="outline" onClick={selectAll}>
@@ -220,7 +220,7 @@ export function BatchEmployeeSettings({ employees, onSaved }: Props) {
                   ))}
                 </div>
                 <p className="text-xs text-muted-foreground mt-2">
-                  Pro Tag: Beginn, Ende, Stunden. Leer lassen fuer arbeitsfreie Tage.
+                  Pro Tag: Beginn, Ende, Stunden. Leer lassen für arbeitsfreie Tage.
                 </p>
               </CardContent>
             </Card>
@@ -233,7 +233,7 @@ export function BatchEmployeeSettings({ employees, onSaved }: Props) {
                     checked={applySchwellenwert}
                     onCheckedChange={(v) => setApplySchwellenwert(!!v)}
                   />
-                  <CardTitle className="text-base">Schwellenwert (Tagesgrenze fuer Zeitausgleich)</CardTitle>
+                  <CardTitle className="text-base">Schwellenwert (Tagesgrenze für Zeitausgleich)</CardTitle>
                 </div>
               </CardHeader>
               <CardContent>

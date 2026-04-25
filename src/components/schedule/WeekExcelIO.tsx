@@ -193,13 +193,13 @@ export function WeekExcelIO({
       if (skips.length > 0) {
         toast({
           variant: "destructive",
-          title: `Import mit Warnungen (${upserts.length} uebernommen)`,
+          title: `Import mit Warnungen (${upserts.length} übernommen)`,
           description: skips.join(" · "),
         });
       } else {
         toast({
           title: `Import abgeschlossen`,
-          description: `${upserts.length} Zuordnungen fuer ${affectedUsers.size} Mitarbeiter uebernommen`,
+          description: `${upserts.length} Zuordnungen für ${affectedUsers.size} Mitarbeiter übernommen`,
         });
       }
       onImported();
@@ -228,7 +228,7 @@ export function WeekExcelIO({
         size="sm"
         onClick={() => fileRef.current?.click()}
         disabled={importing}
-        title="Aus Excel importieren (ueberschreibt Woche)"
+        title="Aus Excel importieren (überschreibt Woche)"
       >
         {importing ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Upload className="h-4 w-4 mr-1" />}
         Import

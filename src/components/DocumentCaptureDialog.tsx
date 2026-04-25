@@ -432,7 +432,7 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
       return;
     }
 
-    toast({ title: "Gespeichert", description: "Dokument erfasst - Sie koennen direkt das nächste aufnehmen" });
+    toast({ title: "Gespeichert", description: "Dokument erfasst - Sie können direkt das nächste aufnehmen" });
     onSuccess?.();
     // Zurueck zum Foto-Schritt fuer nächstes Dokument (Dialog bleibt offen)
     resetForm();

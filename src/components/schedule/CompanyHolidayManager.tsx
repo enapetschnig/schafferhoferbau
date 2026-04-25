@@ -102,7 +102,7 @@ export function CompanyHolidayManager({ holidays, onUpdate, userId }: Props) {
     }
 
     onUpdate();
-    toast({ title: `${feiertage.length} Feiertage fuer ${year} importiert` });
+    toast({ title: `${feiertage.length} Feiertage für ${year} importiert` });
   };
 
   const sorted = [...holidays].sort(

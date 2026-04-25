@@ -1252,12 +1252,12 @@ export default function Admin() {
               </div>
               <Separator />
               <div className="space-y-3">
-                <h4 className="font-medium">Sichtbarkeit fuer Mitarbeiter</h4>
+                <h4 className="font-medium">Sichtbarkeit für Mitarbeiter</h4>
                 <p className="text-sm text-muted-foreground">
-                  Steuert welche Bereiche alle Mitarbeiter in der App sehen koennen.
+                  Steuert welche Bereiche alle Mitarbeiter in der App sehen können.
                 </p>
                 {[
-                  { checked: showUeberstunden, setter: setShowUeberstunden, label: "Ueberstunden / Zeitausgleichsstunden anzeigen" },
+                  { checked: showUeberstunden, setter: setShowUeberstunden, label: "Überstunden / Zeitausgleichsstunden anzeigen" },
                   { checked: showKilometergeld, setter: setShowKilometergeld, label: "Kilometergeld anzeigen" },
                   { checked: showZusatzaufwendungen, setter: setShowZusatzaufwendungen, label: "Zusatzaufwendungen anzeigen" },
                 ].map(({ checked, setter, label }) => (
@@ -1651,7 +1651,7 @@ export default function Admin() {
                             <div>
                               <Label className="text-sm font-medium">14-Tage-Zyklus (Woche A / Woche B)</Label>
                               <p className="text-xs text-muted-foreground mt-1">
-                                Fuer Lehrlinge mit wechselndem Kurz-/Langwochenrhythmus.
+                                Für Lehrlinge mit wechselndem Kurz-/Langwochenrhythmus.
                               </p>
                             </div>
                             <input
@@ -1750,13 +1750,13 @@ export default function Admin() {
                   <Separator />
 
                   <div>
-                    <h3 className="text-lg font-semibold mb-3">Sichtbarkeit fuer Mitarbeiter</h3>
+                    <h3 className="text-lg font-semibold mb-3">Sichtbarkeit für Mitarbeiter</h3>
                     <p className="text-sm text-muted-foreground mb-3">
                       Steuert welche Bereiche der Mitarbeiter in &quot;Meine Stunden&quot; sehen kann.
                     </p>
                     <div className="space-y-3">
                       {[
-                        { key: "auswertung", label: "Auswertung (Stundenueberblick)" },
+                        { key: "auswertung", label: "Auswertung (Stundenüberblick)" },
                         { key: "zusatzaufwendungen", label: "Zusatzaufwendungen" },
                         { key: "fahrtengeld", label: "Fahrtengeld" },
                       ].map(({ key, label }) => {
@@ -1785,11 +1785,11 @@ export default function Admin() {
                     <h3 className="text-lg font-semibold mb-3">Urlaubskonto</h3>
                     <p className="text-sm text-muted-foreground mb-3">
                       Die Basisdaten werden normalerweise automatisch aus dem neuesten Lohnzettel extrahiert.
-                      Hier kannst du Einheit und Werte pro Mitarbeiter ueberschreiben.
+                      Hier kannst du Einheit und Werte pro Mitarbeiter überschreiben.
                     </p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
-                        <Label>Gefuehrte Einheit</Label>
+                        <Label>Geführte Einheit</Label>
                         <select
                           className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                           value={formData.urlaub_einheit_preferred || ""}

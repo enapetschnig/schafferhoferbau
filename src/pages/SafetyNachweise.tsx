@@ -190,14 +190,14 @@ export default function SafetyNachweise() {
       doc.text(labelLines, 50, y);
       y += labelLines.length * 5;
       const kindLabel = r.kind === "unterweisung"
-        ? (r.modul === "jahresunterweisung" ? "Jahresunterweisung" : r.modul === "geraeteunterweisung" ? "Geraeteunterweisung" : "Baustellenunterweisung")
+        ? (r.modul === "jahresunterweisung" ? "Jahresunterweisung" : r.modul === "geraeteunterweisung" ? "Geräteunterweisung" : "Baustellenunterweisung")
         : "Schulung";
       doc.setFontSize(8);
       doc.setTextColor(120);
       doc.text(kindLabel, 50, y);
       y += 4;
       if (r.datum) { doc.text(`Erfasst: ${format(parseISO(r.datum), "dd.MM.yyyy", { locale: de })}`, 50, y); y += 4; }
-      if (r.bis) { doc.text(`Gueltig bis: ${format(parseISO(r.bis), "dd.MM.yyyy", { locale: de })}`, 50, y); y += 4; }
+      if (r.bis) { doc.text(`Gültig bis: ${format(parseISO(r.bis), "dd.MM.yyyy", { locale: de })}`, 50, y); y += 4; }
       doc.setTextColor(0);
       y += 3;
     };
@@ -210,7 +210,7 @@ export default function SafetyNachweise() {
       doc.setFontSize(12);
       doc.setFont("helvetica", "bold");
       doc.setTextColor(34, 139, 34);
-      doc.text("Gueltige Nachweise", 20, y);
+      doc.text("Gültige Nachweise", 20, y);
       y += 5;
       doc.setTextColor(0);
       for (const r of ok) writeRow(r);

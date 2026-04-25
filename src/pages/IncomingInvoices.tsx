@@ -700,7 +700,7 @@ export default function IncomingInvoices() {
       if (data?.matches) {
         setAiMatchResult(data as AIMatchResult);
       } else {
-        toast({ variant: "destructive", title: "Fehler", description: "KI-Antwort ungueltig" });
+        toast({ variant: "destructive", title: "Fehler", description: "KI-Antwort ungültig" });
       }
     } catch (err: any) {
       toast({ variant: "destructive", title: "KI-Abgleich fehlgeschlagen", description: err.message });

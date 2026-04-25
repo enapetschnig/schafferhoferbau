@@ -28,7 +28,7 @@ export function MonthlySignoff({ year, month, totalHours, lohnstunden, zaStunden
   const [saving, setSaving] = useState(false);
 
   const monthNames = [
-    "Jaenner", "Februar", "Maerz", "April", "Mai", "Juni",
+    "Jänner", "Februar", "März", "April", "Mai", "Juni",
     "Juli", "August", "September", "Oktober", "November", "Dezember",
   ];
 
@@ -76,7 +76,7 @@ export function MonthlySignoff({ year, month, totalHours, lohnstunden, zaStunden
     if (error) {
       toast({ variant: "destructive", title: "Fehler", description: error.message });
     } else {
-      toast({ title: "Monatsabschluss bestaetigt" });
+      toast({ title: "Monatsabschluss bestätigt" });
       setShowDialog(false);
       fetchSignoff();
     }
@@ -98,17 +98,17 @@ export function MonthlySignoff({ year, month, totalHours, lohnstunden, zaStunden
         {isSigned ? (
           <Badge variant="default" className="bg-green-600 cursor-pointer" onClick={() => setShowDialog(true)}>
             <CheckCircle2 className="h-3 w-3 mr-1" />
-            Bestaetigt am {new Date(signoff!.signed_at).toLocaleDateString("de-AT")}
+            Bestätigt am {new Date(signoff!.signed_at).toLocaleDateString("de-AT")}
           </Badge>
         ) : isInvalidated ? (
           <Button variant="destructive" size="sm" onClick={() => setShowDialog(true)}>
             <AlertTriangle className="h-4 w-4 mr-1" />
-            Erneut bestaetigen (Admin-Aenderung)
+            Erneut bestätigen (Admin-Änderung)
           </Button>
         ) : (
           <Button variant="outline" size="sm" onClick={() => setShowDialog(true)}>
             <FileSignature className="h-4 w-4 mr-1" />
-            Monat abschliessen
+            Monat abschließen
           </Button>
         )}
       </div>
@@ -136,7 +136,7 @@ export function MonthlySignoff({ year, month, totalHours, lohnstunden, zaStunden
             </div>
 
             <p className="text-sm text-muted-foreground">
-              Ich bestatige, dass die oben aufgefuehrten Stunden korrekt sind.
+              Ich bestätige, dass die oben aufgeführten Stunden korrekt sind.
             </p>
 
             <div>
@@ -149,7 +149,7 @@ export function MonthlySignoff({ year, month, totalHours, lohnstunden, zaStunden
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setShowDialog(false)}>Abbrechen</Button>
               <Button onClick={handleSign} disabled={saving || !signature}>
-                {saving ? "Wird gespeichert..." : "Bestaetigen & Unterschreiben"}
+                {saving ? "Wird gespeichert..." : "Bestätigen & Unterschreiben"}
               </Button>
             </div>
           </div>

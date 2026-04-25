@@ -31,6 +31,7 @@ import {
 import { FillRemainingHoursDialog } from "@/components/FillRemainingHoursDialog";
 import { MultiEmployeeSelect } from "@/components/MultiEmployeeSelect";
 import { VoiceAIInput } from "@/components/VoiceAIInput";
+import { useAppSettings } from "@/hooks/useAppSettings";
 
 type Project = {
   id: string;
@@ -112,12 +113,38 @@ const TimeTracking = () => {
   const [existingDayEntries, setExistingDayEntries] = useState<ExistingEntry[]>([]);
   const [loadingDayEntries, setLoadingDayEntries] = useState(false);
   
+  const appSettings = useAppSettings();
+
+  // Liste aller MA mit Login (fuer Fahrtengeld-Zuweisung durch Admin/Vorarbeiter)
+  const [allEmployees, setAllEmployees] = useState<{ user_id: string; vorname: string; nachname: string }[]>([]);
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase
+        .from("employees")
+        .select("user_id, vorname, nachname, is_external, kategorie")
+        .not("user_id", "is", null)
+        .order("nachname");
+      if (data) {
+        setAllEmployees(
+          data
+            .filter((e: any) => !e.is_external && e.kategorie !== "extern")
+            .map((e: any) => ({
+              user_id: e.user_id!,
+              vorname: e.vorname || "",
+              nachname: e.nachname || "",
+            }))
+        );
+      }
+    })();
+  }, []);
+
   const [showAbsenceDialog, setShowAbsenceDialog] = useState(false);
   const [showFahrtenDialog, setShowFahrtenDialog] = useState(false);
   const [savingFahrtengeld, setSavingFahrtengeld] = useState(false);
   const [fahrtenData, setFahrtenData] = useState({
     kilometer: "",
     strecke: "",
+    fuerUserId: "" as string, // welcher MA bekommt den Fahrtengeld-Eintrag
   });
   const [showFillDialog, setShowFillDialog] = useState(false);
   const [showBadWeatherDialog, setShowBadWeatherDialog] = useState(false);
@@ -155,11 +182,57 @@ const TimeTracking = () => {
   });
 
   // Datum im Abwesenheits-Dialog auf selectedDate setzen wenn Dialog geöffnet wird
+  // + Beginn/Ende aus Regelarbeitszeit vorfüllen wenn isFullDay=false
   useEffect(() => {
-    if (showAbsenceDialog) {
-      setAbsenceData(prev => ({ ...prev, date: selectedDate }));
-    }
-  }, [showAbsenceDialog, selectedDate]);
+    if (!showAbsenceDialog) return;
+    const DAY_KEYS = ["so", "mo", "di", "mi", "do", "fr", "sa"] as const;
+    const dayKey = DAY_KEYS[new Date(selectedDate).getDay()];
+    const sched = (employeeSchedule as any)?.[dayKey];
+    setAbsenceData(prev => ({
+      ...prev,
+      date: selectedDate,
+      absenceStartTime: sched?.start || prev.absenceStartTime || "07:00",
+      absenceEndTime: sched?.end || prev.absenceEndTime || "16:00",
+      absencePauseMinutes: sched?.pause != null ? String(sched.pause) : (prev.absencePauseMinutes || "30"),
+    }));
+  }, [showAbsenceDialog, selectedDate, employeeSchedule]);
+
+  // Schlechtwetter-Dialog: Projekt + Beginn/Ende vorfüllen (Plantafel + Regelarbeitszeit)
+  useEffect(() => {
+    if (!showBadWeatherDialog) return;
+    (async () => {
+      const DAY_KEYS = ["so", "mo", "di", "mi", "do", "fr", "sa"] as const;
+      const dayKey = DAY_KEYS[new Date(selectedDate).getDay()];
+      const sched = (employeeSchedule as any)?.[dayKey];
+
+      const { data: { user } } = await supabase.auth.getUser();
+      const userId2 = targetUserId || user?.id;
+      let autoProject = "";
+      let autoAddress = "";
+      if (userId2) {
+        const { data: assign } = await supabase
+          .from("worker_assignments")
+          .select("project_id, projects:project_id(adresse, plz)")
+          .eq("user_id", userId2)
+          .eq("datum", selectedDate)
+          .limit(1)
+          .maybeSingle();
+        if (assign?.project_id) {
+          autoProject = assign.project_id;
+          const proj: any = assign.projects;
+          autoAddress = [proj?.adresse, proj?.plz].filter(Boolean).join(", ");
+        }
+      }
+
+      setBadWeatherData(prev => ({
+        ...prev,
+        projectId: prev.projectId || autoProject,
+        projektAdresse: prev.projektAdresse || autoAddress,
+        beginn: sched?.start || prev.beginn || "08:00",
+        ende: sched?.end || prev.ende || "16:00",
+      }));
+    })();
+  }, [showBadWeatherDialog, selectedDate, employeeSchedule, targetUserId]);
   const [timeBlocks, setTimeBlocks] = useState<TimeBlock[]>([createDefaultBlock()]);
   const entryMode = "zeitraum" as const;
 
@@ -695,7 +768,7 @@ const TimeTracking = () => {
     const ABSENCE_LABELS: Record<string, string> = {
       urlaub: "Urlaub", krankenstand: "Krankenstand", weiterbildung: "Weiterbildung",
       feiertag: "Feiertag", za: "Zeitausgleich", arzttermin: "Arzttermin",
-      begraebnis: "Begraebnis", pflegeurlaub: "Pflegeurlaub", sonstige: "Sonstige",
+      begraebnis: "Begräbnis", pflegeurlaub: "Pflegeurlaub", sonstige: "Sonstige",
     };
     const absenceLabel = ABSENCE_LABELS[absenceData.type] || absenceData.type;
 
@@ -1068,8 +1141,14 @@ const TimeTracking = () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { setSavingFahrtengeld(false); return; }
 
+    // Ziel-User fuer den Fahrtengeld-Eintrag bestimmen:
+    // 1. Explizite Admin-Auswahl im Dialog
+    // 2. Falls Admin einen MA bearbeitet (?user_id=…)
+    // 3. Sonst: der angemeldete User
+    const fahrtenUserId = fahrtenData.fuerUserId || targetUserId || user.id;
+
     const { error } = await supabase.from("time_entries").insert({
-      user_id: targetUserId || user.id,
+      user_id: fahrtenUserId,
       datum: selectedDate,
       project_id: null,
       taetigkeit: "Fahrtengeld",
@@ -1088,7 +1167,7 @@ const TimeTracking = () => {
     } else {
       toast({ title: "Gespeichert", description: `Fahrtengeld ${km} km erfasst` });
       setShowFahrtenDialog(false);
-      setFahrtenData({ kilometer: "", strecke: "" });
+      setFahrtenData({ kilometer: "", strecke: "", fuerUserId: "" });
       fetchExistingDayEntries(selectedDate);
     }
     setSavingFahrtengeld(false);
@@ -1189,7 +1268,7 @@ const TimeTracking = () => {
                   date={selectedDate}
                   startTime={timeBlocks[0].startTime || "06:30"}
                   endTime={timeBlocks[timeBlocks.length - 1].endTime || "17:00"}
-                  label="Stunden auch fuer weitere Mitarbeiter erfassen"
+                  label="Stunden auch für weitere Mitarbeiter erfassen"
                 />
               )}
 
@@ -1203,10 +1282,16 @@ const TimeTracking = () => {
                   <span className="text-xs text-muted-foreground">
                     {(() => {
                       const s = employeeSchedule || DEFAULT_SCHEDULE;
-                      const workDays = Object.entries(s)
-                        .filter(([, d]) => d.hours > 0)
-                        .map(([key, d]) => `${key.charAt(0).toUpperCase() + key.slice(1)}: ${d.hours}h`);
-                      return workDays.join(", ");
+                      // Explizite Wochentag-Reihenfolge — JSONB aus der DB
+                      // liefert Keys alphabetisch (di, do, fr, mi, mo, ...), das waere hier falsch
+                      const ORDER = ["mo", "di", "mi", "do", "fr", "sa", "so"] as const;
+                      const LABELS: Record<string, string> = {
+                        mo: "Mo", di: "Di", mi: "Mi", do: "Do", fr: "Fr", sa: "Sa", so: "So",
+                      };
+                      return ORDER
+                        .filter((key) => (s as any)[key]?.hours > 0)
+                        .map((key) => `${LABELS[key]}: ${(s as any)[key].hours}h`)
+                        .join(", ");
                     })()}
                   </span>
                 </div>
@@ -1451,6 +1536,7 @@ const TimeTracking = () => {
                             <Label className="text-xs">Beginn</Label>
                             <Input
                               type="time"
+                              step={900}
                               value={block.startTime}
                               onChange={(e) => updateBlock(block.id, { startTime: e.target.value })}
                               required
@@ -1461,6 +1547,7 @@ const TimeTracking = () => {
                             <Label className="text-xs">Ende</Label>
                             <Input
                               type="time"
+                              step={900}
                               value={block.endTime}
                               onChange={(e) => updateBlock(block.id, { endTime: e.target.value })}
                               required
@@ -1473,6 +1560,7 @@ const TimeTracking = () => {
                             <Label className="text-xs">Pause von</Label>
                             <Input
                               type="time"
+                              step={900}
                               value={block.pauseStart}
                               onChange={(e) => updateBlock(block.id, { pauseStart: e.target.value })}
                               className="h-10"
@@ -1482,6 +1570,7 @@ const TimeTracking = () => {
                             <Label className="text-xs">Pause bis</Label>
                             <Input
                               type="time"
+                              step={900}
                               value={block.pauseEnd}
                               onChange={(e) => updateBlock(block.id, { pauseEnd: e.target.value })}
                               className="h-10"
@@ -1492,57 +1581,11 @@ const TimeTracking = () => {
                           <p className="text-xs text-muted-foreground">{calculateBlockPauseMinutes(block)} Min. Pause werden abgezogen</p>
                         )}
 
-                        {/* Zeittyp (Sonderzeiten) */}
-                        <div className="space-y-2">
-                          <Label className="text-xs">Zeittyp</Label>
-                          <Select
-                            value={block.zeitTyp}
-                            onValueChange={(value) => updateBlock(block.id, { zeitTyp: value as TimeBlock["zeitTyp"] })}
-                          >
-                            <SelectTrigger className="h-10">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="normal">Normalzeit</SelectItem>
-                              <SelectItem value="lenkzeit">Lenkzeit</SelectItem>
-                              <SelectItem value="reisezeit">Reisezeit</SelectItem>
-                              <SelectItem value="fahrt_100km">Fahrt &gt;100km</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
                           </>
                         )}
-
-                        {/* Kilometer */}
-                        <div className="grid grid-cols-2 gap-2">
-                          <div className="space-y-1">
-                            <Label className="text-xs">Kilometer</Label>
-                            <Input
-                              type="number"
-                              min="0"
-                              step="1"
-                              value={block.kilometer}
-                              onChange={(e) => updateBlock(block.id, { kilometer: e.target.value })}
-                              placeholder="0"
-                              className="h-10"
-                            />
-                          </div>
-                          <div className="space-y-1">
-                            <Label className="text-xs">Strecke</Label>
-                            <Input
-                              value={block.kmBeschreibung}
-                              onChange={(e) => updateBlock(block.id, { kmBeschreibung: e.target.value })}
-                              placeholder="z.B. Graz → Baustelle"
-                              className="h-10"
-                            />
-                          </div>
-                        </div>
-                        {block.kilometer && parseFloat(block.kilometer) > 0 && (
-                          <p className="text-xs text-muted-foreground">
-                            Kilometergeld: € {calculateKilometergeld(parseFloat(block.kilometer)).toFixed(2)}
-                          </p>
-                        )}
-
+                        {/* Zeittyp / Kilometer / Strecke wurden aus dem Stundenerfassungs-
+                            Formular entfernt. Fahrtengeld wird ausschliesslich ueber den
+                            eigenen "Fahrtengeld"-Dialog oben rechts erfasst. */}
 
                         {/* Regelarbeitszeit button - not for external */}
                         {!isExternalUser && (
@@ -1683,7 +1726,7 @@ const TimeTracking = () => {
                     { value: "weiterbildung", label: "Weiterbild.", short: "WB" },
                     { value: "feiertag", label: "Feiertag", short: "F" },
                     { value: "arzttermin", label: "Arzttermin", short: "A" },
-                    { value: "begraebnis", label: "Begraebnis", short: "BEG" },
+                    { value: "begraebnis", label: "Begräbnis", short: "BEG" },
                     { value: "pflegeurlaub", label: "Pflegeurlaub", short: "PF" },
                     { value: "sonstige", label: "Sonstige", short: "SO" },
                   ].map(({ value, label, short }) => (
@@ -1797,6 +1840,7 @@ const TimeTracking = () => {
                       <Label>Von</Label>
                       <Input
                         type="time"
+                        step={900}
                         value={absenceData.absenceStartTime}
                         onChange={(e) => setAbsenceData({ ...absenceData, absenceStartTime: e.target.value })}
                       />
@@ -1805,6 +1849,7 @@ const TimeTracking = () => {
                       <Label>Bis</Label>
                       <Input
                         type="time"
+                        step={900}
                         value={absenceData.absenceEndTime}
                         onChange={(e) => setAbsenceData({ ...absenceData, absenceEndTime: e.target.value })}
                       />
@@ -1956,6 +2001,7 @@ const TimeTracking = () => {
                   <Label>Beginn Schlechtwetter *</Label>
                   <Input
                     type="time"
+                    step={900}
                     value={badWeatherData.beginn}
                     onChange={(e) => setBadWeatherData({ ...badWeatherData, beginn: e.target.value })}
                   />
@@ -1964,6 +2010,7 @@ const TimeTracking = () => {
                   <Label>Ende Schlechtwetter *</Label>
                   <Input
                     type="time"
+                    step={900}
                     value={badWeatherData.ende}
                     onChange={(e) => setBadWeatherData({ ...badWeatherData, ende: e.target.value })}
                   />
@@ -2032,7 +2079,7 @@ const TimeTracking = () => {
               </div>
 
               <div className="flex items-center justify-between p-3 rounded-lg border">
-                <Label>Wurde waehrend Schlechtwetter gearbeitet?</Label>
+                <Label>Wurde während Schlechtwetter gearbeitet?</Label>
                 <Switch
                   checked={badWeatherData.gearbeitetWaehrendSW}
                   onCheckedChange={(checked) => setBadWeatherData({ ...badWeatherData, gearbeitetWaehrendSW: checked })}
@@ -2041,7 +2088,7 @@ const TimeTracking = () => {
 
               {badWeatherData.gearbeitetWaehrendSW && (
                 <div>
-                  <Label>Arbeitsstunden waehrend Schlechtwetter (zaehlen als Zeitausgleich)</Label>
+                  <Label>Arbeitsstunden während Schlechtwetter (zählen als Zeitausgleich)</Label>
                   <Input
                     type="number"
                     min="0"
@@ -2089,10 +2136,31 @@ const TimeTracking = () => {
                 Fahrtengeld erfassen
               </DialogTitle>
               <DialogDescription>
-                Fahrtengeld fuer {selectedDate ? format(new Date(selectedDate), "dd.MM.yyyy") : "heute"}
+                Fahrtengeld für {selectedDate ? format(new Date(selectedDate), "dd.MM.yyyy") : "heute"}
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
+              {(isAdmin || allEmployees.length > 1) && (
+                <div>
+                  <Label>Für Mitarbeiter</Label>
+                  <Select
+                    value={fahrtenData.fuerUserId || "__self__"}
+                    onValueChange={(v) => setFahrtenData({ ...fahrtenData, fuerUserId: v === "__self__" ? "" : v })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__self__">Mich selbst</SelectItem>
+                      {allEmployees.map((e) => (
+                        <SelectItem key={e.user_id} value={e.user_id}>
+                          {e.vorname} {e.nachname}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <div>
                 <Label>Kilometer *</Label>
                 <Input
@@ -2105,19 +2173,20 @@ const TimeTracking = () => {
                 />
                 {fahrtenData.kilometer && parseFloat(fahrtenData.kilometer) > 0 && (
                   <p className="text-xs text-muted-foreground mt-1">
-                    = {"\u20AC"} {(parseFloat(fahrtenData.kilometer) * 0.42).toFixed(2)}
+                    = {"\u20AC"} {(parseFloat(fahrtenData.kilometer) * appSettings.kilometergeldRate).toFixed(2)} <span className="opacity-70">({appSettings.kilometergeldRate.toFixed(2)} {"€"}/km)</span>
                     {parseFloat(fahrtenData.kilometer) >= 100 && (
-                      <Badge variant="secondary" className="ml-2 text-xs">Ueber 100km</Badge>
+                      <Badge variant="secondary" className="ml-2 text-xs">Über 100km</Badge>
                     )}
                   </p>
                 )}
               </div>
               <div>
                 <Label>Strecke</Label>
-                <Input
+                <VoiceAIInput
+                  context="fahrtengeld"
                   value={fahrtenData.strecke}
-                  onChange={(e) => setFahrtenData({ ...fahrtenData, strecke: e.target.value })}
-                  placeholder="z.B. Graz - Leibnitz - Graz"
+                  onChange={(v) => setFahrtenData({ ...fahrtenData, strecke: v })}
+                  placeholder="z.B. Graz – Leibnitz – Graz"
                 />
               </div>
               <div className="flex justify-end gap-2">

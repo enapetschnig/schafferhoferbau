@@ -236,7 +236,7 @@ export default function DailyReports() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="alle">Alle Geschosse</SelectItem>
-              <SelectItem value="aussen">Aussen</SelectItem>
+              <SelectItem value="aussen">Außen</SelectItem>
               <SelectItem value="keller">Keller</SelectItem>
               <SelectItem value="eg">EG</SelectItem>
               <SelectItem value="og">OG</SelectItem>

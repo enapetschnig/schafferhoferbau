@@ -609,7 +609,7 @@ const MyHours = () => {
                         <TableHead>Abwesenheit</TableHead>
                         {appSettings.showKilometergeld && employeeSichtbarkeit.fahrtengeld && <TableHead className="text-right">km</TableHead>}
                         <TableHead>Projekt</TableHead>
-                        <TableHead>Taetigkeit</TableHead>
+                        <TableHead>Tätigkeit</TableHead>
                         <TableHead className="text-right">Aktionen</TableHead>
                       </TableRow>
                     )}

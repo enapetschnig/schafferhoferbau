@@ -1228,7 +1228,7 @@ export default function HoursReport() {
                   <Card className="mt-4">
                     <CardHeader className="py-3">
                       <CardTitle className="text-base">Zusatzaufwendungen</CardTitle>
-                      <CardDescription className="text-xs">Zusatzaufwendungen fuer diesen Monat (Berechnungen moeglich, z.B. 150 * 0.50)</CardDescription>
+                      <CardDescription className="text-xs">Zusatzaufwendungen für diesen Monat (Berechnungen möglich, z.B. 150 * 0.50)</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-3">
                       {reportExtras.length > 0 && (

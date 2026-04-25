@@ -48,6 +48,8 @@ export function WeeklyAssignmentWidget({ userId }: Props) {
   const row1Days = weekDays.slice(0, 4); // Mo-Do
   const row2Days = weekDays.slice(4, 7); // Fr-So
   const [todayTarget, setTodayTarget] = useState<string | null>(null);
+  const [userTagesziel, setUserTagesziel] = useState<string | null>(null);
+  const [userWochenziel, setUserWochenziel] = useState<string | null>(null);
 
   useEffect(() => {
     const fetch = async () => {
@@ -90,7 +92,7 @@ export function WeeklyAssignmentWidget({ userId }: Props) {
       if (holidayData) setHolidays(holidayData);
       if (leaveData) setLeaves(leaveData as LeaveDay[]);
 
-      // Fetch today's target
+      // Fetch today's target (Projekt-Tagesziel)
       const todayStr = format(new Date(), "yyyy-MM-dd");
       const todayAssign = assignData?.find((a: any) => a.datum === todayStr);
       if (todayAssign) {
@@ -102,6 +104,25 @@ export function WeeklyAssignmentWidget({ userId }: Props) {
           .maybeSingle();
         if (targetData?.tagesziel) setTodayTarget(targetData.tagesziel);
       }
+
+      // User-spezifisches Tages- und Wochenziel (worker_goals)
+      const weekStartStr = format(weekStart, "yyyy-MM-dd");
+      const [{ data: dayGoal }, { data: weekGoal }] = await Promise.all([
+        (supabase.from("worker_goals") as any)
+          .select("ziel")
+          .eq("user_id", userId)
+          .eq("scope", "day")
+          .eq("datum", todayStr)
+          .maybeSingle(),
+        (supabase.from("worker_goals") as any)
+          .select("ziel")
+          .eq("user_id", userId)
+          .eq("scope", "week")
+          .eq("week_start", weekStartStr)
+          .maybeSingle(),
+      ]);
+      setUserTagesziel((dayGoal as any)?.ziel || null);
+      setUserWochenziel((weekGoal as any)?.ziel || null);
 
       setLoading(false);
     };
@@ -175,11 +196,17 @@ export function WeeklyAssignmentWidget({ userId }: Props) {
             {row2Days.map((day) => renderDay(day))}
             <div /> {/* Leere 4. Spalte fuer Alignment */}
           </div>
-          {/* Tagesziel */}
-          {todayTarget && (
+          {/* User-Tagesziel hat Vorrang vor Projekt-Tagesziel */}
+          {(userTagesziel || todayTarget) && (
             <div className="pt-1 border-t mt-2">
               <p className="text-xs text-muted-foreground">Tagesziel:</p>
-              <p className="text-sm font-medium">{todayTarget}</p>
+              <p className="text-sm font-medium">{userTagesziel || todayTarget}</p>
+            </div>
+          )}
+          {userWochenziel && (
+            <div className="pt-1">
+              <p className="text-xs text-muted-foreground">Wochenziel:</p>
+              <p className="text-sm font-medium">{userWochenziel}</p>
             </div>
           )}
         </CardContent>

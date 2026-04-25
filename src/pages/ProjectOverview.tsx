@@ -743,7 +743,7 @@ const ProjectOverview = () => {
       };
 
       // === 3. Pläne und Aufträge ===
-      const planeFolder = root.folder("Plaene und Auftraege")!;
+      const planeFolder = root.folder("Pläne und Aufträge")!;
       {
         const { data: docs } = await supabase
           .from("documents")
@@ -753,9 +753,9 @@ const ProjectOverview = () => {
         const { data: storageList } = await supabase.storage.from("project-plans").list(projectId);
         const fileSet = new Set((storageList || []).map(f => f.name));
 
-        const aktuellePlaene = planeFolder.folder("Alle Plaene")!;
-        const alleAuftraege = planeFolder.folder("Alle Auftraege")!;
-        const archivPlaene = planeFolder.folder("Archivplaene")!;
+        const aktuellePlaene = planeFolder.folder("Alle Pläne")!;
+        const alleAuftraege = planeFolder.folder("Alle Aufträge")!;
+        const archivPlaene = planeFolder.folder("Archivpläne")!;
 
         for (const d of docs || []) {
           const target = d.archived
@@ -944,7 +944,7 @@ const ProjectOverview = () => {
         localStorage.setItem(`project_zip_downloaded_${projectId}`, new Date().toISOString());
       } catch { /* ignore */ }
 
-      toast({ title: "Download abgeschlossen", description: "Projekt kann nun geloescht werden." });
+      toast({ title: "Download abgeschlossen", description: "Projekt kann nun gelöscht werden." });
     } catch (err: any) {
       toast({ variant: "destructive", title: "Fehler beim ZIP-Download", description: err?.message });
     } finally {
@@ -1208,7 +1208,7 @@ const ProjectOverview = () => {
               <CardDescription>Nachrichten & Fotos mit dem Team austauschen</CardDescription>
             </CardHeader>
             <CardContent>
-              <Button variant="outline" className="w-full">Chat oeffnen</Button>
+              <Button variant="outline" className="w-full">Chat öffnen</Button>
             </CardContent>
           </Card>
 
@@ -1220,7 +1220,7 @@ const ProjectOverview = () => {
                   <div className="text-primary">{category.icon}</div>
                   <div className="text-2xl font-bold">{category.count}</div>
                 </div>
-                <CardTitle className="text-xl">Plaene / Auftraege</CardTitle>
+                <CardTitle className="text-xl">Pläne / Aufträge</CardTitle>
                 <CardDescription>{category.description}</CardDescription>
               </CardHeader>
               <CardContent><Button variant="outline" className="w-full">Öffnen</Button></CardContent>

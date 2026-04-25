@@ -293,7 +293,7 @@ export default function MyDocuments() {
                         variant="outline"
                         onClick={() => selectAll("lohnzettel")}
                       >
-                        {selectedPayslips.size === payslips.length ? "Auswahl leeren" : "Alle auswaehlen"}
+                        {selectedPayslips.size === payslips.length ? "Auswahl leeren" : "Alle auswählen"}
                       </Button>
                       <Button
                         size="sm"
@@ -400,7 +400,7 @@ export default function MyDocuments() {
                         variant="outline"
                         onClick={() => selectAll("krankmeldung")}
                       >
-                        {selectedSickNotes.size === sickNotes.length ? "Auswahl leeren" : "Alle auswaehlen"}
+                        {selectedSickNotes.size === sickNotes.length ? "Auswahl leeren" : "Alle auswählen"}
                       </Button>
                       <Button
                         size="sm"
