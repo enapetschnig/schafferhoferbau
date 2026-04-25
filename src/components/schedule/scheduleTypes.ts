@@ -10,15 +10,6 @@ export type Assignment = {
   transport_erforderlich?: boolean | null;
 };
 
-export type Resource = {
-  id: string;
-  project_id: string;
-  datum: string;
-  resource_name: string;
-  menge: number | null;
-  einheit: string | null;
-};
-
 // Konsolidierter Ressourcen-Block (resource_blocks-Tabelle).
 // Wird sowohl in Wochen- als auch Jahres-Plantafel verwendet.
 export type ResourceBlock = {

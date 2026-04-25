@@ -44,8 +44,6 @@ export default function ScheduleBoard() {
     projects,
     assignments,
     setAssignments,
-    resources,
-    setResources,
     resourceBlocks,
     setResourceBlocks,
     masterResources,

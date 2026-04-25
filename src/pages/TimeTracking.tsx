@@ -32,6 +32,7 @@ import { FillRemainingHoursDialog } from "@/components/FillRemainingHoursDialog"
 import { MultiEmployeeSelect } from "@/components/MultiEmployeeSelect";
 import { VoiceAIInput } from "@/components/VoiceAIInput";
 import { useAppSettings } from "@/hooks/useAppSettings";
+import { useEmployeeSchedule } from "@/hooks/useEmployeeSchedule";
 
 type Project = {
   id: string;
@@ -236,30 +237,18 @@ const TimeTracking = () => {
   const [timeBlocks, setTimeBlocks] = useState<TimeBlock[]>([createDefaultBlock()]);
   const entryMode = "zeitraum" as const;
 
-  // Employee schedule for individual working hours
-  const [employeeSchedule, setEmployeeSchedule] = useState<WeekSchedule | null>(null);
-  const [employeeSchwellenwert, setEmployeeSchwellenwert] = useState<import("@/lib/workingHours").Schwellenwert | null>(null);
-  const [isExternalUser, setIsExternalUser] = useState(false);
-
-  const fetchEmployeeSchedule = useCallback(async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-    const userId = targetUserId || user.id;
-    const { data } = await supabase
-      .from("employees")
-      .select("regelarbeitszeit, wochen_soll_stunden, is_external, kategorie, schwellenwert")
-      .eq("user_id", userId)
-      .single();
-    if (data?.regelarbeitszeit) {
-      setEmployeeSchedule(data.regelarbeitszeit as unknown as WeekSchedule);
-    }
-    if (data?.schwellenwert) {
-      setEmployeeSchwellenwert(data.schwellenwert as unknown as import("@/lib/workingHours").Schwellenwert);
-    }
-    setIsExternalUser(data?.is_external === true || data?.kategorie === "extern");
-  }, [targetUserId]);
-
-  useEffect(() => { fetchEmployeeSchedule(); }, [fetchEmployeeSchedule]);
+  // Employee schedule für individuelle Arbeitszeiten — zentrale Hook (loest direkten Supabase-Read ab)
+  const [authUserId, setAuthUserId] = useState<string | null>(null);
+  useEffect(() => {
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      setAuthUserId(user?.id ?? null);
+    })();
+  }, []);
+  const scheduleData = useEmployeeSchedule(targetUserId || authUserId);
+  const employeeSchedule = scheduleData.schedule;
+  const employeeSchwellenwert = scheduleData.schwellenwert;
+  const isExternalUser = scheduleData.isExternal;
 
   // Auto-fill project from Plantafel + Taetigkeit aus Tagesbericht, wenn noch leer
   useEffect(() => {

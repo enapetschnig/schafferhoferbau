@@ -153,14 +153,15 @@ export function ResourcesGanttSection({
                       holiday ? "bg-gray-100" : isWeekend ? "bg-muted/30" : ""
                     } ${isDragSelected ? "bg-blue-100 ring-1 ring-inset ring-blue-400" : ""}`}
                     onMouseDown={() => {
-                      if (canEdit) {
-                        setDragResId(res.id);
-                        setDragStartIdx(dayIdx);
-                        setDragEndIdx(dayIdx);
-                      }
+                      // Nicht draggen auf bereits belegten Zellen — verhindert versehentliches Ueberschreiben
+                      if (!canEdit || dayBlocks.length > 0) return;
+                      setDragResId(res.id);
+                      setDragStartIdx(dayIdx);
+                      setDragEndIdx(dayIdx);
                     }}
                     onMouseEnter={() => {
-                      if (dragResId === res.id) {
+                      // Drag-Erweiterung nur durch leere Zellen
+                      if (dragResId === res.id && dayBlocks.length === 0) {
                         setDragEndIdx(dayIdx);
                       }
                     }}

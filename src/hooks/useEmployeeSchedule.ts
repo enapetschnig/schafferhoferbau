@@ -6,6 +6,7 @@ import { getEffectiveDay, getDefaultWorkTimes } from "@/lib/workingHours";
 export interface EmployeeScheduleData {
   schedule: WeekSchedule | null;
   schwellenwert: Schwellenwert | null;
+  wochenSollStunden: number | null;
   isExternal: boolean;
   loading: boolean;
 }
@@ -26,26 +27,28 @@ export function useEmployeeSchedule(userId: string | null | undefined): Employee
   const [data, setData] = useState<EmployeeScheduleData>({
     schedule: null,
     schwellenwert: null,
+    wochenSollStunden: null,
     isExternal: false,
     loading: true,
   });
 
   useEffect(() => {
     if (!userId) {
-      setData({ schedule: null, schwellenwert: null, isExternal: false, loading: false });
+      setData({ schedule: null, schwellenwert: null, wochenSollStunden: null, isExternal: false, loading: false });
       return;
     }
     let cancelled = false;
     (async () => {
       const { data: row } = await supabase
         .from("employees")
-        .select("regelarbeitszeit, schwellenwert, is_external, kategorie")
+        .select("regelarbeitszeit, schwellenwert, wochen_soll_stunden, is_external, kategorie")
         .eq("user_id", userId)
         .maybeSingle();
       if (cancelled) return;
       setData({
         schedule: (row?.regelarbeitszeit as unknown as WeekSchedule) || null,
         schwellenwert: (row?.schwellenwert as unknown as Schwellenwert) || null,
+        wochenSollStunden: (row?.wochen_soll_stunden as number | null) ?? null,
         isExternal: row?.is_external === true || row?.kategorie === "extern",
         loading: false,
       });

@@ -5,7 +5,6 @@ import type {
   Profile,
   Project,
   Assignment,
-  Resource,
   ResourceBlock,
   MasterResource,
   DailyTarget,
@@ -19,7 +18,6 @@ export function useScheduleData() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
-  const [resources, setResources] = useState<Resource[]>([]);
   const [resourceBlocks, setResourceBlocks] = useState<ResourceBlock[]>([]);
   const [masterResources, setMasterResources] = useState<MasterResource[]>([]);
   const [dailyTargets, setDailyTargets] = useState<DailyTarget[]>([]);
@@ -136,8 +134,6 @@ export function useScheduleData() {
     projects,
     assignments,
     setAssignments,
-    resources,
-    setResources,
     resourceBlocks,
     setResourceBlocks,
     masterResources,

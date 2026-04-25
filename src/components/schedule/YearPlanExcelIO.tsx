@@ -34,7 +34,7 @@ interface Props {
 /**
  * Excel Import/Export fuer Jahresplanung
  * Sheet 1: Projekt-Bloecke (yearly_plan_blocks)
- * Sheet 2: Ressourcen-Bloecke (yearly_resource_blocks)
+ * Sheet 2: Ressourcen-Bloecke (resource_blocks, tag-genau)
  *
  * Import: ergaenzt bestehende Daten (kein Overwrite).
  */
