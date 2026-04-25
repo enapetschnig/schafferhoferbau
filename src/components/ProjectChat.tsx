@@ -655,8 +655,8 @@ export function ProjectChat({ projectId, projectName, isAdmin }: { projectId: st
             <Paperclip className="h-5 w-5" />
           </Button>
           <VoiceAIInput
-            voiceOnly
             buttonsPosition="inline"
+            context="notiz"
             value={newMessage}
             onChange={setNewMessage}
             placeholder="Nachricht schreiben..."

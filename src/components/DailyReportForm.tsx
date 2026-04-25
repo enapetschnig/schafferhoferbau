@@ -146,9 +146,6 @@ export function DailyReportForm({ open, onOpenChange, onSuccess, defaultProjectI
   const { data: autoWeather, loading: weatherLoading } = useProjectWeather(weatherLocation, datum);
 
   // Auto-fuelle Wetter (Chip) wenn noch leer.
-  // Temperatur wird bewusst NICHT mehr automatisch ueberschrieben — der User
-  // soll die Min/Max-Werte manuell via Stepper setzen oder explizit ueber
-  // den "Wetter uebernehmen"-Button (CloudSun) laden.
   useEffect(() => {
     if (!autoWeather) return;
     if (editData) return;
@@ -162,6 +159,18 @@ export function DailyReportForm({ open, onOpenChange, onSuccess, defaultProjectI
       : "gewitter";
     setWetter([chip]);
     setAutoFilledFields(prev => ({ ...prev, wetter: true }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoWeather]);
+
+  // Auto-fuelle Temperatur (min/max) wenn noch nicht gesetzt.
+  // Manuelle Aenderungen ueberschreiben die Werte nicht mehr (handleTempMinChange/MaxChange setzt Auto-Flag zurueck).
+  useEffect(() => {
+    if (!autoWeather) return;
+    if (editData) return;
+    if (temperaturMin !== null || temperaturMax !== null) return;
+    setTemperaturMin(autoWeather.min);
+    setTemperaturMax(autoWeather.max);
+    setAutoFilledFields(prev => ({ ...prev, temp: true }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoWeather]);
 
@@ -384,22 +393,36 @@ export function DailyReportForm({ open, onOpenChange, onSuccess, defaultProjectI
     aussen: "Außen", keller: "Keller", eg: "EG", og: "OG", dg: "DG",
   };
 
+  const typeLabels = {
+    tagesbericht: "Tagesbericht",
+    regiebericht: "Regiebericht",
+    zwischenbericht: "Zwischenbericht",
+  } as const;
+  const dialogTitle = editData
+    ? `${typeLabels[reportType]} bearbeiten`
+    : `Neuer ${typeLabels[reportType]}`;
+
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) resetForm(); onOpenChange(o); }}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{editData ? "Bericht bearbeiten" : "Neuer Bericht"}</DialogTitle>
+          <DialogTitle>{dialogTitle}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
-          {/* Wizard-Schritt-Indikator */}
+          {/* Wizard-Schritt-Indikator + Typ-Badge */}
           {isWizard && (
-            <div className="flex items-center gap-1 text-xs text-muted-foreground">
-              <span className={step === 1 ? "font-semibold text-primary" : ""}>1. Berichtstyp</span>
-              <ChevronRight className="h-3 w-3" />
-              <span className={step === 2 ? "font-semibold text-primary" : ""}>2. Zeiterfassung</span>
-              <ChevronRight className="h-3 w-3" />
-              <span className={step === 3 ? "font-semibold text-primary" : ""}>3. Fotos</span>
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                <span className={step === 1 ? "font-semibold text-primary" : ""}>1. Berichtstyp</span>
+                <ChevronRight className="h-3 w-3" />
+                <span className={step === 2 ? "font-semibold text-primary" : ""}>2. Zeiterfassung</span>
+                <ChevronRight className="h-3 w-3" />
+                <span className={step === 3 ? "font-semibold text-primary" : ""}>3. Fotos</span>
+              </div>
+              <span className="text-xs font-medium px-2 py-0.5 rounded bg-primary/10 text-primary whitespace-nowrap">
+                {typeLabels[reportType]}
+              </span>
             </div>
           )}
 

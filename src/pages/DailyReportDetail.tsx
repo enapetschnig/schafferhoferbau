@@ -304,8 +304,16 @@ export default function DailyReportDetail() {
       return;
     }
 
-    if (!safetyItems.every((item) => item.checked)) {
-      toast({ variant: "destructive", title: "Sicherheitscheckliste", description: "Alle Punkte der Sicherheitscheckliste müssen bestätigt werden." });
+    // Alle Punkte muessen bewertet sein (gruen oder rot) — gemischt erlaubt.
+    const allRated = safetyItems.every((item) => {
+      const s = item.status;
+      if (s === "ok" || s === "nok") return true;
+      // Legacy-Fallback: falls noch alte Daten ohne status, aber checked=true
+      if (s === undefined && item.checked === true) return true;
+      return false;
+    });
+    if (!allRated) {
+      toast({ variant: "destructive", title: "Sicherheitscheckliste", description: "Alle Punkte müssen bewertet werden (grün oder rot)." });
       return;
     }
 
