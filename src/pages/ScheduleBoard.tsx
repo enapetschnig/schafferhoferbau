@@ -46,6 +46,8 @@ export default function ScheduleBoard() {
     setAssignments,
     resources,
     setResources,
+    resourceBlocks,
+    setResourceBlocks,
     masterResources,
     dailyTargets,
     setDailyTargets,
@@ -254,72 +256,58 @@ export default function ScheduleBoard() {
     }, 500);
   };
 
-  // --- Resource handlers ---
-  const handleAddResource = async (
-    projectId: string,
-    datum: string,
-    resourceName: string
+  // --- ResourceBlock handlers (resource_blocks-Tabelle) ---
+  const handleCreateResourceBlock = async (
+    resourceId: string,
+    projectId: string | null,
+    startDate: string,
+    endDate: string,
+    label?: string | null
   ) => {
-    if (!resourceName.trim()) return;
-    const { data, error } = await supabase
-      .from("assignment_resources")
-      .upsert(
-        {
-          project_id: projectId,
-          datum,
-          resource_name: resourceName.trim(),
-          menge: 1,
-          einheit: "Stk",
-          created_by: userId,
-        },
-        { onConflict: "project_id,datum,resource_name" }
-      )
+    const { data, error } = await ((supabase as any).from("resource_blocks"))
+      .insert({
+        resource_id: resourceId,
+        project_id: projectId,
+        start_date: startDate,
+        end_date: endDate,
+        label: label ?? null,
+        created_by: userId,
+      })
       .select()
       .single();
-
     if (error) {
       toast({ variant: "destructive", title: "Fehler", description: error.message });
       return;
     }
     if (data) {
-      setResources((prev) => {
-        const exists = prev.find(
-          (r) =>
-            r.project_id === projectId &&
-            r.datum === datum &&
-            r.resource_name === resourceName.trim()
-        );
-        if (exists)
-          return prev.map((r) => (r.id === exists.id ? (data as any) : r));
-        return [...prev, data as any];
-      });
+      setResourceBlocks((prev) => [...prev, data as any]);
     }
   };
 
-  const handleUpdateResource = async (
+  const handleUpdateResourceBlock = async (
     id: string,
-    field: "menge" | "einheit",
-    value: number | string | null
+    patch: { project_id?: string | null; start_date?: string; end_date?: string; label?: string | null }
   ) => {
-    setResources((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, [field]: value } : r))
+    setResourceBlocks((prev) =>
+      prev.map((b) => (b.id === id ? { ...b, ...patch } as any : b))
     );
-    await supabase
-      .from("assignment_resources")
-      .update({ [field]: value })
+    const { error } = await ((supabase as any).from("resource_blocks"))
+      .update({ ...patch, updated_at: new Date().toISOString() })
       .eq("id", id);
+    if (error) {
+      toast({ variant: "destructive", title: "Fehler", description: error.message });
+    }
   };
 
-  const handleDeleteResource = async (id: string) => {
-    const { error } = await supabase
-      .from("assignment_resources")
+  const handleDeleteResourceBlock = async (id: string) => {
+    const { error } = await ((supabase as any).from("resource_blocks"))
       .delete()
       .eq("id", id);
     if (error) {
       toast({ variant: "destructive", title: "Fehler", description: error.message });
       return;
     }
-    setResources((prev) => prev.filter((r) => r.id !== id));
+    setResourceBlocks((prev) => prev.filter((b) => b.id !== id));
   };
 
   // --- Click handlers ---
@@ -473,13 +461,14 @@ export default function ScheduleBoard() {
               {!isExternView && (
                 <ResourcesGanttSection
                   masterResources={masterResources}
-                  resources={resources}
+                  resourceBlocks={resourceBlocks}
                   projects={projects}
                   days={weekDays}
                   holidays={companyHolidays}
                   canEdit={isAdmin || isVorarbeiter}
-                  onAssignResource={(name, projectId, datum) => handleAddResource(projectId, datum, name)}
-                  onRemoveResource={handleDeleteResource}
+                  onCreateBlock={handleCreateResourceBlock}
+                  onUpdateBlock={handleUpdateResourceBlock}
+                  onDeleteBlock={handleDeleteResourceBlock}
                 />
               )}
             </div>

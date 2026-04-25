@@ -3,8 +3,11 @@ import {
   startOfYear,
   endOfYear,
   startOfISOWeek,
+  addDays,
   addWeeks,
+  setISOWeek,
   getISOWeek,
+  getISOWeekYear,
   format,
   isSameDay,
   parseISO,
@@ -60,9 +63,18 @@ interface ResourceBlock {
   year: number;
   start_week: number;
   end_week: number;
-  color: string;
+  // Farbe wird nicht mehr gespeichert — kommt aus Master-Ressource (resources.farbe).
+  // Feld bleibt im interface fuer Backward-Compat im Render-Code (b.color || farbe).
+  color?: string | null;
   label: string | null;
   sort_order: number;
+}
+
+// Helper: ISO-Wochennummer + Jahr -> Datum (Mo) und (So) als yyyy-MM-dd
+function weekToDateRange(year: number, week: number): { start: string; end: string } {
+  const monStart = startOfISOWeek(setISOWeek(new Date(year, 5, 15), Math.max(1, Math.min(53, week))));
+  const sunEnd = addDays(monStart, 6);
+  return { start: format(monStart, "yyyy-MM-dd"), end: format(sunEnd, "yyyy-MM-dd") };
 }
 
 interface Props {
@@ -151,12 +163,33 @@ export function YearPlanningView({
   };
 
   const fetchResourceBlocks = async () => {
-    const { data } = await supabase
-      .from("yearly_resource_blocks")
-      .select("*")
-      .eq("year", year)
+    // resource_blocks: alle Bloecke deren Datums-Range mit dem Jahr ueberlappt
+    const yearStart = `${year}-01-01`;
+    const yearEnd = `${year}-12-31`;
+    const { data } = await ((supabase as any).from("resource_blocks"))
+      .select("id, resource_id, project_id, start_date, end_date, label, sort_order")
+      .lte("start_date", yearEnd)
+      .gte("end_date", yearStart)
       .order("sort_order");
-    if (data) setResourceBlocks(data as ResourceBlock[]);
+    if (data) {
+      // start_date/end_date -> start_week/end_week, year fuer Display in Wochen-Grid
+      const mapped: ResourceBlock[] = (data as any[]).map((d) => {
+        const sd = parseISO(d.start_date);
+        const ed = parseISO(d.end_date);
+        return {
+          id: d.id,
+          resource_id: d.resource_id,
+          project_id: d.project_id,
+          year,
+          start_week: getISOWeekYear(sd) === year ? getISOWeek(sd) : (sd.getFullYear() < year ? 1 : 53),
+          end_week: getISOWeekYear(ed) === year ? getISOWeek(ed) : (ed.getFullYear() > year ? 53 : 1),
+          color: null,
+          label: d.label,
+          sort_order: d.sort_order ?? 0,
+        };
+      });
+      setResourceBlocks(mapped);
+    }
   };
 
   // Spaltenbreite messen fuer Drag-Berechnung
@@ -228,16 +261,27 @@ export function YearPlanningView({
     newEnd = Math.max(1, Math.min(53, newEnd));
     if (newStart > newEnd) newStart = newEnd;
 
-    const table = kind === "plan" ? "yearly_plan_blocks" : "yearly_resource_blocks";
-    const { error } = await supabase
-      .from(table)
-      .update({ start_week: newStart, end_week: newEnd })
-      .eq("id", id);
-    if (error) {
-      toast({ variant: "destructive", title: "Fehler", description: error.message });
+    if (kind === "plan") {
+      const { error } = await supabase
+        .from("yearly_plan_blocks")
+        .update({ start_week: newStart, end_week: newEnd })
+        .eq("id", id);
+      if (error) {
+        toast({ variant: "destructive", title: "Fehler", description: error.message });
+      }
+      fetchPlanBlocks();
+    } else {
+      // resource_blocks nutzt start_date/end_date
+      const sRange = weekToDateRange(year, newStart);
+      const eRange = weekToDateRange(year, newEnd);
+      const { error } = await ((supabase as any).from("resource_blocks"))
+        .update({ start_date: sRange.start, end_date: eRange.end, updated_at: new Date().toISOString() })
+        .eq("id", id);
+      if (error) {
+        toast({ variant: "destructive", title: "Fehler", description: error.message });
+      }
+      fetchResourceBlocks();
     }
-    if (kind === "plan") fetchPlanBlocks();
-    else fetchResourceBlocks();
   };
 
   // Create-Drag: auf leerer Flaeche ziehen um neuen Block zu erstellen
@@ -374,21 +418,25 @@ export function YearPlanningView({
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
+    const sw = parseInt(resourceForm.startWeek);
+    const ew = parseInt(resourceForm.endWeek);
+    const sRange = weekToDateRange(year, sw);
+    const eRange = weekToDateRange(year, ew);
     const payload = {
       resource_id: resourceForm.resourceId,
       project_id: (!resourceForm.projectId || resourceForm.projectId === "__none__") ? null : resourceForm.projectId,
-      color: resourceForm.color,
-      start_week: parseInt(resourceForm.startWeek),
-      end_week: parseInt(resourceForm.endWeek),
-      year,
+      start_date: sRange.start,
+      end_date: eRange.end,
       label: resourceForm.label.trim() || null,
       created_by: user.id,
     };
 
     if (editingResourceBlock) {
-      await supabase.from("yearly_resource_blocks").update(payload).eq("id", editingResourceBlock.id);
+      await ((supabase as any).from("resource_blocks"))
+        .update({ ...payload, updated_at: new Date().toISOString() })
+        .eq("id", editingResourceBlock.id);
     } else {
-      await supabase.from("yearly_resource_blocks").insert(payload);
+      await ((supabase as any).from("resource_blocks")).insert(payload);
     }
     setShowResourceDialog(false);
     setEditingResourceBlock(null);
@@ -397,7 +445,7 @@ export function YearPlanningView({
   };
 
   const handleDeleteResourceBlock = async (id: string) => {
-    await supabase.from("yearly_resource_blocks").delete().eq("id", id);
+    await ((supabase as any).from("resource_blocks")).delete().eq("id", id);
     fetchResourceBlocks();
   };
 
@@ -734,6 +782,7 @@ export function YearPlanningView({
       {/* Ressourcen-Zeilen: eine Zeile pro Ressource */}
       {resources.map((resource) => {
         const blocks = resourceBlocks.filter((b) => b.resource_id === resource.id);
+        const resColor = resource.farbe || "#F97316";
         return (
           <div
             key={resource.id}
@@ -777,8 +826,8 @@ export function YearPlanningView({
                         key={b.id}
                         className="absolute inset-0 border-y flex items-stretch overflow-hidden touch-none select-none"
                         style={{
-                          backgroundColor: (b.color || "#F97316") + "40",
-                          borderColor: b.color || "#F97316",
+                          backgroundColor: resColor + "40",
+                          borderColor: resColor,
                           top: `${idx * 4}px`,
                           cursor: dragState?.id === b.id ? "grabbing" : "grab",
                         }}
@@ -946,20 +995,9 @@ export function YearPlanningView({
             <Label>Label (optional)</Label>
             <Input value={resourceForm.label} onChange={(e) => setResourceForm({ ...resourceForm, label: e.target.value })} placeholder="z.B. Partie 1" />
           </div>
-          <div>
-            <Label>Farbe</Label>
-            <div className="flex gap-1.5 mt-1 flex-wrap">
-              {BLOCK_COLORS.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  className={`w-7 h-7 rounded-full border-2 ${resourceForm.color === c ? "border-gray-900 ring-2 ring-offset-1 ring-gray-400" : "border-transparent"}`}
-                  style={{ backgroundColor: c }}
-                  onClick={() => setResourceForm({ ...resourceForm, color: c })}
-                />
-              ))}
-            </div>
-          </div>
+          <p className="text-xs text-muted-foreground">
+            Die Farbe wird automatisch von der Ressource übernommen.
+          </p>
         </div>
         <DialogFooter className="flex justify-between">
           {editingResourceBlock && (

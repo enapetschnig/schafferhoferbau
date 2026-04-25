@@ -18,6 +18,7 @@ import { format } from "date-fns";
 import { Plus, Trash2, CloudSun, ChevronLeft, ChevronRight, Camera } from "lucide-react";
 import { SerialPhotoCapture } from "@/components/SerialPhotoCapture";
 import { uploadDailyReportPhoto } from "@/lib/dailyReportPhotos";
+import { TimeEntryStep, calcEntryHours, type TimeEntryFormData } from "@/components/TimeEntryStep";
 
 type Project = { id: string; name: string; plz: string | null; adresse?: string | null; baustellenart?: string | null };
 type Employee = { id: string; user_id: string; name: string };
@@ -71,8 +72,23 @@ export function DailyReportForm({ open, onOpenChange, onSuccess, defaultProjectI
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [pendingPhotos, setPendingPhotos] = useState<File[]>([]);
   const [serialOpen, setSerialOpen] = useState(false);
+  const [authUserId, setAuthUserId] = useState<string>("");
+  const [timeEntryData, setTimeEntryData] = useState<TimeEntryFormData>({
+    startTime: "07:00",
+    endTime: "16:00",
+    pauseMinutes: "30",
+    taetigkeit: "",
+  });
+  const [timeEntrySkip, setTimeEntrySkip] = useState(false);
   // Wizard nur beim Neuanlegen und nicht beim Zwischenbericht
   const isWizard = !editData && reportType !== "zwischenbericht";
+
+  useEffect(() => {
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) setAuthUserId(user.id);
+    })();
+  }, []);
 
   const fetchEmployees = useCallback(async () => {
     const { data } = await supabase
@@ -251,6 +267,8 @@ export function DailyReportForm({ open, onOpenChange, onSuccess, defaultProjectI
     setSelectedWorkers([]);
     setStep(1);
     setPendingPhotos([]);
+    setTimeEntryData({ startTime: "07:00", endTime: "16:00", pauseMinutes: "30", taetigkeit: "" });
+    setTimeEntrySkip(false);
   };
 
   const addActivity = () => {
@@ -362,6 +380,31 @@ export function DailyReportForm({ open, onOpenChange, onSuccess, defaultProjectI
       );
     }
 
+    // Zeiterfassung schreiben (nur Wizard-Flow, wenn nicht uebersprungen)
+    if (isWizard && !timeEntrySkip && !editData) {
+      const pauseMin = parseInt(timeEntryData.pauseMinutes, 10) || 0;
+      const stunden = calcEntryHours(timeEntryData.startTime, timeEntryData.endTime, pauseMin);
+      if (stunden > 0) {
+        const { error: teErr } = await supabase.from("time_entries").insert({
+          user_id: user.id,
+          datum,
+          project_id: projectId,
+          taetigkeit: timeEntryData.taetigkeit.trim() || null,
+          stunden,
+          start_time: timeEntryData.startTime,
+          end_time: timeEntryData.endTime,
+          pause_minutes: pauseMin,
+          location_type: "baustelle",
+        } as any);
+        if (teErr) {
+          console.error("time_entries insert error", teErr);
+          toast({ variant: "destructive", title: "Zeiterfassung-Fehler", description: formatErr(teErr, "Konnte Zeit nicht speichern (Bericht wurde aber gespeichert)") });
+        } else {
+          toast({ title: `Zeit gespeichert: ${stunden.toFixed(2)} h` });
+        }
+      }
+    }
+
     // Photos hochladen (nur Wizard-Flow, beim Bearbeiten passiert das direkt in DailyReportDetail)
     if (!editData && pendingPhotos.length > 0) {
       let uploaded = 0;
@@ -414,7 +457,7 @@ export function DailyReportForm({ open, onOpenChange, onSuccess, defaultProjectI
           {isWizard && (
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                <span className={step === 1 ? "font-semibold text-primary" : ""}>1. Berichtstyp</span>
+                <span className={step === 1 ? "font-semibold text-primary" : ""}>1. Bericht</span>
                 <ChevronRight className="h-3 w-3" />
                 <span className={step === 2 ? "font-semibold text-primary" : ""}>2. Zeiterfassung</span>
                 <ChevronRight className="h-3 w-3" />
@@ -484,12 +527,7 @@ export function DailyReportForm({ open, onOpenChange, onSuccess, defaultProjectI
             <Label>Datum</Label>
             <Input type="date" value={datum} onChange={(e) => setDatum(e.target.value)} />
           </div>
-          </>
-          )}
 
-          {/* === STEP 2: Wetter, Tätigkeiten, Beschreibung, Mitarbeiter === */}
-          {(!isWizard || step === 2) && (
-          <>
           {/* Auto-Wetter Hinweis */}
           {autoWeather && (
             <div className="flex items-center gap-2 p-2 rounded-md bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 text-xs">
@@ -664,6 +702,25 @@ export function DailyReportForm({ open, onOpenChange, onSuccess, defaultProjectI
             )}
           </div>
           </>
+          )}
+
+          {/* === STEP 2: Zeiterfassung (mit Vorbefuellung) === */}
+          {isWizard && step === 2 && (
+            <TimeEntryStep
+              userId={authUserId}
+              projectId={projectId}
+              projectName={selectedProject?.name || ""}
+              datum={datum}
+              defaultTaetigkeit={
+                activities.find((a) => a.beschreibung.trim())?.beschreibung
+                || beschreibung
+                || ""
+              }
+              value={timeEntryData}
+              onChange={setTimeEntryData}
+              skip={timeEntrySkip}
+              onSkipChange={setTimeEntrySkip}
+            />
           )}
 
           {/* === STEP 3: Fotos === */}

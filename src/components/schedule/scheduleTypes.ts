@@ -19,6 +19,18 @@ export type Resource = {
   einheit: string | null;
 };
 
+// Konsolidierter Ressourcen-Block (resource_blocks-Tabelle).
+// Wird sowohl in Wochen- als auch Jahres-Plantafel verwendet.
+export type ResourceBlock = {
+  id: string;
+  resource_id: string;
+  project_id: string | null;
+  start_date: string;
+  end_date: string;
+  label: string | null;
+  sort_order: number;
+};
+
 // Master-Ressource aus der `resources`-Tabelle (Geräte, Material etc.)
 // Wird zur Farbgebung der Plantafel-Zellen genutzt.
 export type MasterResource = {

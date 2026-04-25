@@ -4,6 +4,14 @@ import { Button } from "@/components/ui/button";
 import { Download, Upload, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { startOfISOWeek, setISOWeek, addDays, format, parseISO, getISOWeek, getISOWeekYear } from "date-fns";
+
+// Helper: ISO-Wochennummer + Jahr -> Datum (Mo) und (So)
+function weekToDateRange(year: number, week: number): { start: string; end: string } {
+  const monStart = startOfISOWeek(setISOWeek(new Date(year, 5, 15), Math.max(1, Math.min(53, week))));
+  const sunEnd = addDays(monStart, 6);
+  return { start: format(monStart, "yyyy-MM-dd"), end: format(sunEnd, "yyyy-MM-dd") };
+}
 
 interface Project {
   id: string;
@@ -39,9 +47,15 @@ export function YearPlanExcelIO({ year, projects, resources, onImported }: Props
   const exportExcel = async () => {
     setExporting(true);
     try {
+      const yearStart = `${year}-01-01`;
+      const yearEnd = `${year}-12-31`;
       const [pbResp, rbResp] = await Promise.all([
         supabase.from("yearly_plan_blocks").select("*").eq("year", year).order("sort_order"),
-        supabase.from("yearly_resource_blocks").select("*").eq("year", year).order("sort_order"),
+        ((supabase as any).from("resource_blocks"))
+          .select("id, resource_id, project_id, start_date, end_date, label, sort_order")
+          .lte("start_date", yearEnd)
+          .gte("end_date", yearStart)
+          .order("sort_order"),
       ]);
 
       const projMap = new Map(projects.map(p => [p.id, p.name]));
@@ -57,14 +71,17 @@ export function YearPlanExcelIO({ year, projects, resources, onImported }: Props
         Farbe: b.color || "",
       }));
 
-      const resRows = (rbResp.data || []).map((b: any) => ({
-        Ressource: resMap.get(b.resource_id) || "?",
-        Projekt: b.project_id ? (projMap.get(b.project_id) || "") : "",
-        "Von KW": b.start_week,
-        "Bis KW": b.end_week,
-        Label: b.label || "",
-        Farbe: b.color || "",
-      }));
+      const resRows = (rbResp.data || []).map((b: any) => {
+        const sd = parseISO(b.start_date);
+        const ed = parseISO(b.end_date);
+        return {
+          Ressource: resMap.get(b.resource_id) || "?",
+          Projekt: b.project_id ? (projMap.get(b.project_id) || "") : "",
+          "Von KW": getISOWeekYear(sd) === year ? getISOWeek(sd) : 1,
+          "Bis KW": getISOWeekYear(ed) === year ? getISOWeek(ed) : 53,
+          Label: b.label || "",
+        };
+      });
 
       const wb = XLSX.utils.book_new();
       const wsPlan = XLSX.utils.json_to_sheet(planRows.length > 0 ? planRows : [{
@@ -75,9 +92,9 @@ export function YearPlanExcelIO({ year, projects, resources, onImported }: Props
       XLSX.utils.book_append_sheet(wb, wsPlan, "Projekt-Blöcke");
 
       const wsRes = XLSX.utils.json_to_sheet(resRows.length > 0 ? resRows : [{
-        Ressource: "", Projekt: "", "Von KW": "", "Bis KW": "", Label: "", Farbe: "",
+        Ressource: "", Projekt: "", "Von KW": "", "Bis KW": "", Label: "",
       }]);
-      wsRes["!cols"] = [{ wch: 25 }, { wch: 25 }, { wch: 8 }, { wch: 8 }, { wch: 18 }, { wch: 10 }];
+      wsRes["!cols"] = [{ wch: 25 }, { wch: 25 }, { wch: 8 }, { wch: 8 }, { wch: 18 }];
       XLSX.utils.book_append_sheet(wb, wsRes, "Ressourcen-Blöcke");
 
       XLSX.writeFile(wb, `Jahresplanung_${year}.xlsx`);
@@ -164,14 +181,14 @@ export function YearPlanExcelIO({ year, projects, resources, onImported }: Props
             skipped++;
             continue;
           }
-          const { error } = await supabase.from("yearly_resource_blocks").insert({
-            year,
+          const sRange = weekToDateRange(year, startWeek);
+          const eRange = weekToDateRange(year, endWeek);
+          const { error } = await ((supabase as any).from("resource_blocks")).insert({
             resource_id: resourceId,
             project_id: projectId,
-            start_week: startWeek,
-            end_week: endWeek,
+            start_date: sRange.start,
+            end_date: eRange.end,
             label: (row["Label"] || row["label"] || "").toString().trim() || null,
-            color: (row["Farbe"] || row["color"] || "#F97316").toString().trim(),
             created_by: user.id,
           });
           if (error) {

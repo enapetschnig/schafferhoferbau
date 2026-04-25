@@ -6,6 +6,7 @@ import type {
   Project,
   Assignment,
   Resource,
+  ResourceBlock,
   MasterResource,
   DailyTarget,
   LeaveRequest,
@@ -19,6 +20,7 @@ export function useScheduleData() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [resources, setResources] = useState<Resource[]>([]);
+  const [resourceBlocks, setResourceBlocks] = useState<ResourceBlock[]>([]);
   const [masterResources, setMasterResources] = useState<MasterResource[]>([]);
   const [dailyTargets, setDailyTargets] = useState<DailyTarget[]>([]);
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
@@ -70,11 +72,11 @@ export function useScheduleData() {
           .select("id, user_id, project_id, datum, notizen, transport_erforderlich")
           .gte("datum", fromDate)
           .lte("datum", toDate),
-        supabase
-          .from("assignment_resources")
-          .select("id, project_id, datum, resource_name, menge, einheit")
-          .gte("datum", fromDate)
-          .lte("datum", toDate),
+        // resource_blocks: alle Bloecke, die den sichtbaren Datum-Range ueberlappen
+        ((supabase as any).from("resource_blocks"))
+          .select("id, resource_id, project_id, start_date, end_date, label, sort_order")
+          .lte("start_date", toDate)
+          .gte("end_date", fromDate),
         // Master-Ressourcen-Liste mit Farbe — auch in Wochen-Plantafel verwendet
         (supabase.from("resources") as any)
           .select("id, name, kategorie, einheit, farbe, is_active")
@@ -113,7 +115,7 @@ export function useScheduleData() {
       if (profs) setProfiles(profs);
       if (projs) setProjects(projs);
       if (assigns) setAssignments(assigns as Assignment[]);
-      if (res) setResources(res as Resource[]);
+      if (res) setResourceBlocks(res as ResourceBlock[]);
       if (masterRes) setMasterResources(masterRes as MasterResource[]);
       if (targets) setDailyTargets(targets as DailyTarget[]);
       if (leave) setLeaveRequests(leave as LeaveRequest[]);
@@ -136,6 +138,8 @@ export function useScheduleData() {
     setAssignments,
     resources,
     setResources,
+    resourceBlocks,
+    setResourceBlocks,
     masterResources,
     setMasterResources,
     dailyTargets,
