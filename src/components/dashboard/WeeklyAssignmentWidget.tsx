@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { CalendarDays } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -179,13 +180,21 @@ export function WeeklyAssignmentWidget({ userId }: Props) {
     );
   };
 
+  const navigate = useNavigate();
+
   return (
     <div className="mb-6">
       <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
         <CalendarDays className="h-5 w-5 text-primary" />
         Meine Einteilung – KW {getISOWeek(weekStart)}
       </h2>
-      <Card>
+      <Card
+        className="cursor-pointer hover:shadow-md hover:border-primary/40 transition-all"
+        onClick={() => navigate("/schedule")}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => { if (e.key === "Enter") navigate("/schedule"); }}
+      >
         <CardContent className="p-3 space-y-2">
           {/* Zeile 1: Mo-Do */}
           <div className="grid grid-cols-4 gap-1.5">

@@ -32,6 +32,8 @@ interface Props {
   voiceOnly?: boolean;
   /** Nur AI anzeigen */
   aiOnly?: boolean;
+  /** Tastatur-Handler (z.B. Enter zum Senden) */
+  onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => void;
 }
 
 /**
@@ -52,6 +54,7 @@ export function VoiceAIInput({
   buttonsPosition = "inline",
   voiceOnly = false,
   aiOnly = false,
+  onKeyDown,
 }: Props) {
   const { toast } = useToast();
   const [recording, setRecording] = useState(false);
@@ -226,6 +229,7 @@ export function VoiceAIInput({
       placeholder={placeholder}
       disabled={disabled}
       autoComplete="off"
+      onKeyDown={onKeyDown}
       className={cn("flex-1", inputClassName)}
     />
   ) : (
@@ -235,6 +239,7 @@ export function VoiceAIInput({
       placeholder={placeholder}
       disabled={disabled}
       autoComplete="off"
+      onKeyDown={onKeyDown}
       className={cn("flex-1", inputClassName)}
     />
   );

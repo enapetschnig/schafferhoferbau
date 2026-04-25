@@ -218,6 +218,25 @@ export default function DailyReportDetail() {
         file_path: filePath,
         file_name: file.name,
       });
+
+      // Foto zusätzlich im Projekt-Foto-Ordner spiegeln, damit es im
+      // Projekt-Bereich unter "Fotos" auftaucht.
+      if (report?.project_id && file.type.startsWith("image/")) {
+        const photoPath = `${report.project_id}/${Date.now()}_${file.name}`;
+        const { error: mirrorErr } = await supabase.storage
+          .from("project-photos")
+          .upload(photoPath, rotatedBlob, { upsert: false });
+        if (!mirrorErr) {
+          await supabase.from("documents").insert({
+            name: file.name,
+            project_id: report.project_id,
+            typ: "photos",
+            file_url: photoPath,
+            user_id: user.id,
+            archived: false,
+          });
+        }
+      }
     }
 
     setUploading(false);

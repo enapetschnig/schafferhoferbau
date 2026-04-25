@@ -27,6 +27,7 @@ import { DayDetailSheet } from "@/components/schedule/DayDetailSheet";
 import { CompanyHolidayManager } from "@/components/schedule/CompanyHolidayManager";
 import { YearPlanningView } from "@/components/schedule/YearPlanningView";
 import { ResourcesManager } from "@/components/schedule/ResourcesManager";
+import { ResourcesGanttSection } from "@/components/schedule/ResourcesGanttSection";
 import { WeekExcelIO } from "@/components/schedule/WeekExcelIO";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Package } from "lucide-react";
@@ -45,6 +46,7 @@ export default function ScheduleBoard() {
     setAssignments,
     resources,
     setResources,
+    masterResources,
     dailyTargets,
     setDailyTargets,
     leaveRequests,
@@ -466,6 +468,18 @@ export default function ScheduleBoard() {
                   isAdmin || isVorarbeiter ? handleRangeSelect : undefined
                 }
               />
+              {!isExternView && (
+                <ResourcesGanttSection
+                  masterResources={masterResources}
+                  resources={resources}
+                  projects={projects}
+                  days={weekDays}
+                  holidays={companyHolidays}
+                  canEdit={isAdmin || isVorarbeiter}
+                  onAssignResource={(name, projectId, datum) => handleAddResource(projectId, datum, name)}
+                  onRemoveResource={handleDeleteResource}
+                />
+              )}
             </div>
           </>
         ) : (

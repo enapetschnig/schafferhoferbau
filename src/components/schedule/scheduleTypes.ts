@@ -19,6 +19,17 @@ export type Resource = {
   einheit: string | null;
 };
 
+// Master-Ressource aus der `resources`-Tabelle (Geräte, Material etc.)
+// Wird zur Farbgebung der Plantafel-Zellen genutzt.
+export type MasterResource = {
+  id: string;
+  name: string;
+  kategorie: string | null;
+  einheit: string | null;
+  farbe: string | null;
+  is_active: boolean;
+};
+
 export type DailyTarget = {
   id: string;
   project_id: string;

@@ -67,20 +67,21 @@ export function CompanyHolidayManager({ holidays, onUpdate, userId }: Props) {
     toast({ title: `${dates.length} Tag${dates.length > 1 ? "e" : ""} hinzugefügt` });
   };
 
-  const handleDelete = async (id: string) => {
+  // Ganzen Block (zusammenhängende Tage mit gleicher Bezeichnung) löschen.
+  // Stoppt Event-Propagation, damit der Dialog nicht zugeht.
+  const handleDeleteBlock = async (ids: string[], label: string) => {
+    if (ids.length === 0) return;
+    if (!window.confirm(`"${label}" mit ${ids.length} Tag${ids.length === 1 ? "" : "en"} wirklich löschen?`)) return;
     const { error } = await supabase
       .from("company_holidays")
       .delete()
-      .eq("id", id);
+      .in("id", ids);
     if (error) {
-      toast({
-        variant: "destructive",
-        title: "Fehler",
-        description: error.message,
-      });
+      toast({ variant: "destructive", title: "Fehler", description: error.message });
       return;
     }
     onUpdate();
+    toast({ title: `${ids.length} Tag${ids.length === 1 ? "" : "e"} gelöscht` });
   };
 
   const handleImportHolidays = async () => {
@@ -108,6 +109,23 @@ export function CompanyHolidayManager({ holidays, onUpdate, userId }: Props) {
   const sorted = [...holidays].sort(
     (a, b) => new Date(a.datum).getTime() - new Date(b.datum).getTime()
   );
+
+  // Aufeinanderfolgende Tage mit gleicher Bezeichnung zu Blöcken zusammenfassen
+  type Block = { ids: string[]; bezeichnung: string; from: string; to: string };
+  const blocks: Block[] = [];
+  for (const h of sorted) {
+    const last = blocks[blocks.length - 1];
+    const prevDate = last ? new Date(last.to) : null;
+    const curDate = new Date(h.datum);
+    const dayDiff = prevDate ? Math.round((curDate.getTime() - prevDate.getTime()) / 86_400_000) : null;
+    const sameLabel = last && (last.bezeichnung || "") === (h.bezeichnung || "");
+    if (last && sameLabel && dayDiff === 1) {
+      last.ids.push(h.id);
+      last.to = h.datum;
+    } else {
+      blocks.push({ ids: [h.id], bezeichnung: h.bezeichnung || "Betriebsurlaub", from: h.datum, to: h.datum });
+    }
+  }
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -159,34 +177,46 @@ export function CompanyHolidayManager({ holidays, onUpdate, userId }: Props) {
             </Button>
           </div>
 
-          {/* List */}
-          <div className="space-y-1 max-h-64 overflow-y-auto">
-            {sorted.length === 0 ? (
+          {/* Block-Liste */}
+          <div className="space-y-2 max-h-64 overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            {blocks.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-4">
                 Keine Betriebsurlaube eingetragen
               </p>
             ) : (
-              sorted.map((h) => (
-                <div
-                  key={h.id}
-                  className="flex items-center gap-2 px-2 py-1.5 bg-muted/30 rounded"
-                >
-                  <span className="text-sm font-mono">
-                    {format(parseISO(h.datum), "dd.MM.yyyy")}
-                  </span>
-                  <span className="text-sm flex-1 truncate text-muted-foreground">
-                    {h.bezeichnung}
-                  </span>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 text-destructive"
-                    onClick={() => handleDelete(h.id)}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              ))
+              blocks.map((b, idx) => {
+                const isSingle = b.ids.length === 1;
+                return (
+                  <div key={idx} className="rounded border bg-muted/30">
+                    <div className="flex items-center gap-2 px-2 py-1.5">
+                      <span className="text-sm font-mono">
+                        {isSingle
+                          ? format(parseISO(b.from), "dd.MM.yyyy")
+                          : `${format(parseISO(b.from), "dd.MM.")} – ${format(parseISO(b.to), "dd.MM.yyyy")}`}
+                      </span>
+                      {!isSingle && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-background border text-muted-foreground">
+                          {b.ids.length} Tage
+                        </span>
+                      )}
+                      <span className="text-sm flex-1 truncate">{b.bezeichnung}</span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleDeleteBlock(b.ids, b.bezeichnung);
+                        }}
+                      >
+                        <Trash2 className="h-3.5 w-3.5 mr-1" />
+                        {isSingle ? "Löschen" : "Block löschen"}
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })
             )}
           </div>
         </div>

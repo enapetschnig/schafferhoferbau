@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Camera, Send, ChevronUp, Trash2, X, ChevronLeft, ChevronRight, Download, Pencil, Paperclip, FileText } from "lucide-react";
+import { VoiceAIInput } from "@/components/VoiceAIInput";
 import { ImageEditor } from "@/components/ImageEditor";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -653,18 +654,20 @@ export function ProjectChat({ projectId, projectName, isAdmin }: { projectId: st
           >
             <Paperclip className="h-5 w-5" />
           </Button>
-          <Input
+          <VoiceAIInput
+            voiceOnly
+            buttonsPosition="inline"
             value={newMessage}
-            onChange={(e) => setNewMessage(e.target.value)}
+            onChange={setNewMessage}
             placeholder="Nachricht schreiben..."
             className="flex-1"
+            disabled={sending}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
                 handleSend();
               }
             }}
-            disabled={sending}
           />
           <Button
             size="icon"

@@ -6,6 +6,7 @@ import type {
   Project,
   Assignment,
   Resource,
+  MasterResource,
   DailyTarget,
   LeaveRequest,
   CompanyHoliday,
@@ -17,6 +18,7 @@ export function useScheduleData() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [resources, setResources] = useState<Resource[]>([]);
+  const [masterResources, setMasterResources] = useState<MasterResource[]>([]);
   const [dailyTargets, setDailyTargets] = useState<DailyTarget[]>([]);
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
   const [companyHolidays, setCompanyHolidays] = useState<CompanyHoliday[]>([]);
@@ -44,6 +46,7 @@ export function useScheduleData() {
         { data: projs },
         { data: assigns },
         { data: res },
+        { data: masterRes },
         { data: targets },
         { data: leave },
         { data: holidays },
@@ -68,6 +71,11 @@ export function useScheduleData() {
           .select("id, project_id, datum, resource_name, menge, einheit")
           .gte("datum", fromDate)
           .lte("datum", toDate),
+        // Master-Ressourcen-Liste mit Farbe — auch in Wochen-Plantafel verwendet
+        (supabase.from("resources") as any)
+          .select("id, name, kategorie, einheit, farbe, is_active")
+          .eq("is_active", true)
+          .order("name"),
         supabase
           .from("project_daily_targets")
           .select(
@@ -88,6 +96,7 @@ export function useScheduleData() {
       if (projs) setProjects(projs);
       if (assigns) setAssignments(assigns as Assignment[]);
       if (res) setResources(res as Resource[]);
+      if (masterRes) setMasterResources(masterRes as MasterResource[]);
       if (targets) setDailyTargets(targets as DailyTarget[]);
       if (leave) setLeaveRequests(leave as LeaveRequest[]);
       if (holidays) setCompanyHolidays(holidays as CompanyHoliday[]);
@@ -104,6 +113,8 @@ export function useScheduleData() {
     setAssignments,
     resources,
     setResources,
+    masterResources,
+    setMasterResources,
     dailyTargets,
     setDailyTargets,
     leaveRequests,
