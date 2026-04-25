@@ -13,7 +13,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { DocumentCaptureDialog } from "@/components/DocumentCaptureDialog";
 import { DocumentDetailDialog, type IncomingDocument } from "@/components/DocumentDetailDialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Download, Plus, Filter, FileText, ArrowRightLeft } from "lucide-react";
+import { Download, Plus, Filter, FileText, ArrowRightLeft, Camera, Pencil } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { de } from "date-fns/locale";
 import * as XLSX from "xlsx-js-style";
@@ -55,6 +55,8 @@ export default function IncomingDocuments() {
   const [showCaptureDialog, setShowCaptureDialog] = useState(() => searchParams.get("capture") === "1");
   const hideListInitially = searchParams.get("capture") === "1";
   const [showList, setShowList] = useState(!hideListInitially);
+  const [captureDocType, setCaptureDocType] = useState<"lieferschein" | "rechnung">("lieferschein");
+  const [captureSkipPhoto, setCaptureSkipPhoto] = useState(false);
   const [selectedDocIds, setSelectedDocIds] = useState<Set<string>>(new Set());
   const [zipLoading, setZipLoading] = useState(false);
   const [selectedDoc, setSelectedDoc] = useState<IncomingDocument | null>(null);
@@ -205,6 +207,59 @@ export default function IncomingDocuments() {
     <div className="min-h-screen bg-background">
       <div className="container mx-auto px-4 py-8 max-w-6xl">
         <PageHeader title="Lieferscheine & Rechnungen" backPath="/" />
+
+        {/* Schnell-Buttons fuer Erfassung */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
+          <Button
+            size="lg"
+            className="h-auto py-3"
+            onClick={() => {
+              setCaptureDocType("lieferschein");
+              setCaptureSkipPhoto(false);
+              setShowCaptureDialog(true);
+            }}
+          >
+            <Camera className="w-5 h-5 mr-2" />
+            <div className="text-left">
+              <div className="font-semibold">Lieferschein</div>
+              <div className="text-xs opacity-90">abfotografieren</div>
+            </div>
+          </Button>
+          {isAdmin && (
+            <Button
+              size="lg"
+              variant="secondary"
+              className="h-auto py-3"
+              onClick={() => {
+                setCaptureDocType("rechnung");
+                setCaptureSkipPhoto(false);
+                setShowCaptureDialog(true);
+              }}
+            >
+              <Camera className="w-5 h-5 mr-2" />
+              <div className="text-left">
+                <div className="font-semibold">Rechnung</div>
+                <div className="text-xs opacity-90">abfotografieren</div>
+              </div>
+            </Button>
+          )}
+          <Button
+            size="lg"
+            variant="outline"
+            className="h-auto py-3"
+            onClick={() => {
+              setCaptureDocType("lieferschein");
+              setCaptureSkipPhoto(true);
+              setShowCaptureDialog(true);
+            }}
+          >
+            <Pencil className="w-5 h-5 mr-2" />
+            <div className="text-left">
+              <div className="font-semibold">Lieferschein</div>
+              <div className="text-xs opacity-90">händisch erstellen</div>
+            </div>
+          </Button>
+        </div>
 
         {/* Stats */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
@@ -622,6 +677,8 @@ export default function IncomingDocuments() {
         onOpenChange={setShowCaptureDialog}
         onSuccess={fetchDocuments}
         defaultProjectId={searchParams.get("project") || undefined}
+        defaultDocType={captureDocType}
+        skipPhoto={captureSkipPhoto}
         onShowAll={hideListInitially ? () => { setShowCaptureDialog(false); setShowList(true); } : undefined}
       />
 

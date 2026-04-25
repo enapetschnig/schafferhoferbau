@@ -33,9 +33,13 @@ interface DocumentCaptureDialogProps {
   onShowAll?: () => void;
   /** Optional: Projekt-ID das automatisch ausgewaehlt werden soll */
   defaultProjectId?: string;
+  /** Optional: Dokumenttyp voreinstellen (umgeht die Auswahl im Dialog) */
+  defaultDocType?: DocType;
+  /** Optional: Foto-Step ueberspringen — direkt zur manuellen Eingabe */
+  skipPhoto?: boolean;
 }
 
-export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll, defaultProjectId }: DocumentCaptureDialogProps) {
+export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll, defaultProjectId, defaultDocType, skipPhoto }: DocumentCaptureDialogProps) {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -84,6 +88,8 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
     if (open) {
       fetchProjects();
       if (defaultProjectId) setProjectId(defaultProjectId);
+      if (defaultDocType) setDocType(defaultDocType);
+      if (skipPhoto) setStep("review");
       (async () => {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
@@ -98,7 +104,7 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
         if (!admin && docType === "rechnung") setDocType("lieferschein");
       })();
     }
-  }, [open, fetchProjects, defaultProjectId]);
+  }, [open, fetchProjects, defaultProjectId, defaultDocType, skipPhoto]);
 
   const resetForm = () => {
     setDocType("lieferschein");
