@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Camera, Send, ChevronUp, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { normalizeImageOrientation } from "@/lib/imageOrientation";
+import { VoiceAIInput } from "@/components/VoiceAIInput";
 
 type BroadcastMessage = {
   id: string;
@@ -489,18 +489,20 @@ export function CompanyChat({
           >
             <Camera className="h-5 w-5" />
           </Button>
-          <Input
+          <VoiceAIInput
+            buttonsPosition="inline"
+            context="notiz"
             value={newMessage}
-            onChange={(e) => setNewMessage(e.target.value)}
+            onChange={setNewMessage}
             placeholder="Nachricht schreiben..."
             className="flex-1"
+            disabled={sending}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
                 handleSend();
               }
             }}
-            disabled={sending}
           />
           <Button
             size="icon"
