@@ -51,6 +51,7 @@ export default function ScheduleBoard() {
     setDailyTargets,
     leaveRequests,
     companyHolidays,
+    workerGoals,
     loading,
     fetchData,
   } = useScheduleData();
@@ -459,6 +460,7 @@ export default function ScheduleBoard() {
                 assignments={assignments}
                 leaveRequests={leaveRequests}
                 holidays={companyHolidays}
+                workerGoals={workerGoals}
                 days={weekDays}
                 canEditProject={(pid) => canEditProject(pid, assignments)}
                 onCellClick={

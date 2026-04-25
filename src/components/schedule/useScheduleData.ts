@@ -10,6 +10,7 @@ import type {
   DailyTarget,
   LeaveRequest,
   CompanyHoliday,
+  WorkerGoal,
   ScheduleMode,
 } from "./scheduleTypes";
 
@@ -22,6 +23,7 @@ export function useScheduleData() {
   const [dailyTargets, setDailyTargets] = useState<DailyTarget[]>([]);
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
   const [companyHolidays, setCompanyHolidays] = useState<CompanyHoliday[]>([]);
+  const [workerGoals, setWorkerGoals] = useState<WorkerGoal[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchData = useCallback(
@@ -50,6 +52,8 @@ export function useScheduleData() {
         { data: targets },
         { data: leave },
         { data: holidays },
+        { data: dayGoals },
+        { data: weekGoals },
       ] = await Promise.all([
         supabase
           .from("profiles")
@@ -90,6 +94,20 @@ export function useScheduleData() {
           .lte("start_date", toDate)
           .gte("end_date", fromDate),
         supabase.from("company_holidays").select("id, datum, bezeichnung"),
+        // User-Tagesziele im sichtbaren Range
+        ((supabase as any).from("worker_goals"))
+          .select("id, user_id, scope, datum, week_start, ziel")
+          .eq("scope", "day")
+          .gte("datum", fromDate)
+          .lte("datum", toDate),
+        // User-Wochenziele: ISO-Wochenanfang muss vor toDate liegen und Woche darf nach fromDate enden.
+        // Wir holen alle Wochen, deren Montag im Range liegt + die Woche, die fromDate enthaelt.
+        // Vereinfachung: week_start zwischen fromDate-7 und toDate (deckt alle relevanten Wochen ab).
+        ((supabase as any).from("worker_goals"))
+          .select("id, user_id, scope, datum, week_start, ziel")
+          .eq("scope", "week")
+          .gte("week_start", format(new Date(new Date(fromDate).getTime() - 7 * 86400000), "yyyy-MM-dd"))
+          .lte("week_start", toDate),
       ]);
 
       if (profs) setProfiles(profs);
@@ -100,6 +118,11 @@ export function useScheduleData() {
       if (targets) setDailyTargets(targets as DailyTarget[]);
       if (leave) setLeaveRequests(leave as LeaveRequest[]);
       if (holidays) setCompanyHolidays(holidays as CompanyHoliday[]);
+      const allGoals: WorkerGoal[] = [
+        ...((dayGoals as WorkerGoal[]) || []),
+        ...((weekGoals as WorkerGoal[]) || []),
+      ];
+      setWorkerGoals(allGoals);
 
       setLoading(false);
     },
@@ -120,6 +143,8 @@ export function useScheduleData() {
     leaveRequests,
     companyHolidays,
     setCompanyHolidays,
+    workerGoals,
+    setWorkerGoals,
     loading,
     fetchData,
   };

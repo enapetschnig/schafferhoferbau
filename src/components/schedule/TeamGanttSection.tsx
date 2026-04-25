@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react";
-import { ChevronDown, ChevronRight, Users, Truck } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
+import { format, startOfISOWeek } from "date-fns";
+import { ChevronDown, ChevronRight, Users, Truck, Target } from "lucide-react";
 import { GanttBar } from "./GanttBar";
 import {
   getAssignmentForDay,
@@ -15,6 +16,7 @@ import type {
   Assignment,
   LeaveRequest,
   CompanyHoliday,
+  WorkerGoal,
 } from "./scheduleTypes";
 
 interface Props {
@@ -23,6 +25,7 @@ interface Props {
   assignments: Assignment[];
   leaveRequests: LeaveRequest[];
   holidays: CompanyHoliday[];
+  workerGoals?: WorkerGoal[];
   days: Date[];
   canEditProject: (projectId: string) => boolean;
   onCellClick?: (userId: string, date: Date) => void;
@@ -35,6 +38,7 @@ export function TeamGanttSection({
   assignments,
   leaveRequests,
   holidays,
+  workerGoals = [],
   days,
   canEditProject,
   onCellClick,
@@ -46,6 +50,23 @@ export function TeamGanttSection({
   const [dragEndIdx, setDragEndIdx] = useState<number | null>(null);
 
   const projectMap = Object.fromEntries(projects.map((p) => [p.id, p.name]));
+
+  // Goals nach (user_id|datum) und (user_id|week_start) indizieren
+  const { dayGoalMap, weekGoalMap } = useMemo(() => {
+    const dayMap: Record<string, string> = {};
+    const weekMap: Record<string, string> = {};
+    for (const g of workerGoals) {
+      if (g.scope === "day" && g.datum) {
+        dayMap[`${g.user_id}|${g.datum}`] = g.ziel;
+      } else if (g.scope === "week" && g.week_start) {
+        weekMap[`${g.user_id}|${g.week_start}`] = g.ziel;
+      }
+    }
+    return { dayGoalMap: dayMap, weekGoalMap: weekMap };
+  }, [workerGoals]);
+
+  const truncate = (s: string, n = 22) =>
+    s.length > n ? s.slice(0, n - 1) + "…" : s;
 
   useEffect(() => {
     const onMouseUp = () => {
@@ -89,6 +110,10 @@ export function TeamGanttSection({
       {!collapsed &&
         profiles.map((profile) => {
           const empColor = getEmployeeColor(profile.id, profiles.map(p => p.id));
+          // Wochenziel fuer die erste Woche im sichtbaren Range (typischerweise nur eine in der Wochenansicht)
+          const firstDay = days[0];
+          const weekStartStr = firstDay ? format(startOfISOWeek(firstDay), "yyyy-MM-dd") : null;
+          const wochenziel = weekStartStr ? weekGoalMap[`${profile.id}|${weekStartStr}`] : undefined;
           return (
           <div
             key={profile.id}
@@ -98,8 +123,17 @@ export function TeamGanttSection({
             }}
           >
             {/* Label */}
-            <div className={`p-2 border-r text-sm font-medium truncate sticky left-0 z-10 flex items-center ${empColor.bg} ${empColor.text}`}>
-              {profile.vorname} {profile.nachname}
+            <div className={`p-2 border-r text-sm sticky left-0 z-10 flex flex-col justify-center gap-0.5 ${empColor.bg} ${empColor.text}`}>
+              <span className="font-medium truncate">{profile.vorname} {profile.nachname}</span>
+              {wochenziel && (
+                <span
+                  className="flex items-center gap-1 text-[10px] font-normal bg-amber-50 border border-amber-200 text-amber-900 rounded px-1 py-0.5 truncate"
+                  title={`Wochenziel: ${wochenziel}`}
+                >
+                  <Target className="h-2.5 w-2.5 shrink-0" />
+                  <span className="truncate">{truncate(wochenziel, 20)}</span>
+                </span>
+              )}
             </div>
 
             {/* Day cells */}
@@ -123,6 +157,9 @@ export function TeamGanttSection({
                 dragEndIdx !== null &&
                 dayIdx >= Math.min(dragStartIdx, dragEndIdx) &&
                 dayIdx <= Math.max(dragStartIdx, dragEndIdx);
+
+              const dayKey = format(day, "yyyy-MM-dd");
+              const tagesziel = dayGoalMap[`${profile.id}|${dayKey}`];
 
               return (
                 <div
@@ -184,6 +221,20 @@ export function TeamGanttSection({
                           )}
                         </div>
                       ))}
+                      {tagesziel && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (onCellClick) onCellClick(profile.id, day);
+                          }}
+                          className="flex items-center gap-0.5 text-[9px] bg-amber-50 border border-amber-200 text-amber-900 rounded px-1 py-0.5 truncate hover:bg-amber-100 transition-colors"
+                          title={`Tagesziel: ${tagesziel}`}
+                        >
+                          <Target className="h-2.5 w-2.5 shrink-0" />
+                          <span className="truncate">{truncate(tagesziel, 18)}</span>
+                        </button>
+                      )}
                     </div>
                   ) : holiday ? (
                     <GanttBar

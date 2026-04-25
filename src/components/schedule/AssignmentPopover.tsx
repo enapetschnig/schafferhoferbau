@@ -67,10 +67,13 @@ export function AssignmentPopover({
     setTransportErforderlich(!!assignment?.transport_erforderlich);
   }, [assignment, open]);
 
-  // Bestehende Tages-/Wochenziele laden
+  // Bestehende Tages-/Wochenziele laden (nur im Single-Day-Modus)
   useEffect(() => {
-    if (!open || !profile || !date || isRangeMode) {
-      if (!isRangeMode) { setTagesziel(""); setWochenziel(""); }
+    if (!open || !profile || !date) return;
+    if (isRangeMode) {
+      // Range: Felder leer beim Oeffnen, da uneinheitlich ueber mehrere Tage
+      setTagesziel("");
+      setWochenziel("");
       return;
     }
     const datumStr = format(date, "yyyy-MM-dd");
@@ -96,39 +99,70 @@ export function AssignmentPopover({
   }, [open, profile, date, isRangeMode]);
 
   const persistGoals = async () => {
-    if (!profile || !date || isRangeMode) return;
+    if (!profile) return;
     setSavingGoals(true);
-    const datumStr = format(date, "yyyy-MM-dd");
-    const weekStartStr = format(startOfISOWeek(date), "yyyy-MM-dd");
     const { data: { user } } = await supabase.auth.getUser();
     const createdBy = user?.id || null;
+    const nowIso = new Date().toISOString();
 
-    // Tagesziel
-    if (tagesziel.trim()) {
-      await (supabase.from("worker_goals") as any).upsert(
-        { user_id: profile.id, scope: "day", datum: datumStr, week_start: null, ziel: tagesziel.trim(), created_by: createdBy, updated_at: new Date().toISOString() },
-        { onConflict: "user_id,datum", ignoreDuplicates: false }
+    if (isRangeMode && days) {
+      // Range-Mode: nur Upsert, kein Delete (leere Felder lassen bestehende Ziele unberuehrt)
+      const tagesTrim = tagesziel.trim();
+      const wochenTrim = wochenziel.trim();
+      const weekStarts = new Set<string>(
+        days.map((d) => format(startOfISOWeek(d), "yyyy-MM-dd"))
       );
-    } else {
-      await (supabase.from("worker_goals") as any)
-        .delete()
-        .eq("user_id", profile.id)
-        .eq("scope", "day")
-        .eq("datum", datumStr);
-    }
 
-    // Wochenziel
-    if (wochenziel.trim()) {
-      await (supabase.from("worker_goals") as any).upsert(
-        { user_id: profile.id, scope: "week", datum: null, week_start: weekStartStr, ziel: wochenziel.trim(), created_by: createdBy, updated_at: new Date().toISOString() },
-        { onConflict: "user_id,week_start", ignoreDuplicates: false }
-      );
-    } else {
-      await (supabase.from("worker_goals") as any)
-        .delete()
-        .eq("user_id", profile.id)
-        .eq("scope", "week")
-        .eq("week_start", weekStartStr);
+      if (tagesTrim) {
+        for (const d of days) {
+          const datumStr = format(d, "yyyy-MM-dd");
+          await (supabase.from("worker_goals") as any).upsert(
+            { user_id: profile.id, scope: "day", datum: datumStr, week_start: null, ziel: tagesTrim, created_by: createdBy, updated_at: nowIso },
+            { onConflict: "user_id,datum", ignoreDuplicates: false }
+          );
+        }
+      }
+
+      if (wochenTrim) {
+        for (const ws of weekStarts) {
+          await (supabase.from("worker_goals") as any).upsert(
+            { user_id: profile.id, scope: "week", datum: null, week_start: ws, ziel: wochenTrim, created_by: createdBy, updated_at: nowIso },
+            { onConflict: "user_id,week_start", ignoreDuplicates: false }
+          );
+        }
+      }
+    } else if (date) {
+      // Single-Day-Modus: leeres Feld loescht das bestehende Ziel
+      const datumStr = format(date, "yyyy-MM-dd");
+      const weekStartStr = format(startOfISOWeek(date), "yyyy-MM-dd");
+
+      // Tagesziel
+      if (tagesziel.trim()) {
+        await (supabase.from("worker_goals") as any).upsert(
+          { user_id: profile.id, scope: "day", datum: datumStr, week_start: null, ziel: tagesziel.trim(), created_by: createdBy, updated_at: nowIso },
+          { onConflict: "user_id,datum", ignoreDuplicates: false }
+        );
+      } else {
+        await (supabase.from("worker_goals") as any)
+          .delete()
+          .eq("user_id", profile.id)
+          .eq("scope", "day")
+          .eq("datum", datumStr);
+      }
+
+      // Wochenziel
+      if (wochenziel.trim()) {
+        await (supabase.from("worker_goals") as any).upsert(
+          { user_id: profile.id, scope: "week", datum: null, week_start: weekStartStr, ziel: wochenziel.trim(), created_by: createdBy, updated_at: nowIso },
+          { onConflict: "user_id,week_start", ignoreDuplicates: false }
+        );
+      } else {
+        await (supabase.from("worker_goals") as any)
+          .delete()
+          .eq("user_id", profile.id)
+          .eq("scope", "week")
+          .eq("week_start", weekStartStr);
+      }
     }
     setSavingGoals(false);
   };
@@ -137,15 +171,15 @@ export function AssignmentPopover({
 
   const handleSave = async () => {
     if (!selectedProject) return;
-    if (isRangeMode) {
+    if (isRangeMode && days) {
       for (const d of days) {
         onAssign(profile.id, d, selectedProject, notizen || undefined, transportErforderlich);
       }
-    } else {
+    } else if (date) {
       onAssign(profile.id, date, selectedProject, notizen || undefined, transportErforderlich);
-      // Tages-/Wochenziel parallel persistieren (nur Single-Day-Modus)
-      await persistGoals();
     }
+    // Tages-/Wochenziel persistieren (Single- und Range-Modus)
+    await persistGoals();
     onOpenChange(false);
   };
 
@@ -230,44 +264,55 @@ export function AssignmentPopover({
             <Label className="text-sm font-normal cursor-pointer flex-1">Transport erforderlich</Label>
           </label>
 
-          {/* User-spezifische Ziele — nur im Single-Day-Modus */}
-          {!isRangeMode && (
-            <div className="space-y-2 pt-2 border-t">
-              <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                <Target className="h-3.5 w-3.5" />
-                Ziele für {profile.vorname}
-              </div>
-              <div>
-                <Label className="text-xs">Tagesziel</Label>
-                <Textarea
-                  placeholder="z.B. Außenmauer fertig betonieren"
-                  value={tagesziel}
-                  onChange={(e) => setTagesziel(e.target.value)}
-                  rows={2}
-                  className="text-sm resize-none"
-                />
-              </div>
-              <div>
-                <Label className="text-xs">Wochenziel</Label>
-                <Textarea
-                  placeholder="z.B. Rohbau OG fertigstellen"
-                  value={wochenziel}
-                  onChange={(e) => setWochenziel(e.target.value)}
-                  rows={2}
-                  className="text-sm resize-none"
-                />
-              </div>
+          {/* User-spezifische Ziele */}
+          <div className="space-y-2 pt-2 border-t">
+            <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+              <Target className="h-3.5 w-3.5" />
+              Ziele für {profile.vorname}
             </div>
-          )}
+            <div>
+              <Label className="text-xs">
+                {isRangeMode ? "Tagesziel (für alle ausgewählten Tage)" : "Tagesziel"}
+              </Label>
+              <Textarea
+                placeholder="z.B. Außenmauer fertig betonieren"
+                value={tagesziel}
+                onChange={(e) => setTagesziel(e.target.value)}
+                rows={2}
+                className="text-sm resize-none"
+              />
+            </div>
+            <div>
+              <Label className="text-xs">
+                {isRangeMode ? "Wochenziel (für die betroffenen Kalenderwochen)" : "Wochenziel"}
+              </Label>
+              <Textarea
+                placeholder="z.B. Rohbau OG fertigstellen"
+                value={wochenziel}
+                onChange={(e) => setWochenziel(e.target.value)}
+                rows={2}
+                className="text-sm resize-none"
+              />
+            </div>
+            {isRangeMode && (
+              <p className="text-[10px] text-muted-foreground">
+                Hinweis: Leere Felder bleiben unverändert (überschreiben kein bestehendes Ziel).
+              </p>
+            )}
+          </div>
         </div>
 
         <DialogFooter>
           <Button
             size="sm"
             onClick={handleSave}
-            disabled={!selectedProject}
+            disabled={!selectedProject || savingGoals}
           >
-            {isRangeMode ? `${days.length} Tage zuweisen` : "Speichern"}
+            {savingGoals
+              ? "Speichern..."
+              : isRangeMode && days
+                ? `${days.length} Tage zuweisen`
+                : "Speichern"}
           </Button>
         </DialogFooter>
       </DialogContent>

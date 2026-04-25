@@ -55,4 +55,14 @@ export type CompanyHoliday = {
   bezeichnung: string | null;
 };
 
+// User-spezifische Tages-/Wochenziele aus `worker_goals`
+export type WorkerGoal = {
+  id: string;
+  user_id: string;
+  scope: "day" | "week";
+  datum: string | null;
+  week_start: string | null;
+  ziel: string;
+};
+
 export type ScheduleMode = "week" | "year";
