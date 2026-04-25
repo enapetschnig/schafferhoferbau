@@ -38,6 +38,7 @@ interface Props {
 }
 
 export function WeeklyAssignmentWidget({ userId }: Props) {
+  const navigate = useNavigate();
   const [assignments, setAssignments] = useState<WeekAssignment[]>([]);
   const [holidays, setHolidays] = useState<HolidayDay[]>([]);
   const [leaves, setLeaves] = useState<LeaveDay[]>([]);
@@ -179,8 +180,6 @@ export function WeeklyAssignmentWidget({ userId }: Props) {
       </div>
     );
   };
-
-  const navigate = useNavigate();
 
   return (
     <div className="mb-6">
