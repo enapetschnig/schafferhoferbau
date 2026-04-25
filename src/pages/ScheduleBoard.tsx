@@ -513,12 +513,8 @@ export default function ScheduleBoard() {
         datum={sheetDatum}
         profiles={profiles}
         assignments={assignments}
-        resources={resources}
         dailyTarget={sheetTarget || null}
         onUpdateTarget={upsertTarget}
-        onAddResource={handleAddResource}
-        onUpdateResource={handleUpdateResource}
-        onDeleteResource={handleDeleteResource}
       />
 
       {/* Ressourcen-Verwaltung */}

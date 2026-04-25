@@ -1,7 +1,7 @@
 import { useRef, useState, useEffect } from "react";
 import { format, parseISO, isSameDay } from "date-fns";
 import { de } from "date-fns/locale";
-import { Trash2, Truck } from "lucide-react";
+import { Truck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -12,7 +12,6 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { ResourceAdder } from "./ResourceAdder";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { VoiceAIInput } from "@/components/VoiceAIInput";
@@ -20,7 +19,6 @@ import type {
   Project,
   Assignment,
   Profile,
-  Resource,
   DailyTarget,
 } from "./scheduleTypes";
 
@@ -31,7 +29,6 @@ interface Props {
   datum: string | null;
   profiles: Profile[];
   assignments: Assignment[];
-  resources: Resource[];
   dailyTarget: DailyTarget | null;
   onUpdateTarget: (
     projectId: string,
@@ -39,13 +36,6 @@ interface Props {
     field: keyof DailyTarget,
     value: string | number | null
   ) => void;
-  onAddResource: (projectId: string, datum: string, name: string) => void;
-  onUpdateResource: (
-    id: string,
-    field: "menge" | "einheit",
-    value: number | string | null
-  ) => void;
-  onDeleteResource: (id: string) => void;
 }
 
 export function DayDetailSheet({
@@ -55,12 +45,8 @@ export function DayDetailSheet({
   datum,
   profiles,
   assignments,
-  resources,
   dailyTarget,
   onUpdateTarget,
-  onAddResource,
-  onUpdateResource,
-  onDeleteResource,
 }: Props) {
   const { toast } = useToast();
   const [transportErforderlich, setTransportErforderlich] = useState(false);
@@ -112,9 +98,6 @@ export function DayDetailSheet({
   const dayAssignments = assignments.filter(
     (a) =>
       a.project_id === project.id && isSameDay(parseISO(a.datum), dateParsed)
-  );
-  const dayResources = resources.filter(
-    (r) => r.project_id === project.id && r.datum === datum
   );
 
   const assignedProfiles = profiles.filter((p) =>
@@ -234,60 +217,10 @@ export function DayDetailSheet({
             />
           </div>
 
-          {/* Resources */}
-          <div>
-            <label className="text-sm font-semibold mb-2 block">
-              Ressourcen / Geräte
-            </label>
-            {dayResources.length > 0 && (
-              <div className="space-y-1.5 mb-2">
-                {dayResources.map((r) => (
-                  <div
-                    key={r.id}
-                    className="flex items-center gap-2 bg-muted/30 rounded px-2 py-1.5"
-                  >
-                    <span className="text-sm font-medium flex-1 min-w-0 truncate">
-                      {r.resource_name}
-                    </span>
-                    <Input
-                      type="number"
-                      min="0"
-                      step="1"
-                      className="w-16 h-8 text-sm"
-                      value={r.menge ?? ""}
-                      onChange={(e) =>
-                        onUpdateResource(
-                          r.id,
-                          "menge",
-                          e.target.value ? parseFloat(e.target.value) : null
-                        )
-                      }
-                    />
-                    <Input
-                      className="w-20 h-8 text-sm"
-                      value={r.einheit || ""}
-                      placeholder="Einheit"
-                      onChange={(e) =>
-                        onUpdateResource(r.id, "einheit", e.target.value)
-                      }
-                    />
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 shrink-0 text-destructive"
-                      onClick={() => onDeleteResource(r.id)}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            )}
-            <ResourceAdder
-              existingNames={dayResources.map((r) => r.resource_name)}
-              onAdd={(name) => onAddResource(project.id, datum, name)}
-            />
-          </div>
+          {/* Hinweis: Ressourcen werden in der Wochen-Plantafel direkt per Drag-Select zugewiesen */}
+          <p className="text-xs text-muted-foreground">
+            Ressourcen werden in der Plantafel zugewiesen (Drag-Select über mehrere Tage in der Ressourcen-Sektion).
+          </p>
         </div>
       </SheetContent>
     </Sheet>
