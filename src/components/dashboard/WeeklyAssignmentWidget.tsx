@@ -49,8 +49,9 @@ export function WeeklyAssignmentWidget({ userId }: Props) {
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
   const row1Days = weekDays.slice(0, 4); // Mo-Do
   const row2Days = weekDays.slice(4, 7); // Fr-So
-  const [todayTarget, setTodayTarget] = useState<string | null>(null);
-  const [userTagesziel, setUserTagesziel] = useState<string | null>(null);
+  // Map: datum (yyyy-MM-dd) -> Ziel
+  const [projectDayTargets, setProjectDayTargets] = useState<Record<string, string>>({});
+  const [userDayGoals, setUserDayGoals] = useState<Record<string, string>>({});
   const [userWochenziel, setUserWochenziel] = useState<string | null>(null);
 
   useEffect(() => {
@@ -94,28 +95,36 @@ export function WeeklyAssignmentWidget({ userId }: Props) {
       if (holidayData) setHolidays(holidayData);
       if (leaveData) setLeaves(leaveData as LeaveDay[]);
 
-      // Fetch today's target (Projekt-Tagesziel)
-      const todayStr = format(new Date(), "yyyy-MM-dd");
-      const todayAssign = assignData?.find((a: any) => a.datum === todayStr);
-      if (todayAssign) {
-        const { data: targetData } = await supabase
+      // Projekt-Tagesziele fuer alle Tage der Woche laden (pro Projekt+Datum)
+      const weekStartStr = format(weekStart, "yyyy-MM-dd");
+      const weekEndStr = format(weekEnd, "yyyy-MM-dd");
+      if (assignData && assignData.length > 0) {
+        const projectIds = Array.from(new Set(assignData.map((a: any) => a.project_id)));
+        const { data: targetsData } = await supabase
           .from("project_daily_targets")
-          .select("tagesziel")
-          .eq("project_id", todayAssign.project_id)
-          .eq("datum", todayStr)
-          .maybeSingle();
-        if (targetData?.tagesziel) setTodayTarget(targetData.tagesziel);
+          .select("project_id, datum, tagesziel")
+          .in("project_id", projectIds)
+          .gte("datum", weekStartStr)
+          .lte("datum", weekEndStr);
+        if (targetsData) {
+          const map: Record<string, string> = {};
+          for (const t of targetsData as any[]) {
+            // pro Datum: das Ziel des am Tag eingeteilten Projekts
+            const assign = assignData.find((a: any) => a.datum === t.datum && a.project_id === t.project_id);
+            if (assign && t.tagesziel) map[t.datum] = t.tagesziel;
+          }
+          setProjectDayTargets(map);
+        }
       }
 
-      // User-spezifisches Tages- und Wochenziel (worker_goals)
-      const weekStartStr = format(weekStart, "yyyy-MM-dd");
-      const [{ data: dayGoal }, { data: weekGoal }] = await Promise.all([
+      // User-spezifische Tages-Ziele (worker_goals scope=day) fuer die ganze Woche
+      const [{ data: dayGoals }, { data: weekGoal }] = await Promise.all([
         (supabase.from("worker_goals") as any)
-          .select("ziel")
+          .select("datum, ziel")
           .eq("user_id", userId)
           .eq("scope", "day")
-          .eq("datum", todayStr)
-          .maybeSingle(),
+          .gte("datum", weekStartStr)
+          .lte("datum", weekEndStr),
         (supabase.from("worker_goals") as any)
           .select("ziel")
           .eq("user_id", userId)
@@ -123,7 +132,13 @@ export function WeeklyAssignmentWidget({ userId }: Props) {
           .eq("week_start", weekStartStr)
           .maybeSingle(),
       ]);
-      setUserTagesziel((dayGoal as any)?.ziel || null);
+      if (dayGoals) {
+        const map: Record<string, string> = {};
+        for (const g of dayGoals as any[]) {
+          if (g.datum && g.ziel) map[g.datum] = g.ziel;
+        }
+        setUserDayGoals(map);
+      }
       setUserWochenziel((weekGoal as any)?.ziel || null);
 
       setLoading(false);
@@ -146,6 +161,9 @@ export function WeeklyAssignmentWidget({ userId }: Props) {
       isWithinInterval(day, { start: parseISO(l.start_date), end: parseISO(l.end_date) })
     );
     const isToday = isSameDay(day, new Date());
+    const dayKey = format(day, "yyyy-MM-dd");
+    // User-Tagesziel hat Vorrang vor Projekt-Tagesziel
+    const dayGoal = userDayGoals[dayKey] || projectDayTargets[dayKey] || null;
 
     return (
       <div key={day.toISOString()} className="text-center">
@@ -167,6 +185,14 @@ export function WeeklyAssignmentWidget({ userId }: Props) {
                 </div>
               );
             })}
+            {dayGoal && (
+              <div
+                className="text-[9px] text-amber-900 bg-amber-50 border border-amber-200 rounded px-1 py-0.5 leading-tight text-left"
+                title={dayGoal}
+              >
+                <span className="font-medium">Ziel:</span> <span className="line-clamp-2">{dayGoal}</span>
+              </div>
+            )}
           </div>
         ) : holiday ? (
           <div className="rounded-md bg-gray-100 text-gray-500 text-[10px] px-1 py-2 border border-gray-200">
@@ -204,15 +230,9 @@ export function WeeklyAssignmentWidget({ userId }: Props) {
             {row2Days.map((day) => renderDay(day))}
             <div /> {/* Leere 4. Spalte fuer Alignment */}
           </div>
-          {/* User-Tagesziel hat Vorrang vor Projekt-Tagesziel */}
-          {(userTagesziel || todayTarget) && (
-            <div className="pt-1 border-t mt-2">
-              <p className="text-xs text-muted-foreground">Tagesziel:</p>
-              <p className="text-sm font-medium">{userTagesziel || todayTarget}</p>
-            </div>
-          )}
+          {/* Wochenziel wird unten angezeigt; Tagesziele sind direkt unter dem jeweiligen Projekt */}
           {userWochenziel && (
-            <div className="pt-1">
+            <div className="pt-1 border-t mt-2">
               <p className="text-xs text-muted-foreground">Wochenziel:</p>
               <p className="text-sm font-medium">{userWochenziel}</p>
             </div>
