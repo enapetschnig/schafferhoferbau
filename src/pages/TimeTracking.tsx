@@ -182,6 +182,20 @@ const TimeTracking = () => {
     return searchParams.get("date") || new Date().toISOString().split('T')[0];
   });
 
+  // Employee schedule für individuelle Arbeitszeiten — zentrale Hook (loest direkten Supabase-Read ab).
+  // MUSS vor allen useEffects stehen, die `employeeSchedule` nutzen (TDZ-Schutz).
+  const [authUserId, setAuthUserId] = useState<string | null>(null);
+  useEffect(() => {
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      setAuthUserId(user?.id ?? null);
+    })();
+  }, []);
+  const scheduleData = useEmployeeSchedule(targetUserId || authUserId);
+  const employeeSchedule = scheduleData.schedule;
+  const employeeSchwellenwert = scheduleData.schwellenwert;
+  const isExternalUser = scheduleData.isExternal;
+
   // Datum im Abwesenheits-Dialog auf selectedDate setzen wenn Dialog geöffnet wird
   // + Beginn/Ende aus Regelarbeitszeit vorfüllen wenn isFullDay=false
   useEffect(() => {
@@ -236,19 +250,6 @@ const TimeTracking = () => {
   }, [showBadWeatherDialog, selectedDate, employeeSchedule, targetUserId]);
   const [timeBlocks, setTimeBlocks] = useState<TimeBlock[]>([createDefaultBlock()]);
   const entryMode = "zeitraum" as const;
-
-  // Employee schedule für individuelle Arbeitszeiten — zentrale Hook (loest direkten Supabase-Read ab)
-  const [authUserId, setAuthUserId] = useState<string | null>(null);
-  useEffect(() => {
-    (async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      setAuthUserId(user?.id ?? null);
-    })();
-  }, []);
-  const scheduleData = useEmployeeSchedule(targetUserId || authUserId);
-  const employeeSchedule = scheduleData.schedule;
-  const employeeSchwellenwert = scheduleData.schwellenwert;
-  const isExternalUser = scheduleData.isExternal;
 
   // Auto-fill project from Plantafel + Taetigkeit aus Tagesbericht, wenn noch leer
   useEffect(() => {
