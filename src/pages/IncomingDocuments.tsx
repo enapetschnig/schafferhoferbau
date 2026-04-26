@@ -12,6 +12,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { PageHeader } from "@/components/PageHeader";
 import { DocumentCaptureDialog } from "@/components/DocumentCaptureDialog";
 import { DocumentDetailDialog, type IncomingDocument } from "@/components/DocumentDetailDialog";
+import { WarehouseDeliveryNoteDialog } from "@/components/warehouse/WarehouseDeliveryNoteDialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Download, Plus, Filter, FileText, ArrowRightLeft, Camera, Pencil } from "lucide-react";
 import { format, parseISO } from "date-fns";
@@ -57,6 +58,7 @@ export default function IncomingDocuments() {
   const [showList, setShowList] = useState(!hideListInitially);
   const [captureDocType, setCaptureDocType] = useState<"lieferschein" | "rechnung">("lieferschein");
   const [captureSkipPhoto, setCaptureSkipPhoto] = useState(false);
+  const [showWarehouseDialog, setShowWarehouseDialog] = useState(false);
   const [selectedDocIds, setSelectedDocIds] = useState<Set<string>>(new Set());
   const [zipLoading, setZipLoading] = useState(false);
   const [selectedDoc, setSelectedDoc] = useState<IncomingDocument | null>(null);
@@ -247,11 +249,7 @@ export default function IncomingDocuments() {
             size="lg"
             variant="outline"
             className="h-auto py-3"
-            onClick={() => {
-              setCaptureDocType("lieferschein");
-              setCaptureSkipPhoto(true);
-              setShowCaptureDialog(true);
-            }}
+            onClick={() => setShowWarehouseDialog(true)}
           >
             <Pencil className="w-5 h-5 mr-2" />
             <div className="text-left">
@@ -671,7 +669,7 @@ export default function IncomingDocuments() {
         </Tabs>
       </div>
 
-      {/* Capture Dialog */}
+      {/* Capture Dialog (Foto-basiert) */}
       <DocumentCaptureDialog
         open={showCaptureDialog}
         onOpenChange={setShowCaptureDialog}
@@ -680,6 +678,13 @@ export default function IncomingDocuments() {
         defaultDocType={captureDocType}
         skipPhoto={captureSkipPhoto}
         onShowAll={hideListInitially ? () => { setShowCaptureDialog(false); setShowList(true); } : undefined}
+      />
+
+      {/* Lieferschein haendisch erstellen (gleicher Dialog wie Lagerverwaltung) */}
+      <WarehouseDeliveryNoteDialog
+        open={showWarehouseDialog}
+        onOpenChange={setShowWarehouseDialog}
+        onSaved={fetchDocuments}
       />
 
       {/* Detail Dialog */}

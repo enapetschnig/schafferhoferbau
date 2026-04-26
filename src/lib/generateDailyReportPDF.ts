@@ -13,6 +13,7 @@ export interface DailyReportForPDF {
   unterschrift_kunde: string | null;
   unterschrift_am: string | null;
   unterschrift_name: string | null;
+  zeit_auf_pdf?: boolean;
   project: { name: string; adresse: string | null; plz: string | null } | null;
 }
 
@@ -24,6 +25,14 @@ export interface ActivityForPDF {
 export interface PhotoForPDF {
   file_path: string;
   file_name: string;
+}
+
+export interface TimeEntryForPDF {
+  start_time: string | null;
+  end_time: string | null;
+  pause_minutes: number | null;
+  stunden: number;
+  taetigkeit: string | null;
 }
 
 const WETTER_LABELS_PDF: Record<string, string> = {
@@ -62,7 +71,7 @@ export async function generateDailyReportPDF(
   activities: ActivityForPDF[],
   photos: PhotoForPDF[],
   supabaseUrl: string,
-  options: { returnAsBlob?: boolean } = {}
+  options: { returnAsBlob?: boolean; timeEntries?: TimeEntryForPDF[] } = {}
 ): Promise<void | Blob> {
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const pageWidth = doc.internal.pageSize.getWidth();
@@ -196,6 +205,32 @@ export async function generateDailyReportPDF(
     checkPageBreak(lines.length * 4.5);
     doc.text(lines, margin, y);
     y += lines.length * 4.5 + 3;
+  }
+
+  // Zeiterfassung — nur wenn das Flag zeit_auf_pdf gesetzt ist
+  if (report.zeit_auf_pdf && options.timeEntries && options.timeEntries.length > 0) {
+    const total = options.timeEntries.reduce((s, e) => s + Number(e.stunden || 0), 0);
+    const lineCount = options.timeEntries.length;
+    checkPageBreak(15 + lineCount * 5 + 5);
+    doc.setFontSize(12);
+    doc.setFont("helvetica", "bold");
+    doc.text(`Zeiterfassung (${total.toFixed(2)} h gesamt)`, margin, y);
+    y += 7;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    for (const e of options.timeEntries) {
+      const range = e.start_time && e.end_time
+        ? `${e.start_time.slice(0, 5)} - ${e.end_time.slice(0, 5)}`
+        : `${Number(e.stunden).toFixed(2)} h`;
+      const pause = e.pause_minutes ? ` (Pause ${e.pause_minutes} min)` : "";
+      const taet = e.taetigkeit ? ` - ${e.taetigkeit}` : "";
+      const line = `${range}${pause}${taet}  ->  ${Number(e.stunden || 0).toFixed(2)} h`;
+      const wrapped = doc.splitTextToSize(line, contentWidth);
+      checkPageBreak(wrapped.length * 4.5);
+      doc.text(wrapped, margin, y);
+      y += wrapped.length * 4.5;
+    }
+    y += 4;
   }
 
   // Photos

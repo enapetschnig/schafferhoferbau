@@ -15,9 +15,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { VoiceAIInput } from "@/components/VoiceAIInput";
 import { useProjectWeather } from "@/hooks/useProjectWeather";
 import { format } from "date-fns";
-import { Plus, Trash2, CloudSun, ChevronLeft, ChevronRight, Camera } from "lucide-react";
-import { SerialPhotoCapture } from "@/components/SerialPhotoCapture";
-import { uploadDailyReportPhoto } from "@/lib/dailyReportPhotos";
+import { Plus, Trash2, CloudSun, ChevronLeft, ChevronRight } from "lucide-react";
 import { TimeEntryStep, calcEntryHours, type TimeEntryFormData } from "@/components/TimeEntryStep";
 
 type Project = { id: string; name: string; plz: string | null; adresse?: string | null; baustellenart?: string | null };
@@ -70,8 +68,6 @@ export function DailyReportForm({ open, onOpenChange, onSuccess, defaultProjectI
   const [selectedWorkers, setSelectedWorkers] = useState<string[]>([]);
   // Wizard-State (nur fuer Tages-/Regiebericht beim Neuanlegen)
   const [step, setStep] = useState<1 | 2 | 3>(1);
-  const [pendingPhotos, setPendingPhotos] = useState<File[]>([]);
-  const [serialOpen, setSerialOpen] = useState(false);
   const [authUserId, setAuthUserId] = useState<string>("");
   const [timeEntryData, setTimeEntryData] = useState<TimeEntryFormData>({
     startTime: "07:00",
@@ -83,11 +79,11 @@ export function DailyReportForm({ open, onOpenChange, onSuccess, defaultProjectI
   // Wizard beim Neuanlegen fuer alle Berichtstypen.
   // Tages-/Regiebericht: Bericht -> Zeit -> Fotos (3 Schritte)
   // Zwischenbericht: Bericht -> Fotos (2 Schritte, Zeiterfassung wird uebersprungen)
-  const isWizard = !editData;
+  // Wizard nur bei Tages-/Regiebericht (mit Zeit-Step). Zwischenbericht: Single-Page.
+  // Fotos werden NICHT im Wizard hochgeladen — passiert auf der Detail-Seite nach dem Speichern.
   const hasTimeStep = reportType !== "zwischenbericht";
-  const stepKeys = hasTimeStep
-    ? (["bericht", "zeit", "fotos"] as const)
-    : (["bericht", "fotos"] as const);
+  const isWizard = !editData && hasTimeStep;
+  const stepKeys = (["bericht", "zeit"] as const);
   const totalSteps = stepKeys.length;
   const currentStepKey = stepKeys[Math.min(step, totalSteps) - 1];
 
@@ -279,7 +275,6 @@ export function DailyReportForm({ open, onOpenChange, onSuccess, defaultProjectI
     setActivities([]);
     setSelectedWorkers([]);
     setStep(1);
-    setPendingPhotos([]);
     setTimeEntryData({ startTime: "07:00", endTime: "16:00", pauseMinutes: "30", taetigkeit: "" });
     setTimeEntrySkip(false);
   };
@@ -444,23 +439,7 @@ export function DailyReportForm({ open, onOpenChange, onSuccess, defaultProjectI
       }
     }
 
-    // Photos hochladen (nur Wizard-Flow, beim Bearbeiten passiert das direkt in DailyReportDetail)
-    if (!editData && pendingPhotos.length > 0) {
-      let uploaded = 0;
-      for (const file of pendingPhotos) {
-        const res = await uploadDailyReportPhoto({
-          reportId,
-          projectId,
-          userId: user.id,
-          file,
-        });
-        if (res.ok) uploaded++;
-      }
-      if (uploaded > 0) {
-        toast({ title: `${uploaded} Foto${uploaded === 1 ? "" : "s"} hochgeladen` });
-      }
-    }
-
+    // Fotos werden auf der Detail-Seite hochgeladen (nicht mehr im Wizard)
     toast({ title: "Gespeichert", description: editData ? "Bericht aktualisiert" : "Bericht erstellt" });
     onOpenChange(false);
     resetForm();
@@ -769,63 +748,6 @@ export function DailyReportForm({ open, onOpenChange, onSuccess, defaultProjectI
             />
           )}
 
-          {/* === Fotos-Step (Step 2 bei Zwischenbericht, Step 3 sonst) === */}
-          {isWizard && currentStepKey === "fotos" && (
-            <div className="space-y-3">
-              <Label className="text-base font-semibold">Fotos hinzufügen (optional)</Label>
-              <p className="text-xs text-muted-foreground">
-                Fotos werden direkt nach dem Speichern hochgeladen.
-              </p>
-              <div className="flex gap-2">
-                <Button type="button" variant="outline" onClick={() => setSerialOpen(true)} className="flex-1">
-                  <Camera className="w-4 h-4 mr-1" /> Serienaufnahme
-                </Button>
-                <Button type="button" variant="outline" className="flex-1" asChild>
-                  <label className="cursor-pointer">
-                    <Plus className="w-4 h-4 mr-1" /> Aus Galerie
-                    <input
-                      type="file"
-                      accept="image/*"
-                      multiple
-                      className="hidden"
-                      onChange={(e) => {
-                        const files = Array.from(e.target.files || []);
-                        if (files.length > 0) {
-                          setPendingPhotos((prev) => [...prev, ...files]);
-                        }
-                        e.target.value = "";
-                      }}
-                    />
-                  </label>
-                </Button>
-              </div>
-              {pendingPhotos.length > 0 && (
-                <div className="space-y-2">
-                  <p className="text-sm">{pendingPhotos.length} Foto{pendingPhotos.length === 1 ? "" : "s"} ausgewählt</p>
-                  <div className="grid grid-cols-3 gap-2">
-                    {pendingPhotos.map((f, idx) => (
-                      <div key={idx} className="relative">
-                        <img
-                          src={URL.createObjectURL(f)}
-                          alt=""
-                          className="aspect-square w-full object-cover rounded border"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setPendingPhotos((prev) => prev.filter((_, i) => i !== idx))}
-                          className="absolute top-1 right-1 bg-destructive text-destructive-foreground rounded-full p-1"
-                          title="Entfernen"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
           {/* === Actions === */}
           {isWizard ? (
             <div className="flex justify-between gap-2 pt-2 border-t">
@@ -867,15 +789,6 @@ export function DailyReportForm({ open, onOpenChange, onSuccess, defaultProjectI
           )}
         </div>
       </DialogContent>
-      {/* Serienaufnahme-Dialog */}
-      <SerialPhotoCapture
-        open={serialOpen}
-        onOpenChange={setSerialOpen}
-        title="Serienaufnahme"
-        onFinish={async (files) => {
-          setPendingPhotos((prev) => [...prev, ...files]);
-        }}
-      />
     </Dialog>
   );
 }

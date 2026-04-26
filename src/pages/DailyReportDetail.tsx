@@ -44,6 +44,7 @@ type DailyReport = {
   unterschrift_am: string | null;
   unterschrift_name: string | null;
   status: string;
+  zeit_auf_pdf: boolean;
   created_at: string;
   projects: { name: string; plz: string | null; adresse: string | null } | null;
 };
@@ -51,6 +52,15 @@ type DailyReport = {
 type Activity = { id: string; geschoss: string; beschreibung: string; sort_order: number };
 type Photo = { id: string; file_path: string; file_name: string };
 type Worker = { user_id: string; name: string };
+type TimeEntry = {
+  id: string;
+  start_time: string | null;
+  end_time: string | null;
+  pause_minutes: number | null;
+  stunden: number;
+  taetigkeit: string | null;
+  project_id: string | null;
+};
 
 export default function DailyReportDetail() {
   const { id } = useParams<{ id: string }>();
@@ -61,6 +71,7 @@ export default function DailyReportDetail() {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [workers, setWorkers] = useState<Worker[]>([]);
+  const [dayTimeEntries, setDayTimeEntries] = useState<TimeEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [serialCapture, setSerialCapture] = useState(false);
@@ -164,6 +175,20 @@ export default function DailyReportDetail() {
       }
     } else {
       setWorkers([]);
+    }
+
+    // Zeit-Eintraege fuer den Tag des Berichts (vom Bericht-Ersteller) laden
+    if (data?.user_id && data?.datum) {
+      const { data: timeData } = await supabase
+        .from("time_entries")
+        .select("id, start_time, end_time, pause_minutes, stunden, taetigkeit, project_id")
+        .eq("user_id", data.user_id)
+        .eq("datum", data.datum)
+        .order("start_time");
+      if (timeData) setDayTimeEntries(timeData as TimeEntry[]);
+      else setDayTimeEntries([]);
+    } else {
+      setDayTimeEntries([]);
     }
 
     setLoading(false);
@@ -360,11 +385,13 @@ export default function DailyReportDetail() {
         unterschrift_kunde: report.unterschrift_kunde,
         unterschrift_am: report.unterschrift_am,
         unterschrift_name: report.unterschrift_name,
+        zeit_auf_pdf: report.zeit_auf_pdf,
         project: report.projects ? { name: report.projects.name, adresse: report.projects.adresse, plz: report.projects.plz } : null,
       },
       activities,
       photos,
-      supabaseUrl
+      supabaseUrl,
+      { timeEntries: dayTimeEntries }
     );
   };
 
@@ -467,6 +494,80 @@ export default function DailyReportDetail() {
             </CardContent>
           </Card>
         )}
+
+        {/* Gebuchte Zeit für diesen Tag */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <CardTitle className="text-lg">
+                Zeiterfassung
+                {dayTimeEntries.length > 0 && (
+                  <span className="text-sm text-muted-foreground font-normal ml-2">
+                    ({dayTimeEntries.reduce((s, e) => s + Number(e.stunden || 0), 0).toFixed(2)} h gesamt)
+                  </span>
+                )}
+              </CardTitle>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => navigate(`/time-tracking?date=${report.datum}`)}
+              >
+                <Pencil className="w-3.5 h-3.5 mr-1" />
+                {dayTimeEntries.length > 0 ? "Zeit bearbeiten" : "Zeit erfassen"}
+              </Button>
+            </div>
+            {dayTimeEntries.length > 0 && !isSigned && (
+              <label className="flex items-center gap-2 mt-2 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={!!report.zeit_auf_pdf}
+                  onChange={async (e) => {
+                    const v = e.target.checked;
+                    setReport({ ...report, zeit_auf_pdf: v });
+                    await supabase.from("daily_reports").update({ zeit_auf_pdf: v } as any).eq("id", report.id);
+                  }}
+                />
+                <span>Zeit aufs PDF drucken</span>
+              </label>
+            )}
+          </CardHeader>
+          <CardContent>
+            {dayTimeEntries.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Für diesen Tag wurde noch keine Zeit gebucht.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {dayTimeEntries.map((entry) => (
+                  <div
+                    key={entry.id}
+                    className="flex items-center justify-between gap-3 p-2 rounded-md bg-muted/30"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium">
+                        {entry.start_time && entry.end_time
+                          ? `${entry.start_time.slice(0, 5)} – ${entry.end_time.slice(0, 5)}`
+                          : `${Number(entry.stunden).toFixed(2)} h`}
+                        {entry.pause_minutes ? (
+                          <span className="text-xs text-muted-foreground ml-2">
+                            (Pause {entry.pause_minutes} min)
+                          </span>
+                        ) : null}
+                      </div>
+                      {entry.taetigkeit && (
+                        <div className="text-xs text-muted-foreground truncate">{entry.taetigkeit}</div>
+                      )}
+                    </div>
+                    <div className="text-sm font-medium whitespace-nowrap">
+                      {Number(entry.stunden || 0).toFixed(2)} h
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
 
         {/* Photos */}
         <Card>
