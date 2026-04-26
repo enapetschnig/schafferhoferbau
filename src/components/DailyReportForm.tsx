@@ -15,8 +15,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { VoiceAIInput } from "@/components/VoiceAIInput";
 import { useProjectWeather } from "@/hooks/useProjectWeather";
 import { format } from "date-fns";
-import { Plus, Trash2, CloudSun, ChevronLeft, ChevronRight } from "lucide-react";
-import { TimeEntryStep, calcEntryHours, type TimeEntryFormData } from "@/components/TimeEntryStep";
+import { Plus, Trash2, CloudSun, ChevronRight } from "lucide-react";
+import TimeTracking from "@/pages/TimeTracking";
 
 type Project = { id: string; name: string; plz: string | null; adresse?: string | null; baustellenart?: string | null };
 type Employee = { id: string; user_id: string; name: string };
@@ -69,13 +69,7 @@ export function DailyReportForm({ open, onOpenChange, onSuccess, defaultProjectI
   // Wizard-State (nur fuer Tages-/Regiebericht beim Neuanlegen)
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [authUserId, setAuthUserId] = useState<string>("");
-  const [timeEntryData, setTimeEntryData] = useState<TimeEntryFormData>({
-    startTime: "07:00",
-    endTime: "16:00",
-    pauseMinutes: "30",
-    taetigkeit: "",
-  });
-  const [timeEntrySkip, setTimeEntrySkip] = useState(false);
+  const [savedReportId, setSavedReportId] = useState<string | null>(null);
   // Wizard beim Neuanlegen fuer alle Berichtstypen.
   // Tages-/Regiebericht: Bericht -> Zeit -> Fotos (3 Schritte)
   // Zwischenbericht: Bericht -> Fotos (2 Schritte, Zeiterfassung wird uebersprungen)
@@ -275,8 +269,7 @@ export function DailyReportForm({ open, onOpenChange, onSuccess, defaultProjectI
     setActivities([]);
     setSelectedWorkers([]);
     setStep(1);
-    setTimeEntryData({ startTime: "07:00", endTime: "16:00", pauseMinutes: "30", taetigkeit: "" });
-    setTimeEntrySkip(false);
+    setSavedReportId(null);
   };
 
   const addActivity = () => {
@@ -388,59 +381,20 @@ export function DailyReportForm({ open, onOpenChange, onSuccess, defaultProjectI
       );
     }
 
-    // Zeiterfassung schreiben — nur bei Tages-/Regiebericht (Zwischenbericht hat keinen Zeit-Step)
-    if (isWizard && hasTimeStep && !timeEntrySkip && !editData) {
-      const pauseMin = parseInt(timeEntryData.pauseMinutes, 10) || 0;
-      const stunden = calcEntryHours(timeEntryData.startTime, timeEntryData.endTime, pauseMin);
-      if (stunden > 0) {
-        // Server-Side-Check auf Ueberschneidungen (Race-Condition-safe)
-        const { data: existing } = await supabase
-          .from("time_entries")
-          .select("start_time, end_time")
-          .eq("user_id", user.id)
-          .eq("datum", datum);
-        const toMin = (s: string) => {
-          const [h, m] = (s || "").split(":").map((n) => parseInt(n, 10));
-          return (h || 0) * 60 + (m || 0);
-        };
-        const newStart = toMin(timeEntryData.startTime);
-        const newEnd = toMin(timeEntryData.endTime);
-        const hasOverlap = (existing || []).some((e: any) => {
-          if (!e.start_time || !e.end_time) return false;
-          const eStart = toMin(e.start_time);
-          const eEnd = toMin(e.end_time);
-          return newStart < eEnd && eStart < newEnd;
-        });
-        if (hasOverlap) {
-          toast({
-            variant: "destructive",
-            title: "Zeiterfassung-Konflikt",
-            description: "Es gibt bereits einen Zeiteintrag, der sich mit dieser Zeit überschneidet — Bericht wurde gespeichert, aber kein Zeiteintrag angelegt.",
-          });
-        } else {
-          const { error: teErr } = await supabase.from("time_entries").insert({
-            user_id: user.id,
-            datum,
-            project_id: projectId,
-            taetigkeit: timeEntryData.taetigkeit.trim() || null,
-            stunden,
-            start_time: timeEntryData.startTime,
-            end_time: timeEntryData.endTime,
-            pause_minutes: pauseMin,
-            location_type: "baustelle",
-          } as any);
-          if (teErr) {
-            console.error("time_entries insert error", teErr);
-            toast({ variant: "destructive", title: "Zeiterfassung-Fehler", description: formatErr(teErr, "Konnte Zeit nicht speichern (Bericht wurde aber gespeichert)") });
-          } else {
-            toast({ title: `Zeit gespeichert: ${stunden.toFixed(2)} h` });
-          }
-        }
-      }
+    // Zeiterfassung wird im Wizard-Step-2 ueber die embedded TimeTracking-Komponente
+    // erfasst — separater Speicher-Pfad, hier nur der Bericht selbst.
+
+    toast({ title: "Gespeichert", description: editData ? "Bericht aktualisiert" : "Bericht erstellt" });
+
+    if (isWizard && hasTimeStep && !editData) {
+      // Bericht ist gespeichert — wechsle zu Step 2 (Zeiterfassung-Embed). Dialog bleibt offen.
+      setSavedReportId(reportId);
+      setStep(2);
+      setSaving(false);
+      onSuccess(); // Liste der Berichte aktualisieren
+      return;
     }
 
-    // Fotos werden auf der Detail-Seite hochgeladen (nicht mehr im Wizard)
-    toast({ title: "Gespeichert", description: editData ? "Bericht aktualisiert" : "Bericht erstellt" });
     onOpenChange(false);
     resetForm();
     onSuccess();
@@ -465,7 +419,7 @@ export function DailyReportForm({ open, onOpenChange, onSuccess, defaultProjectI
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) resetForm(); onOpenChange(o); }}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className={isWizard && currentStepKey === "zeit" ? "max-w-3xl max-h-[90vh] overflow-y-auto" : "max-w-lg max-h-[90vh] overflow-y-auto"}>
         <DialogHeader>
           <DialogTitle>{dialogTitle}</DialogTitle>
         </DialogHeader>
@@ -729,50 +683,54 @@ export function DailyReportForm({ open, onOpenChange, onSuccess, defaultProjectI
           </>
           )}
 
-          {/* === STEP 2: Zeiterfassung (mit Vorbefuellung) — nur Tages-/Regiebericht === */}
-          {isWizard && currentStepKey === "zeit" && (
-            <TimeEntryStep
-              userId={authUserId}
-              projectId={projectId}
-              projectName={selectedProject?.name || ""}
-              datum={datum}
-              defaultTaetigkeit={
-                activities.find((a) => a.beschreibung.trim())?.beschreibung
-                || beschreibung
-                || ""
-              }
-              value={timeEntryData}
-              onChange={setTimeEntryData}
-              skip={timeEntrySkip}
-              onSkipChange={setTimeEntrySkip}
-            />
+          {/* === STEP 2: Volle Zeiterfassung (embedded /zeiterfassung) === */}
+          {isWizard && currentStepKey === "zeit" && savedReportId && (
+            <div className="-mx-2 sm:-mx-4">
+              <TimeTracking
+                embedded={{
+                  defaultDate: datum,
+                  hideHeader: true,
+                  onSaved: () => {
+                    onOpenChange(false);
+                    resetForm();
+                    onSuccess();
+                    navigate(`/daily-reports/${savedReportId}`);
+                  },
+                }}
+              />
+            </div>
           )}
 
           {/* === Actions === */}
           {isWizard ? (
-            <div className="flex justify-between gap-2 pt-2 border-t">
-              {step > 1 ? (
-                <Button variant="outline" onClick={() => setStep((s) => Math.max(1, s - 1) as 1 | 2 | 3)} disabled={saving}>
-                  <ChevronLeft className="w-4 h-4 mr-1" /> Zurück
-                </Button>
-              ) : (
+            currentStepKey === "bericht" ? (
+              <div className="flex justify-between gap-2 pt-2 border-t">
                 <Button variant="outline" onClick={() => { resetForm(); onOpenChange(false); }} disabled={saving}>
                   Abbrechen
                 </Button>
-              )}
-              {step < totalSteps ? (
+                <Button onClick={handleSave} disabled={saving || !projectId || !datum}>
+                  {saving ? "Speichere..." : "Weiter zur Zeit"} <ChevronRight className="w-4 h-4 ml-1" />
+                </Button>
+              </div>
+            ) : (
+              // Step 2: Zeiterfassung — TimeTracking handelt Save selbst (onSaved-Callback schliesst).
+              // Hier nur Skip-Button, falls der User keine Zeit erfassen moechte.
+              <div className="flex justify-between gap-2 pt-2 border-t">
                 <Button
-                  onClick={() => setStep((s) => Math.min(totalSteps, s + 1) as 1 | 2 | 3)}
-                  disabled={currentStepKey === "bericht" && (!projectId || !datum)}
+                  variant="outline"
+                  onClick={() => {
+                    onOpenChange(false);
+                    resetForm();
+                    if (savedReportId) navigate(`/daily-reports/${savedReportId}`);
+                  }}
                 >
-                  Weiter <ChevronRight className="w-4 h-4 ml-1" />
+                  Ohne Zeit speichern
                 </Button>
-              ) : (
-                <Button onClick={handleSave} disabled={saving}>
-                  {saving ? "Speichere..." : "Speichern"}
-                </Button>
-              )}
-            </div>
+                <span className="text-xs text-muted-foreground self-center">
+                  Speichern-Button im Zeit-Formular oben
+                </span>
+              </div>
+            )
           ) : (
             <div className="flex justify-end gap-2 pt-2">
               <Button

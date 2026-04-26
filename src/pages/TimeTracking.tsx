@@ -34,6 +34,17 @@ import { VoiceAIInput } from "@/components/VoiceAIInput";
 import { useAppSettings } from "@/hooks/useAppSettings";
 import { useEmployeeSchedule } from "@/hooks/useEmployeeSchedule";
 
+export interface TimeTrackingEmbeddedProps {
+  /** Wenn gesetzt: TimeTracking laeuft als Embedded-Komponente (z.B. im Bericht-Wizard).
+   *  Dann werden URL-Search-Params ignoriert, der PageHeader weggelassen, und nach
+   *  erfolgreichem Save wird onSaved aufgerufen statt zu navigieren. */
+  embedded?: {
+    defaultDate: string;
+    hideHeader?: boolean;
+    onSaved?: () => void;
+  };
+}
+
 type Project = {
   id: string;
   name: string;
@@ -90,7 +101,7 @@ const createDefaultBlock = (startTime = "", endTime = ""): TimeBlock => ({
   zeitTyp: "normal",
 });
 
-const TimeTracking = () => {
+const TimeTracking = ({ embedded }: TimeTrackingEmbeddedProps = {}) => {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -179,7 +190,7 @@ const TimeTracking = () => {
   const [editMode, setEditMode] = useState(false);
   const [editingEntryIds, setEditingEntryIds] = useState<string[]>([]);
   const [selectedDate, setSelectedDate] = useState(() => {
-    return searchParams.get("date") || new Date().toISOString().split('T')[0];
+    return embedded?.defaultDate || searchParams.get("date") || new Date().toISOString().split('T')[0];
   });
 
   // Employee schedule für individuelle Arbeitszeiten — zentrale Hook (loest direkten Supabase-Read ab).
@@ -1046,6 +1057,13 @@ const TimeTracking = () => {
         : `${totalEntriesCreated} Eintrag/Einträge gespeichert`
       });
 
+      // Embedded-Modus (z.B. Bericht-Wizard): an Parent zurueckgeben
+      if (embedded?.onSaved) {
+        embedded.onSaved();
+        setSaving(false);
+        return;
+      }
+
       // Admin mode: navigate back to hours report with filters
       if (targetUserId) {
         const returnMonth = searchParams.get("return_month");
@@ -1168,11 +1186,11 @@ const TimeTracking = () => {
   if (loading) return <div className="p-4">Lädt...</div>;
 
   return (
-    <div className="min-h-screen bg-background">
-      <PageHeader title="Zeiterfassung" />
-      
-      <div className="p-4">
-        <Card className="max-w-2xl mx-auto">
+    <div className={embedded ? "" : "min-h-screen bg-background"}>
+      {!embedded?.hideHeader && !embedded && <PageHeader title="Zeiterfassung" />}
+
+      <div className={embedded ? "" : "p-4"}>
+        <Card className={embedded ? "border-0 shadow-none" : "max-w-2xl mx-auto"}>
           <CardHeader>
             {targetUserId && targetUserName && (
               <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 mb-3 flex items-center justify-between">
