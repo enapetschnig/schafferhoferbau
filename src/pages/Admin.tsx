@@ -1276,9 +1276,10 @@ export default function Admin() {
                 <BatchEmployeeSettings
                   employees={employees.map((e) => ({
                     id: e.id,
+                    user_id: e.user_id,
                     vorname: e.vorname,
                     nachname: e.nachname,
-                    kategorie: e.kategorie,
+                    app_role: e.user_id ? userRoles[e.user_id] || null : null,
                   }))}
                   onSaved={fetchEmployees}
                 />

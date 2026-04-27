@@ -14,9 +14,18 @@ import { DEFAULT_SCHEDULE, LEHRLING_SCHEDULE, type WeekSchedule, type DaySchedul
 
 type EmployeeLite = {
   id: string;
+  user_id?: string | null;
   vorname: string | null;
   nachname: string | null;
-  kategorie?: string | null;
+  /** App-Rolle aus user_roles: administrator | vorarbeiter | mitarbeiter | extern */
+  app_role?: string | null;
+};
+
+const APP_ROLE_LABELS: Record<string, string> = {
+  administrator: "Administrator",
+  vorarbeiter: "Vorarbeiter",
+  mitarbeiter: "Mitarbeiter",
+  extern: "Extern",
 };
 
 const DAY_KEYS = ["mo", "di", "mi", "do", "fr", "sa", "so"] as const;
@@ -83,8 +92,8 @@ export function BatchEmployeeSettings({ employees, onSaved }: Props) {
     else setSelected(new Set(employees.map((e) => e.id)));
   };
 
-  const selectByKategorie = (kat: string) => {
-    setSelected(new Set(employees.filter((e) => e.kategorie === kat).map((e) => e.id)));
+  const selectByRole = (role: string) => {
+    setSelected(new Set(employees.filter((e) => e.app_role === role).map((e) => e.id)));
   };
 
   const presetSchedule = (preset: WeekSchedule) => {
@@ -289,13 +298,13 @@ export function BatchEmployeeSettings({ employees, onSaved }: Props) {
     <>
       <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
         <Users className="h-4 w-4 mr-2" />
-        Mehrere Mitarbeiter gleichzeitig bearbeiten
+        Arbeitszeiten einstellen
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Batch-Einstellungen für Mitarbeiter</DialogTitle>
+            <DialogTitle>Arbeitszeiten einstellen</DialogTitle>
             <DialogDescription>
               Setze Regelarbeitszeit und/oder Schwellenwert für mehrere Mitarbeiter gleichzeitig.
               Andere Felder (z.B. Bankverbindung) bleiben unverändert.
@@ -312,10 +321,10 @@ export function BatchEmployeeSettings({ employees, onSaved }: Props) {
                     <Button size="sm" variant="outline" onClick={selectAll}>
                       {selected.size === employees.length ? "Keine" : "Alle"}
                     </Button>
-                    <Button size="sm" variant="outline" onClick={() => selectByKategorie("vorarbeiter")}>Vorarbeiter</Button>
-                    <Button size="sm" variant="outline" onClick={() => selectByKategorie("facharbeiter")}>Facharbeiter</Button>
-                    <Button size="sm" variant="outline" onClick={() => selectByKategorie("helfer")}>Helfer</Button>
-                    <Button size="sm" variant="outline" onClick={() => selectByKategorie("lehrling")}>Lehrlinge</Button>
+                    <Button size="sm" variant="outline" onClick={() => selectByRole("administrator")}>Administratoren</Button>
+                    <Button size="sm" variant="outline" onClick={() => selectByRole("vorarbeiter")}>Vorarbeiter</Button>
+                    <Button size="sm" variant="outline" onClick={() => selectByRole("mitarbeiter")}>Mitarbeiter</Button>
+                    <Button size="sm" variant="outline" onClick={() => selectByRole("extern")}>Externe</Button>
                   </div>
                 </div>
               </CardHeader>
@@ -330,8 +339,8 @@ export function BatchEmployeeSettings({ employees, onSaved }: Props) {
                       <span className="text-sm">
                         {emp.vorname || ""} {emp.nachname || ""}
                       </span>
-                      {emp.kategorie && (
-                        <span className="text-xs text-muted-foreground">({emp.kategorie})</span>
+                      {emp.app_role && (
+                        <span className="text-xs text-muted-foreground">({APP_ROLE_LABELS[emp.app_role] || emp.app_role})</span>
                       )}
                     </label>
                   ))}
