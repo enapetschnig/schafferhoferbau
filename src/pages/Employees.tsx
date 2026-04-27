@@ -523,7 +523,7 @@ export default function Employees() {
                         <div className="grid grid-cols-7 gap-2">
                           {DAY_KEYS.map((key, idx) => {
                             const day = weekData[key] || { start: null, end: null, pause: 0, hours: 0 };
-                            const updateDay = (field: "start" | "end" | "hours" | "pause", val: any) => {
+                            const updateDay = (field: "start" | "end" | "hours" | "pause" | "pause_start" | "pause_end", val: any) => {
                               const newSchedule: any = { ...schedule };
                               if (variant === "A") {
                                 newSchedule[key] = { ...day, [field]: val };
@@ -563,11 +563,47 @@ export default function Employees() {
                                   placeholder="h"
                                 />
                                 <Input
+                                  type="time"
+                                  value={day.pause_start || ""}
+                                  onChange={(e) => {
+                                    const val = e.target.value || null;
+                                    updateDay("pause_start", val);
+                                    // pause_minutes automatisch nachfuehren wenn beide Zeiten gesetzt sind
+                                    if (val && day.pause_end) {
+                                      const [sh, sm] = val.split(":").map(Number);
+                                      const [eh, em] = day.pause_end.split(":").map(Number);
+                                      const min = (eh * 60 + em) - (sh * 60 + sm);
+                                      if (min > 0) updateDay("pause", min);
+                                    }
+                                  }}
+                                  className="h-8 text-xs px-1"
+                                  placeholder="P-Start"
+                                  title="Pausen-Beginn"
+                                />
+                                <Input
+                                  type="time"
+                                  value={day.pause_end || ""}
+                                  onChange={(e) => {
+                                    const val = e.target.value || null;
+                                    updateDay("pause_end", val);
+                                    if (day.pause_start && val) {
+                                      const [sh, sm] = day.pause_start.split(":").map(Number);
+                                      const [eh, em] = val.split(":").map(Number);
+                                      const min = (eh * 60 + em) - (sh * 60 + sm);
+                                      if (min > 0) updateDay("pause", min);
+                                    }
+                                  }}
+                                  className="h-8 text-xs px-1"
+                                  placeholder="P-Ende"
+                                  title="Pausen-Ende"
+                                />
+                                <Input
                                   type="number" min="0" max="120" step="5"
                                   value={day.pause || 0}
                                   onChange={(e) => updateDay("pause", parseInt(e.target.value) || 0)}
                                   className="h-8 text-xs px-1"
                                   placeholder="min"
+                                  title="Pausen-Minuten (auto bei Start+Ende)"
                                 />
                               </div>
                             );
@@ -647,7 +683,7 @@ export default function Employees() {
                         )}
 
                         <p className="text-xs text-muted-foreground mt-2">
-                          Pro Tag von oben nach unten: Beginn / Ende / Stunden / Pause (Minuten).
+                          Pro Tag von oben nach unten: Beginn / Ende / Stunden / Pause-Beginn / Pause-Ende / Pause-Minuten. Pause-Minuten werden automatisch berechnet, wenn Start und Ende gesetzt sind.
                         </p>
                       </div>
                     );

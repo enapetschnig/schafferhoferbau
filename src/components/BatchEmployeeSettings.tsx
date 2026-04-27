@@ -67,26 +67,50 @@ export function BatchEmployeeSettings({ employees, onSaved }: Props) {
       return;
     }
     setSaving(true);
-    const update: Record<string, any> = {};
-    if (applyRegelarbeitszeit) {
-      update.regelarbeitszeit = schedule;
-      update.wochen_soll_stunden = Object.values(schedule).reduce(
-        (s, d) => s + (d?.hours ?? 0),
-        0
-      );
-    }
-    if (applySchwellenwert) {
-      update.schwellenwert = schwellenwert;
-    }
 
-    const { error } = await supabase
+    // Bestehende biweekly-Felder pro Mitarbeiter erhalten (nicht ueberschreiben).
+    // Wir lesen erst die aktuellen Werte, mergen die batch-Eingaben darueber, dann pro Mitarbeiter speichern.
+    const ids = [...selected];
+    const { data: existing } = await supabase
       .from("employees")
-      .update(update)
-      .in("id", [...selected]);
+      .select("id, regelarbeitszeit, schwellenwert")
+      .in("id", ids);
+    const map = new Map<string, { regelarbeitszeit: any; schwellenwert: any }>();
+    (existing || []).forEach((e: any) => map.set(e.id, { regelarbeitszeit: e.regelarbeitszeit, schwellenwert: e.schwellenwert }));
+
+    const errors: string[] = [];
+    for (const id of ids) {
+      const cur = map.get(id) || { regelarbeitszeit: null, schwellenwert: null };
+      const update: Record<string, any> = {};
+
+      if (applyRegelarbeitszeit) {
+        // Wochentage aus Batch nutzen, biweekly-Felder (zyklus, woche_b, zyklus_anker) aus dem aktuellen Datensatz erhalten
+        const merged = {
+          ...(cur.regelarbeitszeit && typeof cur.regelarbeitszeit === "object" ? cur.regelarbeitszeit : {}),
+          ...schedule,
+        };
+        update.regelarbeitszeit = merged;
+        update.wochen_soll_stunden = Object.entries(schedule).reduce(
+          (s, [_k, d]: [string, any]) => s + (d?.hours ?? 0),
+          0
+        );
+      }
+
+      if (applySchwellenwert) {
+        const merged = {
+          ...(cur.schwellenwert && typeof cur.schwellenwert === "object" ? cur.schwellenwert : {}),
+          ...schwellenwert,
+        };
+        update.schwellenwert = merged;
+      }
+
+      const { error } = await supabase.from("employees").update(update).eq("id", id);
+      if (error) errors.push(`${id}: ${error.message}`);
+    }
 
     setSaving(false);
-    if (error) {
-      toast({ variant: "destructive", title: "Fehler", description: error.message });
+    if (errors.length > 0) {
+      toast({ variant: "destructive", title: `${errors.length} Fehler`, description: errors.slice(0, 3).join(" · ") });
       return;
     }
     toast({ title: `${selected.size} Mitarbeiter aktualisiert` });

@@ -85,10 +85,10 @@ export const DEFAULT_SCHEDULE: WeekSchedule = {
 
 // Standard für Lehrlinge (kürzere Arbeitszeiten)
 export const LEHRLING_SCHEDULE: WeekSchedule = {
-  mo: { start: "07:00", end: "16:00", pause: 30, hours: 8.5 },
-  di: { start: "07:00", end: "16:00", pause: 30, hours: 8.5 },
-  mi: { start: "07:00", end: "16:00", pause: 30, hours: 8.5 },
-  do: { start: "07:00", end: "16:00", pause: 30, hours: 8.5 },
+  mo: { start: "07:00", end: "16:00", pause: 30, pause_start: "12:00", pause_end: "12:30", hours: 8.5 },
+  di: { start: "07:00", end: "16:00", pause: 30, pause_start: "12:00", pause_end: "12:30", hours: 8.5 },
+  mi: { start: "07:00", end: "16:00", pause: 30, pause_start: "12:00", pause_end: "12:30", hours: 8.5 },
+  do: { start: "07:00", end: "16:00", pause: 30, pause_start: "12:00", pause_end: "12:30", hours: 8.5 },
   fr: { start: "07:00", end: "12:00", pause: 0, hours: 5 },
   sa: { start: null, end: null, pause: 0, hours: 0 },
   so: { start: null, end: null, pause: 0, hours: 0 },
@@ -129,6 +129,23 @@ export function getEffectiveDay(schedule: WeekSchedule | null | undefined, date:
     }
   }
   return s[dayKey] ?? null;
+}
+
+/**
+ * Gibt zurueck, in welchem Wochentyp (A = kurz, B = lang) ein Datum liegt.
+ * Returns null wenn kein biweekly-Zyklus aktiv ist.
+ */
+export function getWeekParity(schedule: WeekSchedule | null | undefined, date: Date): "A" | "B" | null {
+  const s = schedule || DEFAULT_SCHEDULE;
+  const isBiweekly = s.zyklus === "biweekly" && s.woche_b && s.zyklus_anker;
+  if (!isBiweekly) return null;
+  const anker = new Date(s.zyklus_anker!);
+  const ankerMonday = getIsoMonday(anker);
+  const currentMonday = getIsoMonday(date);
+  const diffDays = Math.round((currentMonday.getTime() - ankerMonday.getTime()) / 86_400_000);
+  const weekIndex = Math.floor(diffDays / 7);
+  const parity = ((weekIndex % 2) + 2) % 2;
+  return parity === 0 ? "A" : "B";
 }
 
 /**

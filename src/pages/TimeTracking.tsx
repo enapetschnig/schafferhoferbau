@@ -25,6 +25,7 @@ import {
   calculateKilometergeld,
   calculateDiaeten,
   splitHours,
+  getWeekParity,
   DEFAULT_SCHEDULE,
   type WeekSchedule,
 } from "@/lib/workingHours";
@@ -1298,8 +1299,17 @@ const TimeTracking = ({ embedded }: TimeTrackingEmbeddedProps = {}) => {
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-center gap-2">
                   <Badge variant="secondary" className="text-xs">
-                    {getWeeklyTargetHours(employeeSchedule)}h Wochensoll
+                    {getWeeklyTargetHours(employeeSchedule, new Date(selectedDate))}h Wochensoll
                   </Badge>
+                  {(() => {
+                    const parity = getWeekParity(employeeSchedule, new Date(selectedDate));
+                    if (!parity) return null;
+                    return (
+                      <Badge variant="outline" className="text-xs bg-amber-50 border-amber-200 text-amber-900">
+                        {parity === "A" ? "Kurze Woche" : "Lange Woche"}
+                      </Badge>
+                    );
+                  })()}
                   <span className="text-xs text-muted-foreground">
                     {(() => {
                       const s = employeeSchedule || DEFAULT_SCHEDULE;

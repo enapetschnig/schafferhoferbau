@@ -643,7 +643,8 @@ export default function HoursReport() {
           if (includeOvertime) {
             worksheetData.push(["", "", "", "", "", "Tagessumme:", dayTotalHours.toFixed(2), dayTotalOvertime > 0 ? dayTotalOvertime.toFixed(2) : "", "", "", "", ""]);
           } else {
-            const regelarbeitszeitTag = (dayDate.getDay() === 0 || dayDate.getDay() === 6) ? 0 : 8;
+            // Regelarbeitszeit fuer den Tag aus dem Mitarbeiter-Schedule (biweekly-aware)
+            const regelarbeitszeitTag = getNormalWorkingHours(dayDate, employeeSchedule);
             worksheetData.push(["", "", "", "", "", "Tagessumme:", regelarbeitszeitTag.toFixed(2), "", "", "", "", ""]);
           }
         }
