@@ -889,7 +889,7 @@ const ProjectOverview = () => {
               const sigs = sigsByEval.get(ev.id) || [];
               if (sigs.length === 0) continue; // nur unterschriebene exportieren
               const emps = empsByEval.get(ev.id) || [];
-              const blob = generateSafetyEvaluationPDF(
+              const blob = await generateSafetyEvaluationPDF(
                 {
                   titel: ev.titel,
                   typ: ev.typ,

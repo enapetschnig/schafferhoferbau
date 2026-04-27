@@ -170,30 +170,23 @@ export function ResourcesGanttSection({
                       <div className="flex flex-col gap-0.5">
                         {dayBlocks.map((b) => {
                           const proj = projects.find((p) => p.id === b.project_id);
-                          // Block-Renderring: erste Zelle des Blocks rendert den Inhalt; mittlere/letzte Zelle nur Hintergrund
+                          const label = proj?.name || b.label || "—";
                           const isFirst = b.start_date === datum;
-                          if (!isFirst) {
-                            return (
-                              <div
-                                key={b.id}
-                                className="h-5 rounded-sm"
-                                style={{ backgroundColor: farbe + "33", borderTop: `2px solid ${farbe}`, borderBottom: `2px solid ${farbe}` }}
-                              />
-                            );
-                          }
                           return (
                             <div
                               key={b.id}
                               className="text-[10px] px-1 py-0.5 rounded flex items-center gap-1 group"
                               style={{
                                 backgroundColor: farbe + "33",
-                                borderLeft: `3px solid ${farbe}`,
+                                borderLeft: isFirst ? `3px solid ${farbe}` : undefined,
+                                borderTop: `1px solid ${farbe}`,
+                                borderBottom: `1px solid ${farbe}`,
                                 color: "#1f2937",
                               }}
-                              title={proj?.name || b.label || ""}
+                              title={label}
                             >
-                              <span className="truncate flex-1">{proj?.name || b.label || "—"}</span>
-                              {canEdit && (
+                              <span className="truncate flex-1">{label}</span>
+                              {canEdit && isFirst && (
                                 <button
                                   className="opacity-0 group-hover:opacity-100 hover:text-destructive"
                                   onClick={(e) => {

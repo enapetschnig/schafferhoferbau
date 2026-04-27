@@ -22,11 +22,8 @@ export function ProjectGanttSection({
 }: Props) {
   const [collapsed, setCollapsed] = useState(false);
 
-  // Only show projects that have assignments this period
-  const activeProjectIds = [...new Set(assignments.map((a) => a.project_id))];
-  const activeProjects = projects.filter((p) =>
-    activeProjectIds.includes(p.id)
-  );
+  // Alle aktiven Projekte anzeigen (auch wenn keine Mitarbeiter-Zuordnung in dieser Woche existiert)
+  const activeProjects = projects;
 
   return (
     <div className="border-b">

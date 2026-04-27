@@ -1,4 +1,5 @@
 import { jsPDF } from "jspdf";
+import { addPdfHeader } from "./pdfHelpers";
 
 export interface SafetyChecklistItem {
   id: string;
@@ -40,10 +41,10 @@ const STATUS_LABELS: Record<string, string> = {
   abgeschlossen: "Abgeschlossen",
 };
 
-export function generateSafetyEvaluationPDF(
+export async function generateSafetyEvaluationPDF(
   data: SafetyEvaluationData,
   options: { returnAsBlob?: boolean } = {}
-): void | Blob {
+): Promise<void | Blob> {
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
@@ -58,21 +59,13 @@ export function generateSafetyEvaluationPDF(
     }
   };
 
-  // Header
-  doc.setFontSize(22);
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(61, 63, 71);
-  doc.text("SCHAFFERHOFER BAU", margin, yPos);
-  yPos += 8;
-
-  doc.setDrawColor(61, 63, 71);
-  doc.setLineWidth(0.5);
-  doc.line(margin, yPos, margin + contentWidth, yPos);
-  yPos += 6;
+  // Standardisierter Header mit Logo
+  yPos = await addPdfHeader(doc, { startY: yPos, margin });
 
   const typLabel = data.typ === "evaluierung" ? "Evaluierung" : "Sicherheitsunterweisung";
   doc.setFontSize(16);
-  doc.setTextColor(100, 100, 100);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(40, 40, 40);
   doc.text(typLabel, margin, yPos);
   yPos += 10;
 

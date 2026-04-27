@@ -1,4 +1,5 @@
 import { jsPDF } from "jspdf";
+import { addPdfHeader } from "./pdfHelpers";
 
 export interface Material {
   id: string;
@@ -84,22 +85,14 @@ export async function generateDisturbancePDF(
   const contentWidth = pageWidth - 2 * margin;
   let yPos = margin;
 
-  // Header
-  doc.setFontSize(24);
+  // Standardisierter Header mit Logo
+  yPos = await addPdfHeader(doc, { startY: yPos, margin });
+
+  doc.setFontSize(20);
   doc.setFont("helvetica", "bold");
-  doc.setTextColor(61, 63, 71);
-  doc.text("HOLZKNECHT NATURSTEINE", margin, yPos);
-  yPos += 8;
-
-  doc.setDrawColor(61, 63, 71);
-  doc.setLineWidth(0.5);
-  doc.line(margin, yPos, margin + contentWidth, yPos);
-  yPos += 5;
-
-  doc.setFontSize(16);
-  doc.setTextColor(100, 100, 100);
+  doc.setTextColor(40, 40, 40);
   doc.text("Regiebericht", margin, yPos);
-  yPos += 12;
+  yPos += 10;
 
   doc.setTextColor(0, 0, 0);
 

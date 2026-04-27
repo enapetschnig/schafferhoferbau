@@ -225,9 +225,9 @@ export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeR
     XLSX.writeFile(wb, `Arbeitszeitaufzeichnung_${employeeName.replace(/\s/g, "_")}_${monthNames[month - 1]}_${year}.xlsx`);
   };
 
-  const handleExportPDF = () => {
+  const handleExportPDF = async () => {
     if (!selectedUserId || rows.length === 0) return;
-    generateLegalWorkTimePDF({
+    await generateLegalWorkTimePDF({
       employeeName,
       month: monthNames[month - 1],
       year,

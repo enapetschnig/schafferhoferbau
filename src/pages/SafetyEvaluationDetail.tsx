@@ -173,9 +173,9 @@ export default function SafetyEvaluationDetail() {
     }
   };
 
-  const handleExportPDF = () => {
+  const handleExportPDF = async () => {
     if (!evaluation) return;
-    generateSafetyEvaluationPDF({
+    await generateSafetyEvaluationPDF({
       titel: evaluation.titel,
       typ: evaluation.typ,
       kategorie: evaluation.kategorie,

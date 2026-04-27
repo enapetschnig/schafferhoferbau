@@ -1,4 +1,5 @@
 import { jsPDF } from "jspdf";
+import { addPdfHeader } from "./pdfHelpers";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
 
@@ -38,23 +39,26 @@ const ANMERKUNG_LABELS: Record<string, string> = {
   ZA: "Zeitausgleich",
 };
 
-export function generateLegalWorkTimePDF(params: LegalWorkTimePDFParams) {
+export async function generateLegalWorkTimePDF(params: LegalWorkTimePDFParams) {
   const { employeeName, month, year, rows, totalHours, totalPause, workingDays, totalBadWeatherHours = 0 } = params;
 
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const pageWidth = 210;
   const margin = 15;
-  let y = 20;
+  let y = await addPdfHeader(doc, { startY: 20, margin });
 
   // Title
   doc.setFontSize(16);
   doc.setFont("helvetica", "bold");
+  doc.setTextColor(40, 40, 40);
   doc.text("Arbeitszeitaufzeichnung", margin, y);
   y += 8;
 
   doc.setFontSize(10);
   doc.setFont("helvetica", "normal");
+  doc.setTextColor(100, 100, 100);
   doc.text(`gemäß § 26 AZG`, margin, y);
+  doc.setTextColor(0, 0, 0);
   y += 10;
 
   // Employee info

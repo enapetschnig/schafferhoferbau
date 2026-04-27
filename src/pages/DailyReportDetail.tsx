@@ -350,7 +350,7 @@ export default function DailyReportDetail() {
     if (!report || !id) return;
 
     // Validate
-    if (report.report_type === "tagesbericht" && photos.length < 4) {
+    if ((report.report_type === "tagesbericht" || report.report_type === "regiebericht") && photos.length < 4) {
       toast({ variant: "destructive", title: "Fotos fehlen", description: "Mindestens 4 Fotos sind für einen Bericht erforderlich." });
       return;
     }
@@ -598,7 +598,7 @@ export default function DailyReportDetail() {
             <div className="flex items-center justify-between">
               <CardTitle className="text-lg">
                 Fotos ({photos.length})
-                {report.report_type === "tagesbericht" && photos.length < 4 && (
+                {(report.report_type === "tagesbericht" || report.report_type === "regiebericht") && photos.length < 4 && (
                   <span className="text-sm text-destructive font-normal ml-2">
                     (mind. 4 erforderlich)
                   </span>
@@ -736,7 +736,7 @@ export default function DailyReportDetail() {
           <div className="space-y-6">
             <SafetyChecklist items={safetyItems} onChange={setSafetyItems} />
 
-            {report.report_type === "tagesbericht" && photos.length < 4 && (
+            {(report.report_type === "tagesbericht" || report.report_type === "regiebericht") && photos.length < 4 && (
               <p className="text-sm text-destructive font-medium">
                 Es fehlen noch {4 - photos.length} Foto(s). Mindestens 4 Fotos sind erforderlich.
               </p>
