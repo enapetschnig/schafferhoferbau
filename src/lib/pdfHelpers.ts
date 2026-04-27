@@ -1,6 +1,15 @@
 import type { jsPDF } from "jspdf";
 
 /**
+ * Markenfarbe Schafferhofer Bau (HSL 2,96%,43% ≈ rgb(215, 30, 20)).
+ * Dezent eingesetzt: nur fuer Akzent-Linien und Sektions-Ueberschriften.
+ */
+export const BRAND_RED: [number, number, number] = [215, 30, 20];
+export const TEXT_DARK: [number, number, number] = [40, 40, 40];
+export const TEXT_MUTED: [number, number, number] = [110, 110, 110];
+export const RULE_LIGHT: [number, number, number] = [220, 220, 220];
+
+/**
  * Laedt das Schafferhofer-Logo als Base64-DataURL.
  */
 export async function fetchLogoBase64(): Promise<string | null> {
@@ -20,10 +29,8 @@ export async function fetchLogoBase64(): Promise<string | null> {
 }
 
 /**
- * Standardisierter PDF-Header mit Logo links + Firmen-Adresse rechts + Akzent-Linie.
- * Setzt y auf die Position direkt unter dem Header (verwendbar fuer Titel etc.).
- *
- * @returns die neue y-Position
+ * Standardisierter PDF-Header — dezent.
+ * Logo links, Firmendaten rechts, duenne rote Akzent-Linie.
  */
 export async function addPdfHeader(
   doc: jsPDF,
@@ -35,35 +42,44 @@ export async function addPdfHeader(
   const headerStartY = options.startY ?? margin;
 
   const logoBase64 = await fetchLogoBase64();
+  // Logo-Aspect-Ratio einhalten: Hoehe fix, Breite proportional
+  const logoHeight = 14;
+  let logoWidth = 36; // Fallback
   if (logoBase64) {
     try {
-      doc.addImage(logoBase64, "PNG", margin, headerStartY - 2, 36, 16);
+      const props = (doc as any).getImageProperties(logoBase64);
+      if (props?.width && props?.height) {
+        logoWidth = (props.width / props.height) * logoHeight;
+      }
+      doc.addImage(logoBase64, "PNG", margin, headerStartY - 1, logoWidth, logoHeight);
     } catch {
       /* skip */
     }
   }
 
-  doc.setFontSize(9);
   doc.setFont("helvetica", "normal");
-  doc.setTextColor(100, 100, 100);
+  doc.setFontSize(9);
+  doc.setTextColor(...TEXT_DARK);
   doc.text("Schafferhofer Bau GmbH", pageWidth - margin, headerStartY + 1, { align: "right" });
   doc.setFontSize(8);
-  doc.text("Frojacher Straße 5, 8841 Frojach", pageWidth - margin, headerStartY + 5, { align: "right" });
+  doc.setTextColor(...TEXT_MUTED);
+  doc.text("Leobner Str. 58, 8600 Bruck an der Mur", pageWidth - margin, headerStartY + 5, { align: "right" });
   doc.setTextColor(0, 0, 0);
 
-  let y = headerStartY + 18;
+  let y = headerStartY + Math.max(16, logoHeight + 4);
 
-  doc.setDrawColor(245, 158, 11);
-  doc.setLineWidth(1.2);
+  // Duenne Akzent-Linie in Markenrot (subtil, nicht gefuellte Flaeche)
+  doc.setDrawColor(...BRAND_RED);
+  doc.setLineWidth(0.6);
   doc.line(margin, y, margin + contentWidth, y);
-  y += 7;
+  y += 6;
 
   return y;
 }
 
 /**
- * Akzentuierter Sektion-Header (Bau-Orange-Hintergrund, weisse Schrift).
- * Ruft optional checkPageBreak auf — der Caller kann auch selbst Page-Break-Logik machen.
+ * Section-Header — dezent: kleiner uppercase-Titel in Rot,
+ * darunter eine duenne hellgraue Trennlinie.
  */
 export function addSectionHeader(
   doc: jsPDF,
@@ -72,12 +88,15 @@ export function addSectionHeader(
   margin: number,
   contentWidth: number
 ): number {
-  doc.setFillColor(245, 158, 11);
-  doc.rect(margin, y - 4, contentWidth, 7, "F");
-  doc.setTextColor(255, 255, 255);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(11);
-  doc.text(label, margin + 2, y + 1);
+  doc.setFontSize(9);
+  doc.setTextColor(...BRAND_RED);
+  doc.text(label.toUpperCase(), margin, y);
+  y += 2;
+  doc.setDrawColor(...RULE_LIGHT);
+  doc.setLineWidth(0.3);
+  doc.line(margin, y, margin + contentWidth, y);
   doc.setTextColor(0, 0, 0);
-  return y + 7;
+  doc.setFont("helvetica", "normal");
+  return y + 4;
 }

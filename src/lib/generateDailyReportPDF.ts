@@ -1,4 +1,5 @@
 import { jsPDF } from "jspdf";
+import { addPdfHeader, addSectionHeader } from "./pdfHelpers";
 
 export interface DailyReportForPDF {
   report_type: string;
@@ -84,73 +85,49 @@ export async function generateDailyReportPDF(
     if (y + needed > 270) { doc.addPage(); y = margin; }
   };
 
-  // Section-Header-Helper: dezente farbige Hintergrund-Zeile mit weisser Schrift
+  // Section-Header-Helper: dezent (siehe pdfHelpers)
   const sectionHeader = (label: string) => {
-    checkPageBreak(12);
-    doc.setFillColor(245, 158, 11); // Bau-Orange (Schafferhofer Akzent)
-    doc.rect(margin, y - 4, contentWidth, 7, "F");
-    doc.setTextColor(255, 255, 255);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(11);
-    doc.text(label, margin + 2, y + 1);
-    doc.setTextColor(0, 0, 0);
-    y += 7;
+    checkPageBreak(10);
+    y = addSectionHeader(doc, label, y, margin, contentWidth);
   };
 
-  // Header mit Logo
-  const logoBase64 = await fetchImageAsBase64(`${window.location.origin}/schafferhofer-logo.png`);
-  const headerStartY = y;
-  if (logoBase64) {
-    try {
-      // Logo links, ca. 28mm hoch, Aspect-Ratio passend
-      doc.addImage(logoBase64, "PNG", margin, y - 2, 36, 16);
-    } catch { /* Logo skippen wenn Format nicht passt */ }
-  }
-  // Firmen-Info rechts neben Logo
-  doc.setFontSize(9);
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(100, 100, 100);
-  doc.text("Schafferhofer Bau GmbH", pageWidth - margin, headerStartY + 1, { align: "right" });
-  doc.setFontSize(8);
-  doc.text("Frojacher Straße 5, 8841 Frojach", pageWidth - margin, headerStartY + 5, { align: "right" });
-  doc.setTextColor(0, 0, 0);
-  y = headerStartY + 18;
-
-  // Akzent-Linie
-  doc.setDrawColor(245, 158, 11);
-  doc.setLineWidth(1.2);
-  doc.line(margin, y, margin + contentWidth, y);
-  y += 7;
+  // Standardisierter Header mit Logo + Akzent-Linie
+  y = await addPdfHeader(doc, { startY: y, margin });
 
   // Titel
   const title = report.report_type === "tagesbericht" ? "Tagesbericht"
     : report.report_type === "regiebericht" ? "Regiebericht"
     : "Zwischenbericht";
-  doc.setFontSize(20);
+  doc.setFontSize(18);
   doc.setFont("helvetica", "bold");
   doc.setTextColor(40, 40, 40);
   doc.text(title, margin, y);
-  y += 10;
+  y += 8;
   doc.setTextColor(0, 0, 0);
 
-  // Projekt-Info-Box (Card-Style)
+  // Projekt-Info — Zwei-Spalten ohne Card, dezent
   if (report.project) {
-    doc.setFillColor(248, 250, 252);
-    doc.setDrawColor(226, 232, 240);
-    doc.setLineWidth(0.3);
-    doc.roundedRect(margin, y, contentWidth, 18, 1.5, 1.5, "FD");
-    doc.setFontSize(11);
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(110, 110, 110);
+    doc.text("Projekt", margin, y);
+    doc.text("Datum", pageWidth / 2, y);
+    y += 5;
     doc.setFont("helvetica", "bold");
-    doc.text(report.project.name, margin + 3, y + 6);
+    doc.setFontSize(11);
+    doc.setTextColor(40, 40, 40);
+    doc.text(report.project.name, margin, y);
+    doc.text(formatDate(report.datum), pageWidth / 2, y);
+    y += 5;
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
-    doc.setTextColor(100, 100, 100);
+    doc.setTextColor(110, 110, 110);
     if (report.project.adresse) {
-      doc.text(`${report.project.adresse}${report.project.plz ? `, ${report.project.plz}` : ""}`, margin + 3, y + 11);
+      doc.text(`${report.project.adresse}${report.project.plz ? `, ${report.project.plz}` : ""}`, margin, y);
+      y += 5;
     }
-    doc.text(formatDate(report.datum), margin + 3, y + 15.5);
     doc.setTextColor(0, 0, 0);
-    y += 23;
+    y += 4;
   } else {
     doc.setFontSize(10);
     doc.text(`Datum: ${formatDate(report.datum)}`, margin, y);
@@ -235,19 +212,21 @@ export async function generateDailyReportPDF(
     const colPause = 18;
     const colTaet = contentWidth - colUser - colTime - colPause - 18;
 
-    // Tabellen-Header
-    doc.setFillColor(241, 245, 249);
-    doc.rect(margin, y, contentWidth, 6, "F");
+    // Tabellen-Header — dezent, hellgraue Linie unten statt voll-gefuellt
     doc.setFont("helvetica", "bold");
     doc.setFontSize(8);
-    doc.setTextColor(60, 60, 60);
+    doc.setTextColor(110, 110, 110);
     let x = margin + 1;
-    doc.text("Mitarbeiter", x, y + 4); x += colUser;
-    doc.text("Zeit", x, y + 4); x += colTime;
-    doc.text("Pause", x, y + 4); x += colPause;
-    doc.text("Tätigkeit", x, y + 4); x += colTaet;
-    doc.text("Stunden", x, y + 4, { align: "left" });
-    y += 6;
+    doc.text("Mitarbeiter", x, y + 3); x += colUser;
+    doc.text("Zeit", x, y + 3); x += colTime;
+    doc.text("Pause", x, y + 3); x += colPause;
+    doc.text("Tätigkeit", x, y + 3); x += colTaet;
+    doc.text("Stunden", x, y + 3, { align: "left" });
+    y += 5;
+    doc.setDrawColor(220, 220, 220);
+    doc.setLineWidth(0.3);
+    doc.line(margin, y, margin + contentWidth, y);
+    y += 1;
     doc.setTextColor(0, 0, 0);
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
