@@ -785,6 +785,9 @@ export default function DailyReportDetail() {
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Zeiterfassung – {format(new Date(report.datum), "dd.MM.yyyy", { locale: de })}</DialogTitle>
+            <p className="text-xs text-muted-foreground">
+              Speichern im Formular unten → der Dialog schließt sich und du landest wieder beim Bericht.
+            </p>
           </DialogHeader>
           <div className="-mx-2 sm:-mx-4">
             <TimeTracking
@@ -795,9 +798,15 @@ export default function DailyReportDetail() {
                 onSaved: () => {
                   setShowTimeDialog(false);
                   fetchReport();
+                  toast({ title: "Zeit gespeichert", description: "Zurück zum Bericht." });
                 },
               }}
             />
+          </div>
+          <div className="flex justify-end pt-2 border-t">
+            <Button variant="outline" onClick={() => setShowTimeDialog(false)}>
+              Zurück zum Bericht (ohne Speichern)
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
