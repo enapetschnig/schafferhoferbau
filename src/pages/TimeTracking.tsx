@@ -264,49 +264,29 @@ const TimeTracking = ({ embedded }: TimeTrackingEmbeddedProps = {}) => {
   const [timeBlocks, setTimeBlocks] = useState<TimeBlock[]>([createDefaultBlock()]);
   const entryMode = "zeitraum" as const;
 
-  // Embedded-Modus: Projekt + Regelarbeitszeit aus den uebergebenen Defaults setzen
-  // (sobald employeeSchedule geladen ist). Laeuft nur einmal beim Mount.
-  const [embeddedDefaultsApplied, setEmbeddedDefaultsApplied] = useState(false);
-  useEffect(() => {
-    if (!embedded || embeddedDefaultsApplied) return;
-    if (scheduleData.loading) return;
-    const dateObj = new Date(selectedDate);
-    const defaults = getDefaultWorkTimes(dateObj, employeeSchedule);
-    setTimeBlocks((prev) => {
-      if (prev.length === 0) return prev;
-      const first = prev[0];
-      // Nur fuellen wenn noch leer (User hat noch nichts angefasst)
-      const updated = {
-        ...first,
-        projectId: first.projectId || embedded.defaultProjectId || "",
-        startTime: first.startTime || defaults?.startTime || "",
-        endTime: first.endTime || defaults?.endTime || "",
-        pauseStart: first.pauseStart || defaults?.pauseStart || "",
-        pauseEnd: first.pauseEnd || defaults?.pauseEnd || "",
-      };
-      return [updated, ...prev.slice(1)];
-    });
-    setEmbeddedDefaultsApplied(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [embedded, scheduleData.loading, employeeSchedule, selectedDate]);
-
-  // Auto-fill project from Plantafel + Taetigkeit aus Tagesbericht, wenn noch leer
+  // Auto-fill: Projekt + Taetigkeit + Regelarbeitszeit (Beginn/Ende/Pause) im ersten Block.
+  // - Embedded-Modus (Bericht-Wizard): defaultProjectId hat Vorrang vor Plantafel.
+  // - Normaler Modus: Plantafel-Eintrag aus worker_assignments fuer den Tag.
   useEffect(() => {
     const autoFill = async () => {
       if (existingDayEntries.length > 0 || loadingDayEntries) return;
+      if (scheduleData.loading) return; // employeeSchedule muss geladen sein, bevor wir Defaults setzen
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
       const userId = targetUserId || user.id;
 
-      const { data: assignment } = await supabase
-        .from("worker_assignments")
-        .select("project_id")
-        .eq("user_id", userId)
-        .eq("datum", selectedDate)
-        .limit(1)
-        .maybeSingle();
-
-      const prefillProjectId = assignment?.project_id ?? null;
+      // Projekt: embedded.defaultProjectId hat Vorrang; sonst Plantafel
+      let prefillProjectId: string | null = embedded?.defaultProjectId ?? null;
+      if (!prefillProjectId) {
+        const { data: assignment } = await supabase
+          .from("worker_assignments")
+          .select("project_id")
+          .eq("user_id", userId)
+          .eq("datum", selectedDate)
+          .limit(1)
+          .maybeSingle();
+        prefillProjectId = assignment?.project_id ?? null;
+      }
 
       // Taetigkeit aus daily_reports: erst Vorarbeiter-Bericht dieses Projekts,
       // sonst irgendein Regiebericht des MA an dem Tag
@@ -332,21 +312,26 @@ const TimeTracking = ({ embedded }: TimeTrackingEmbeddedProps = {}) => {
         if (ownReport?.beschreibung) prefillTaetigkeit = ownReport.beschreibung;
       }
 
-      if ((prefillProjectId || prefillTaetigkeit) && timeBlocks.length > 0) {
-        setTimeBlocks((prev) => {
-          const updated = [...prev];
-          const first = updated[0];
-          updated[0] = {
-            ...first,
-            projectId: first.projectId || prefillProjectId || first.projectId,
-            taetigkeit: first.taetigkeit || prefillTaetigkeit || first.taetigkeit,
-          };
-          return updated;
-        });
-      }
+      // Regelarbeitszeit-Defaults fuer den Wochentag (mit 14-Tage-Zyklus)
+      const defaults = getDefaultWorkTimes(new Date(selectedDate), employeeSchedule);
+
+      setTimeBlocks((prev) => {
+        if (prev.length === 0) return prev;
+        const first = prev[0];
+        return [{
+          ...first,
+          projectId: first.projectId || prefillProjectId || "",
+          taetigkeit: first.taetigkeit || prefillTaetigkeit || "",
+          startTime: first.startTime || defaults?.startTime || "",
+          endTime: first.endTime || defaults?.endTime || "",
+          pauseStart: first.pauseStart || defaults?.pauseStart || "",
+          pauseEnd: first.pauseEnd || defaults?.pauseEnd || "",
+        }, ...prev.slice(1)];
+      });
     };
     autoFill();
-  }, [selectedDate, existingDayEntries, loadingDayEntries]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDate, existingDayEntries, loadingDayEntries, scheduleData.loading, employeeSchedule, embedded?.defaultProjectId]);
 
   // Fetch existing entries for selected date
   // Einen einzelnen Zeiteintrag loeschen (nach Bestaetigung) — Fehlbuchungen
