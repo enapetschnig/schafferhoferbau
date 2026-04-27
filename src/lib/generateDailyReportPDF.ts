@@ -28,6 +28,7 @@ export interface PhotoForPDF {
 }
 
 export interface TimeEntryForPDF {
+  user_name?: string;
   start_time: string | null;
   end_time: string | null;
   pause_minutes: number | null;
@@ -83,74 +84,98 @@ export async function generateDailyReportPDF(
     if (y + needed > 270) { doc.addPage(); y = margin; }
   };
 
-  // Header
-  doc.setFontSize(22);
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(61, 63, 71);
-  doc.text("SCHAFFERHOFER BAU", margin, y);
-  y += 8;
+  // Section-Header-Helper: dezente farbige Hintergrund-Zeile mit weisser Schrift
+  const sectionHeader = (label: string) => {
+    checkPageBreak(12);
+    doc.setFillColor(245, 158, 11); // Bau-Orange (Schafferhofer Akzent)
+    doc.rect(margin, y - 4, contentWidth, 7, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.text(label, margin + 2, y + 1);
+    doc.setTextColor(0, 0, 0);
+    y += 7;
+  };
 
-  doc.setDrawColor(61, 63, 71);
-  doc.setLineWidth(0.5);
+  // Header mit Logo
+  const logoBase64 = await fetchImageAsBase64(`${window.location.origin}/schafferhofer-logo.png`);
+  const headerStartY = y;
+  if (logoBase64) {
+    try {
+      // Logo links, ca. 28mm hoch, Aspect-Ratio passend
+      doc.addImage(logoBase64, "PNG", margin, y - 2, 36, 16);
+    } catch { /* Logo skippen wenn Format nicht passt */ }
+  }
+  // Firmen-Info rechts neben Logo
+  doc.setFontSize(9);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(100, 100, 100);
+  doc.text("Schafferhofer Bau GmbH", pageWidth - margin, headerStartY + 1, { align: "right" });
+  doc.setFontSize(8);
+  doc.text("Frojacher Straße 5, 8841 Frojach", pageWidth - margin, headerStartY + 5, { align: "right" });
+  doc.setTextColor(0, 0, 0);
+  y = headerStartY + 18;
+
+  // Akzent-Linie
+  doc.setDrawColor(245, 158, 11);
+  doc.setLineWidth(1.2);
   doc.line(margin, y, margin + contentWidth, y);
-  y += 5;
+  y += 7;
 
+  // Titel
   const title = report.report_type === "tagesbericht" ? "Tagesbericht"
     : report.report_type === "regiebericht" ? "Regiebericht"
     : "Zwischenbericht";
-  doc.setFontSize(16);
-  doc.setTextColor(100, 100, 100);
+  doc.setFontSize(20);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(40, 40, 40);
   doc.text(title, margin, y);
-  y += 12;
+  y += 10;
   doc.setTextColor(0, 0, 0);
 
-  // Project info
+  // Projekt-Info-Box (Card-Style)
   if (report.project) {
-    doc.setFontSize(12);
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.3);
+    doc.roundedRect(margin, y, contentWidth, 18, 1.5, 1.5, "FD");
+    doc.setFontSize(11);
     doc.setFont("helvetica", "bold");
-    doc.text(report.project.name, margin, y);
-    y += 6;
+    doc.text(report.project.name, margin + 3, y + 6);
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
+    doc.setFontSize(9);
+    doc.setTextColor(100, 100, 100);
     if (report.project.adresse) {
-      doc.text(`${report.project.adresse}${report.project.plz ? `, ${report.project.plz}` : ""}`, margin, y);
-      y += 5;
+      doc.text(`${report.project.adresse}${report.project.plz ? `, ${report.project.plz}` : ""}`, margin + 3, y + 11);
     }
+    doc.text(formatDate(report.datum), margin + 3, y + 15.5);
+    doc.setTextColor(0, 0, 0);
+    y += 23;
+  } else {
+    doc.setFontSize(10);
+    doc.text(`Datum: ${formatDate(report.datum)}`, margin, y);
+    y += 8;
   }
 
-  // Date
-  doc.setFontSize(10);
-  doc.text(`Datum: ${formatDate(report.datum)}`, margin, y);
-  y += 8;
-
-  // Weather
+  // Wetter
   if ((report.wetter && report.wetter.length > 0) || report.temperatur_min != null) {
-    doc.setFontSize(12);
-    doc.setFont("helvetica", "bold");
-    doc.text("Wetter", margin, y);
-    y += 6;
+    sectionHeader("Wetter");
     doc.setFont("helvetica", "normal");
     doc.setFontSize(10);
-
+    const parts: string[] = [];
     if (report.wetter && report.wetter.length > 0) {
-      const wetterText = report.wetter.map((w) => WETTER_LABELS_PDF[w] || w).join(", ");
-      doc.text(wetterText, margin, y);
-      y += 5;
+      parts.push(report.wetter.map((w) => WETTER_LABELS_PDF[w] || w).join(", "));
     }
     if (report.temperatur_min != null || report.temperatur_max != null) {
-      doc.text(`Temperatur: ${report.temperatur_min ?? "–"}° / ${report.temperatur_max ?? "–"}°C`, margin, y);
-      y += 5;
+      parts.push(`${report.temperatur_min ?? "–"}° / ${report.temperatur_max ?? "–"}°C`);
     }
-    y += 5;
+    doc.text(parts.join("  ·  "), margin, y + 4);
+    y += 9;
   }
 
-  // Activities
+  // Tätigkeiten
   if (activities.length > 0) {
-    checkPageBreak(20);
-    doc.setFontSize(12);
-    doc.setFont("helvetica", "bold");
-    doc.text("Tätigkeiten", margin, y);
-    y += 7;
+    sectionHeader("Tätigkeiten");
 
     // Group by geschoss
     const grouped: Record<string, string[]> = {};
@@ -178,69 +203,89 @@ export async function generateDailyReportPDF(
     y += 3;
   }
 
-  // Description
+  // Beschreibung
   if (report.beschreibung) {
-    checkPageBreak(15);
-    doc.setFontSize(12);
-    doc.setFont("helvetica", "bold");
-    doc.text("Beschreibung", margin, y);
-    y += 7;
+    sectionHeader("Beschreibung");
     doc.setFont("helvetica", "normal");
     doc.setFontSize(10);
     const lines = doc.splitTextToSize(report.beschreibung, contentWidth);
     checkPageBreak(lines.length * 4.5);
-    doc.text(lines, margin, y);
-    y += lines.length * 4.5 + 3;
+    doc.text(lines, margin, y + 3);
+    y += lines.length * 4.5 + 5;
   }
 
   if (report.notizen) {
-    checkPageBreak(15);
-    doc.setFontSize(12);
-    doc.setFont("helvetica", "bold");
-    doc.text("Notizen", margin, y);
-    y += 7;
+    sectionHeader("Notizen");
     doc.setFont("helvetica", "normal");
     doc.setFontSize(10);
     const lines = doc.splitTextToSize(report.notizen, contentWidth);
     checkPageBreak(lines.length * 4.5);
-    doc.text(lines, margin, y);
-    y += lines.length * 4.5 + 3;
+    doc.text(lines, margin, y + 3);
+    y += lines.length * 4.5 + 5;
   }
 
-  // Zeiterfassung — nur wenn das Flag zeit_auf_pdf gesetzt ist
+  // Zeiterfassung als Tabelle (User / Zeit / Pause / Tätigkeit / Stunden)
   if (report.zeit_auf_pdf && options.timeEntries && options.timeEntries.length > 0) {
     const total = options.timeEntries.reduce((s, e) => s + Number(e.stunden || 0), 0);
-    const lineCount = options.timeEntries.length;
-    checkPageBreak(15 + lineCount * 5 + 5);
-    doc.setFontSize(12);
+    sectionHeader(`Zeiterfassung  (${total.toFixed(2)} h gesamt)`);
+
+    // Spalten-Breiten
+    const colUser = 38;
+    const colTime = 28;
+    const colPause = 18;
+    const colTaet = contentWidth - colUser - colTime - colPause - 18;
+
+    // Tabellen-Header
+    doc.setFillColor(241, 245, 249);
+    doc.rect(margin, y, contentWidth, 6, "F");
     doc.setFont("helvetica", "bold");
-    doc.text(`Zeiterfassung (${total.toFixed(2)} h gesamt)`, margin, y);
-    y += 7;
+    doc.setFontSize(8);
+    doc.setTextColor(60, 60, 60);
+    let x = margin + 1;
+    doc.text("Mitarbeiter", x, y + 4); x += colUser;
+    doc.text("Zeit", x, y + 4); x += colTime;
+    doc.text("Pause", x, y + 4); x += colPause;
+    doc.text("Tätigkeit", x, y + 4); x += colTaet;
+    doc.text("Stunden", x, y + 4, { align: "left" });
+    y += 6;
+    doc.setTextColor(0, 0, 0);
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
+    doc.setFontSize(9);
+
     for (const e of options.timeEntries) {
+      checkPageBreak(5);
       const range = e.start_time && e.end_time
-        ? `${e.start_time.slice(0, 5)} - ${e.end_time.slice(0, 5)}`
+        ? `${e.start_time.slice(0, 5)}–${e.end_time.slice(0, 5)}`
         : `${Number(e.stunden).toFixed(2)} h`;
-      const pause = e.pause_minutes ? ` (Pause ${e.pause_minutes} min)` : "";
-      const taet = e.taetigkeit ? ` - ${e.taetigkeit}` : "";
-      const line = `${range}${pause}${taet}  ->  ${Number(e.stunden || 0).toFixed(2)} h`;
-      const wrapped = doc.splitTextToSize(line, contentWidth);
-      checkPageBreak(wrapped.length * 4.5);
-      doc.text(wrapped, margin, y);
-      y += wrapped.length * 4.5;
+      const pause = e.pause_minutes ? `${e.pause_minutes} min` : "—";
+      const taet = e.taetigkeit || "";
+      const sum = `${Number(e.stunden || 0).toFixed(2)} h`;
+
+      x = margin + 1;
+      doc.text((e.user_name || "—").substring(0, 22), x, y + 4); x += colUser;
+      doc.text(range, x, y + 4); x += colTime;
+      doc.text(pause, x, y + 4); x += colPause;
+      const taetTrim = doc.splitTextToSize(taet, colTaet - 2)[0] || "";
+      doc.text(taetTrim, x, y + 4); x += colTaet;
+      doc.text(sum, x, y + 4);
+      y += 5;
     }
+    // Summen-Zeile
+    doc.setDrawColor(200, 200, 200);
+    doc.line(margin, y, margin + contentWidth, y);
     y += 4;
+    doc.setFont("helvetica", "bold");
+    doc.text(`Gesamt: ${total.toFixed(2)} h`, margin + contentWidth, y, { align: "right" });
+    y += 6;
+    doc.setFont("helvetica", "normal");
   }
 
   // Photos
   if (photos.length > 0) {
     doc.addPage();
     y = margin;
-    doc.setFontSize(12);
-    doc.setFont("helvetica", "bold");
-    doc.text(`Fotos (${photos.length})`, margin, y);
-    y += 8;
+    sectionHeader(`Fotos (${photos.length})`);
+    y += 2;
 
     for (let i = 0; i < photos.length; i++) {
       const url = `${supabaseUrl}/storage/v1/object/public/daily-report-photos/${photos[i].file_path}`;
@@ -269,13 +314,10 @@ export async function generateDailyReportPDF(
 
   // Safety checklist
   if (report.sicherheitscheckliste && report.sicherheitscheckliste.length > 0) {
-    checkPageBreak(15 + report.sicherheitscheckliste.length * 6);
-    doc.setFontSize(12);
-    doc.setFont("helvetica", "bold");
-    doc.text("Sicherheitscheckliste", margin, y);
-    y += 7;
+    sectionHeader("Sicherheitscheckliste");
     doc.setFontSize(10);
     doc.setFont("helvetica", "normal");
+    y += 2;
 
     for (const item of report.sicherheitscheckliste) {
       checkPageBreak(6);

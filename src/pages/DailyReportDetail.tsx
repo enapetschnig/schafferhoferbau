@@ -13,6 +13,7 @@ import { SafetyChecklist, DEFAULT_SAFETY_ITEMS, type SafetyItem } from "@/compon
 import { DailyReportForm } from "@/components/DailyReportForm";
 import { SignaturePad } from "@/components/SignaturePad";
 import { SerialPhotoCapture } from "@/components/SerialPhotoCapture";
+import TimeTracking from "@/pages/TimeTracking";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
 import { generateDailyReportPDF } from "@/lib/generateDailyReportPDF";
@@ -54,6 +55,8 @@ type Photo = { id: string; file_path: string; file_name: string };
 type Worker = { user_id: string; name: string };
 type TimeEntry = {
   id: string;
+  user_id: string;
+  user_name: string;
   start_time: string | null;
   end_time: string | null;
   pause_minutes: number | null;
@@ -72,6 +75,7 @@ export default function DailyReportDetail() {
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [dayTimeEntries, setDayTimeEntries] = useState<TimeEntry[]>([]);
+  const [showTimeDialog, setShowTimeDialog] = useState(false);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [serialCapture, setSerialCapture] = useState(false);
@@ -177,16 +181,38 @@ export default function DailyReportDetail() {
       setWorkers([]);
     }
 
-    // Zeit-Eintraege fuer den Tag des Berichts (vom Bericht-Ersteller) laden
-    if (data?.user_id && data?.datum) {
-      const { data: timeData } = await supabase
-        .from("time_entries")
-        .select("id, start_time, end_time, pause_minutes, stunden, taetigkeit, project_id")
-        .eq("user_id", data.user_id)
-        .eq("datum", data.datum)
-        .order("start_time");
-      if (timeData) setDayTimeEntries(timeData as TimeEntry[]);
-      else setDayTimeEntries([]);
+    // Zeit-Eintraege fuer den Tag des Berichts: vom Bericht-Ersteller UND von allen
+    // anwesenden Mitarbeitern (daily_report_workers). Mit User-Namen aus employees.
+    if (data?.datum) {
+      const userIds = new Set<string>();
+      if (data.user_id) userIds.add(data.user_id);
+      if (workerData) workerData.forEach((w: any) => w.user_id && userIds.add(w.user_id));
+      const idsArr = Array.from(userIds);
+      if (idsArr.length > 0) {
+        const [{ data: timeData }, { data: empNames }] = await Promise.all([
+          supabase
+            .from("time_entries")
+            .select("id, user_id, start_time, end_time, pause_minutes, stunden, taetigkeit, project_id")
+            .in("user_id", idsArr)
+            .eq("datum", data.datum)
+            .order("start_time"),
+          supabase
+            .from("employees")
+            .select("user_id, vorname, nachname")
+            .in("user_id", idsArr),
+        ]);
+        const nameMap = new Map<string, string>();
+        (empNames || []).forEach((e: any) => {
+          nameMap.set(e.user_id, `${e.vorname || ""} ${e.nachname || ""}`.trim());
+        });
+        const enriched: TimeEntry[] = (timeData || []).map((t: any) => ({
+          ...t,
+          user_name: nameMap.get(t.user_id) || "Unbekannt",
+        }));
+        setDayTimeEntries(enriched);
+      } else {
+        setDayTimeEntries([]);
+      }
     } else {
       setDayTimeEntries([]);
     }
@@ -510,7 +536,7 @@ export default function DailyReportDetail() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => navigate(`/time-tracking?date=${report.datum}`)}
+                onClick={() => setShowTimeDialog(true)}
               >
                 <Pencil className="w-3.5 h-3.5 mr-1" />
                 {dayTimeEntries.length > 0 ? "Zeit bearbeiten" : "Zeit erfassen"}
@@ -537,25 +563,22 @@ export default function DailyReportDetail() {
                 Für diesen Tag wurde noch keine Zeit gebucht.
               </p>
             ) : (
-              <div className="space-y-2">
+              <div className="divide-y border rounded-md overflow-hidden">
                 {dayTimeEntries.map((entry) => (
                   <div
                     key={entry.id}
-                    className="flex items-center justify-between gap-3 p-2 rounded-md bg-muted/30"
+                    className="flex items-center justify-between gap-3 px-3 py-2 hover:bg-muted/30"
                   >
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium">
+                    <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-medium whitespace-nowrap">{entry.user_name}</span>
+                      <span className="text-xs text-muted-foreground whitespace-nowrap">
                         {entry.start_time && entry.end_time
-                          ? `${entry.start_time.slice(0, 5)} – ${entry.end_time.slice(0, 5)}`
+                          ? `${entry.start_time.slice(0, 5)}–${entry.end_time.slice(0, 5)}`
                           : `${Number(entry.stunden).toFixed(2)} h`}
-                        {entry.pause_minutes ? (
-                          <span className="text-xs text-muted-foreground ml-2">
-                            (Pause {entry.pause_minutes} min)
-                          </span>
-                        ) : null}
-                      </div>
+                        {entry.pause_minutes ? ` · Pause ${entry.pause_minutes}min` : ""}
+                      </span>
                       {entry.taetigkeit && (
-                        <div className="text-xs text-muted-foreground truncate">{entry.taetigkeit}</div>
+                        <span className="text-xs text-muted-foreground truncate">· {entry.taetigkeit}</span>
                       )}
                     </div>
                     <div className="text-sm font-medium whitespace-nowrap">
@@ -756,6 +779,28 @@ export default function DailyReportDetail() {
         onFinish={handleSerialUpload}
         title="Fotos für Bericht"
       />
+
+      {/* Zeit bearbeiten / erfassen — eingebettete Zeiterfassung */}
+      <Dialog open={showTimeDialog} onOpenChange={setShowTimeDialog}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Zeiterfassung – {format(new Date(report.datum), "dd.MM.yyyy", { locale: de })}</DialogTitle>
+          </DialogHeader>
+          <div className="-mx-2 sm:-mx-4">
+            <TimeTracking
+              embedded={{
+                defaultDate: report.datum,
+                defaultProjectId: report.project_id,
+                hideHeader: true,
+                onSaved: () => {
+                  setShowTimeDialog(false);
+                  fetchReport();
+                },
+              }}
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

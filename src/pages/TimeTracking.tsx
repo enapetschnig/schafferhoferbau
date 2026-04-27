@@ -435,20 +435,22 @@ const TimeTracking = ({ embedded }: TimeTrackingEmbeddedProps = {}) => {
     fetchExistingDayEntries(selectedDate);
   }, [selectedDate]);
 
-  // Auto-enter edit mode when navigated with ?date= and entries exist
+  // Auto-enter edit mode when navigated with ?date= and entries exist (oder im embedded-Modus)
   useEffect(() => {
     const dateParam = searchParams.get("date");
-    if (dateParam && existingDayEntries.length > 0 && !editMode && !loadingDayEntries) {
+    const shouldAutoEnter = (dateParam || embedded) && existingDayEntries.length > 0 && !editMode && !loadingDayEntries;
+    if (shouldAutoEnter) {
       const hasNormalEntries = existingDayEntries.some(
         e => !ALL_ABSENCE_LABELS.includes(e.taetigkeit)
       );
       if (hasNormalEntries) {
         enterEditMode();
-        // Clear the date param so refreshing doesn't re-enter edit mode
-        // Keep user_id if present (admin mode)
-        const newParams: Record<string, string> = {};
-        if (targetUserId) newParams.user_id = targetUserId;
-        setSearchParams(newParams, { replace: true });
+        // Clear the date param so refreshing doesn't re-enter edit mode (nicht im embedded-Modus)
+        if (dateParam && !embedded) {
+          const newParams: Record<string, string> = {};
+          if (targetUserId) newParams.user_id = targetUserId;
+          setSearchParams(newParams, { replace: true });
+        }
       }
     }
   }, [existingDayEntries, loadingDayEntries]);
