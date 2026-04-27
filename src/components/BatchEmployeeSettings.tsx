@@ -6,10 +6,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Users, Save, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { DEFAULT_SCHEDULE, LEHRLING_SCHEDULE, type WeekSchedule } from "@/lib/workingHours";
+import { DEFAULT_SCHEDULE, LEHRLING_SCHEDULE, type WeekSchedule, type DaySchedule, type Schwellenwert } from "@/lib/workingHours";
 
 type EmployeeLite = {
   id: string;
@@ -19,8 +20,13 @@ type EmployeeLite = {
 };
 
 const DAY_KEYS = ["mo", "di", "mi", "do", "fr", "sa", "so"] as const;
-const DAY_LABELS: Record<(typeof DAY_KEYS)[number], string> = {
+type DayKey = (typeof DAY_KEYS)[number];
+const DAY_LABELS: Record<DayKey, string> = {
   mo: "Mo", di: "Di", mi: "Mi", do: "Do", fr: "Fr", sa: "Sa", so: "So",
+};
+
+const DEFAULT_SCHWELLENWERT: Record<DayKey, number> = {
+  mo: 10, di: 10, mi: 9.5, do: 9.5, fr: 0, sa: 0, so: 0,
 };
 
 interface Props {
@@ -28,17 +34,41 @@ interface Props {
   onSaved?: () => void;
 }
 
+function emptyDay(): DaySchedule {
+  return { start: null, end: null, pause: 0, hours: 0 };
+}
+function copyWeek(src: WeekSchedule): Record<DayKey, DaySchedule> {
+  const out = {} as Record<DayKey, DaySchedule>;
+  DAY_KEYS.forEach((k) => { out[k] = { ...(src[k] || emptyDay()) }; });
+  return out;
+}
+function defaultAnker(): string {
+  const d = new Date();
+  const day = d.getDay();
+  const diff = (day + 6) % 7; // Mo=0
+  d.setDate(d.getDate() - diff);
+  return d.toISOString().split("T")[0];
+}
+
 export function BatchEmployeeSettings({ employees, onSaved }: Props) {
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  // === Regelarbeitszeit-State ===
   const [applyRegelarbeitszeit, setApplyRegelarbeitszeit] = useState(true);
+  const [scheduleBiweekly, setScheduleBiweekly] = useState(false);
+  const [scheduleAnker, setScheduleAnker] = useState<string>(defaultAnker());
+  const [scheduleA, setScheduleA] = useState<Record<DayKey, DaySchedule>>(copyWeek(DEFAULT_SCHEDULE));
+  const [scheduleB, setScheduleB] = useState<Record<DayKey, DaySchedule>>(copyWeek(DEFAULT_SCHEDULE));
+
+  // === Schwellenwert-State ===
   const [applySchwellenwert, setApplySchwellenwert] = useState(true);
-  const [schedule, setSchedule] = useState<WeekSchedule>(DEFAULT_SCHEDULE);
-  const [schwellenwert, setSchwellenwert] = useState<Record<string, number>>({
-    mo: 10, di: 10, mi: 9.5, do: 9.5, fr: 0, sa: 0, so: 0,
-  });
+  const [swBiweekly, setSwBiweekly] = useState(false);
+  const [swAnker, setSwAnker] = useState<string>(defaultAnker());
+  const [swA, setSwA] = useState<Record<DayKey, number>>({ ...DEFAULT_SCHWELLENWERT });
+  const [swB, setSwB] = useState<Record<DayKey, number>>({ ...DEFAULT_SCHWELLENWERT });
 
   const toggle = (id: string) => {
     setSelected((prev) => {
@@ -57,6 +87,11 @@ export function BatchEmployeeSettings({ employees, onSaved }: Props) {
     setSelected(new Set(employees.filter((e) => e.kategorie === kat).map((e) => e.id)));
   };
 
+  const presetSchedule = (preset: WeekSchedule) => {
+    setScheduleA(copyWeek(preset));
+    setScheduleB(copyWeek(preset));
+  };
+
   const apply = async () => {
     if (selected.size === 0) {
       toast({ variant: "destructive", title: "Niemand ausgewählt" });
@@ -68,8 +103,7 @@ export function BatchEmployeeSettings({ employees, onSaved }: Props) {
     }
     setSaving(true);
 
-    // Bestehende biweekly-Felder pro Mitarbeiter erhalten (nicht ueberschreiben).
-    // Wir lesen erst die aktuellen Werte, mergen die batch-Eingaben darueber, dann pro Mitarbeiter speichern.
+    // Pro Mitarbeiter aktuellen Datensatz laden + mergen, damit individuelle Felder erhalten bleiben.
     const ids = [...selected];
     const { data: existing } = await supabase
       .from("employees")
@@ -78,30 +112,38 @@ export function BatchEmployeeSettings({ employees, onSaved }: Props) {
     const map = new Map<string, { regelarbeitszeit: any; schwellenwert: any }>();
     (existing || []).forEach((e: any) => map.set(e.id, { regelarbeitszeit: e.regelarbeitszeit, schwellenwert: e.schwellenwert }));
 
+    // Neue Regelarbeitszeit-Konfiguration aus Form bauen
+    const newSchedule: any = { ...scheduleA };
+    if (scheduleBiweekly) {
+      newSchedule.zyklus = "biweekly";
+      newSchedule.woche_b = scheduleB;
+      newSchedule.zyklus_anker = scheduleAnker;
+    }
+    // Wochensoll = Summe aus Woche A
+    const sollA = (Object.values(scheduleA) as DaySchedule[]).reduce(
+      (s, d) => s + (d?.hours ?? 0),
+      0
+    );
+
+    // Neue Schwellenwert-Konfiguration
+    const newSchwellenwert: any = { ...swA };
+    if (swBiweekly) {
+      newSchwellenwert.zyklus = "biweekly";
+      newSchwellenwert.woche_b = swB;
+      newSchwellenwert.zyklus_anker = swAnker;
+    }
+
     const errors: string[] = [];
     for (const id of ids) {
-      const cur = map.get(id) || { regelarbeitszeit: null, schwellenwert: null };
       const update: Record<string, any> = {};
 
       if (applyRegelarbeitszeit) {
-        // Wochentage aus Batch nutzen, biweekly-Felder (zyklus, woche_b, zyklus_anker) aus dem aktuellen Datensatz erhalten
-        const merged = {
-          ...(cur.regelarbeitszeit && typeof cur.regelarbeitszeit === "object" ? cur.regelarbeitszeit : {}),
-          ...schedule,
-        };
-        update.regelarbeitszeit = merged;
-        update.wochen_soll_stunden = Object.entries(schedule).reduce(
-          (s, [_k, d]: [string, any]) => s + (d?.hours ?? 0),
-          0
-        );
+        update.regelarbeitszeit = newSchedule;
+        update.wochen_soll_stunden = sollA;
       }
 
       if (applySchwellenwert) {
-        const merged = {
-          ...(cur.schwellenwert && typeof cur.schwellenwert === "object" ? cur.schwellenwert : {}),
-          ...schwellenwert,
-        };
-        update.schwellenwert = merged;
+        update.schwellenwert = newSchwellenwert;
       }
 
       const { error } = await supabase.from("employees").update(update).eq("id", id);
@@ -118,6 +160,131 @@ export function BatchEmployeeSettings({ employees, onSaved }: Props) {
     onSaved?.();
   };
 
+  // Helper: Tag in einer Wochen-State updaten
+  const updateScheduleDay = (
+    week: "A" | "B",
+    day: DayKey,
+    field: keyof DaySchedule,
+    val: any
+  ) => {
+    const setter = week === "A" ? setScheduleA : setScheduleB;
+    const cur = week === "A" ? scheduleA : scheduleB;
+    const updated = { ...cur, [day]: { ...cur[day], [field]: val } };
+    // Pause-Minuten automatisch berechnen, wenn Start+Ende gesetzt sind
+    if (field === "pause_start" || field === "pause_end") {
+      const d = updated[day];
+      if (d.pause_start && d.pause_end) {
+        const [sh, sm] = d.pause_start.split(":").map(Number);
+        const [eh, em] = d.pause_end.split(":").map(Number);
+        const min = (eh * 60 + em) - (sh * 60 + sm);
+        if (min > 0) updated[day] = { ...d, pause: min };
+      }
+    }
+    setter(updated);
+  };
+
+  const renderScheduleGrid = (week: "A" | "B") => {
+    const data = week === "A" ? scheduleA : scheduleB;
+    return (
+      <div className="grid grid-cols-7 gap-2">
+        {DAY_KEYS.map((day) => (
+          <div key={day} className="space-y-1">
+            <Label className="text-xs text-center block font-bold">{DAY_LABELS[day]}</Label>
+            <Input
+              type="time"
+              value={data[day]?.start || ""}
+              disabled={!applyRegelarbeitszeit}
+              onChange={(e) => updateScheduleDay(week, day, "start", e.target.value || null)}
+              className="text-xs h-8 px-1"
+              placeholder="Start"
+              title="Beginn"
+            />
+            <Input
+              type="time"
+              value={data[day]?.end || ""}
+              disabled={!applyRegelarbeitszeit}
+              onChange={(e) => updateScheduleDay(week, day, "end", e.target.value || null)}
+              className="text-xs h-8 px-1"
+              placeholder="Ende"
+              title="Ende"
+            />
+            <Input
+              type="number"
+              step="0.25"
+              min="0"
+              max="24"
+              value={data[day]?.hours ?? 0}
+              disabled={!applyRegelarbeitszeit}
+              onChange={(e) => updateScheduleDay(week, day, "hours", parseFloat(e.target.value) || 0)}
+              className="text-xs h-8 px-1 text-center"
+              placeholder="h"
+              title="Stunden"
+            />
+            <Input
+              type="time"
+              value={(data[day] as any)?.pause_start || ""}
+              disabled={!applyRegelarbeitszeit}
+              onChange={(e) => updateScheduleDay(week, day, "pause_start" as any, e.target.value || null)}
+              className="text-xs h-8 px-1"
+              placeholder="P-Start"
+              title="Pausen-Beginn"
+            />
+            <Input
+              type="time"
+              value={(data[day] as any)?.pause_end || ""}
+              disabled={!applyRegelarbeitszeit}
+              onChange={(e) => updateScheduleDay(week, day, "pause_end" as any, e.target.value || null)}
+              className="text-xs h-8 px-1"
+              placeholder="P-Ende"
+              title="Pausen-Ende"
+            />
+            <Input
+              type="number"
+              min="0"
+              max="120"
+              step="5"
+              value={data[day]?.pause ?? 0}
+              disabled={!applyRegelarbeitszeit}
+              onChange={(e) => updateScheduleDay(week, day, "pause", parseInt(e.target.value) || 0)}
+              className="text-xs h-8 px-1 text-center"
+              placeholder="min"
+              title="Pausen-Minuten (auto bei Start+Ende)"
+            />
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  const renderSchwellenwertGrid = (week: "A" | "B") => {
+    const data = week === "A" ? swA : swB;
+    const setter = week === "A" ? setSwA : setSwB;
+    return (
+      <div className="grid grid-cols-7 gap-2">
+        {DAY_KEYS.map((day) => (
+          <div key={day} className="text-center">
+            <Label className="text-xs font-bold">{DAY_LABELS[day]}</Label>
+            <Input
+              type="number"
+              min="0"
+              max="24"
+              step="0.5"
+              value={data[day] ?? 0}
+              disabled={!applySchwellenwert}
+              onChange={(e) =>
+                setter({
+                  ...data,
+                  [day]: parseFloat(e.target.value) || 0,
+                })
+              }
+              className="text-center text-sm"
+            />
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   return (
     <>
       <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
@@ -131,6 +298,7 @@ export function BatchEmployeeSettings({ employees, onSaved }: Props) {
             <DialogTitle>Batch-Einstellungen für Mitarbeiter</DialogTitle>
             <DialogDescription>
               Setze Regelarbeitszeit und/oder Schwellenwert für mehrere Mitarbeiter gleichzeitig.
+              Andere Felder (z.B. Bankverbindung) bleiben unverändert.
             </DialogDescription>
           </DialogHeader>
 
@@ -139,9 +307,7 @@ export function BatchEmployeeSettings({ employees, onSaved }: Props) {
             <Card>
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between flex-wrap gap-2">
-                  <div>
-                    <CardTitle className="text-base">Mitarbeiter auswählen ({selected.size}/{employees.length})</CardTitle>
-                  </div>
+                  <CardTitle className="text-base">Mitarbeiter auswählen ({selected.size}/{employees.length})</CardTitle>
                   <div className="flex gap-2 flex-wrap">
                     <Button size="sm" variant="outline" onClick={selectAll}>
                       {selected.size === employees.length ? "Keine" : "Alle"}
@@ -176,7 +342,7 @@ export function BatchEmployeeSettings({ employees, onSaved }: Props) {
             {/* Regelarbeitszeit */}
             <Card>
               <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between flex-wrap gap-2">
                   <div className="flex items-center gap-2">
                     <Checkbox
                       checked={applyRegelarbeitszeit}
@@ -185,66 +351,55 @@ export function BatchEmployeeSettings({ employees, onSaved }: Props) {
                     <CardTitle className="text-base">Regelarbeitszeit</CardTitle>
                   </div>
                   <div className="flex gap-2">
-                    <Button size="sm" variant="outline" onClick={() => setSchedule(DEFAULT_SCHEDULE)}>
+                    <Button size="sm" variant="outline" onClick={() => presetSchedule(DEFAULT_SCHEDULE)}>
                       Facharbeiter (39h)
                     </Button>
-                    <Button size="sm" variant="outline" onClick={() => setSchedule(LEHRLING_SCHEDULE)}>
+                    <Button size="sm" variant="outline" onClick={() => presetSchedule(LEHRLING_SCHEDULE)}>
                       Lehrling
                     </Button>
                   </div>
                 </div>
                 <CardDescription className="text-xs">
-                  Wochensoll: {Object.values(schedule).reduce((s, d) => s + (d?.hours ?? 0), 0).toFixed(1)}h
+                  Wochensoll (A): {(Object.values(scheduleA) as DaySchedule[]).reduce((s, d) => s + (d?.hours ?? 0), 0).toFixed(1)}h
                 </CardDescription>
               </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-7 gap-2">
-                  {DAY_KEYS.map((day) => (
-                    <div key={day} className="space-y-1">
-                      <Label className="text-xs text-center block">{DAY_LABELS[day]}</Label>
-                      <Input
-                        type="time"
-                        value={schedule[day]?.start || ""}
-                        disabled={!applyRegelarbeitszeit}
-                        onChange={(e) =>
-                          setSchedule({
-                            ...schedule,
-                            [day]: { ...schedule[day], start: e.target.value || null },
-                          })
-                        }
-                        className="text-xs"
-                      />
-                      <Input
-                        type="time"
-                        value={schedule[day]?.end || ""}
-                        disabled={!applyRegelarbeitszeit}
-                        onChange={(e) =>
-                          setSchedule({
-                            ...schedule,
-                            [day]: { ...schedule[day], end: e.target.value || null },
-                          })
-                        }
-                        className="text-xs"
-                      />
-                      <Input
-                        type="number"
-                        step="0.25"
-                        placeholder="h"
-                        value={schedule[day]?.hours ?? 0}
-                        disabled={!applyRegelarbeitszeit}
-                        onChange={(e) =>
-                          setSchedule({
-                            ...schedule,
-                            [day]: { ...schedule[day], hours: parseFloat(e.target.value) || 0 },
-                          })
-                        }
-                        className="text-xs text-center"
-                      />
-                    </div>
-                  ))}
-                </div>
-                <p className="text-xs text-muted-foreground mt-2">
-                  Pro Tag: Beginn, Ende, Stunden. Leer lassen für arbeitsfreie Tage.
+              <CardContent className="space-y-3">
+                <label className="flex items-center gap-2 p-2 rounded-md border cursor-pointer hover:bg-muted/30">
+                  <Checkbox
+                    checked={scheduleBiweekly}
+                    disabled={!applyRegelarbeitszeit}
+                    onCheckedChange={(v) => setScheduleBiweekly(!!v)}
+                  />
+                  <span className="text-sm">14-tägige Durchrechnung (kurze / lange Woche im Wechsel)</span>
+                </label>
+
+                {scheduleBiweekly && applyRegelarbeitszeit && (
+                  <div className="flex items-center gap-3">
+                    <Label className="text-sm whitespace-nowrap">Anker (Mo der ersten Kurze-Woche-Periode):</Label>
+                    <Input
+                      type="date"
+                      value={scheduleAnker}
+                      onChange={(e) => setScheduleAnker(e.target.value)}
+                      className="h-9 w-44"
+                    />
+                  </div>
+                )}
+
+                {scheduleBiweekly ? (
+                  <Tabs defaultValue="A">
+                    <TabsList>
+                      <TabsTrigger value="A">Kurze Woche (A)</TabsTrigger>
+                      <TabsTrigger value="B">Lange Woche (B)</TabsTrigger>
+                    </TabsList>
+                    <TabsContent value="A" className="pt-3">{renderScheduleGrid("A")}</TabsContent>
+                    <TabsContent value="B" className="pt-3">{renderScheduleGrid("B")}</TabsContent>
+                  </Tabs>
+                ) : (
+                  renderScheduleGrid("A")
+                )}
+
+                <p className="text-xs text-muted-foreground">
+                  Pro Tag: Beginn / Ende / Stunden / Pausen-Beginn / Pausen-Ende / Pausen-Minuten. Pausen-Minuten werden automatisch berechnet, wenn Start und Ende gesetzt sind.
                 </p>
               </CardContent>
             </Card>
@@ -259,30 +414,44 @@ export function BatchEmployeeSettings({ employees, onSaved }: Props) {
                   />
                   <CardTitle className="text-base">Schwellenwert (Tagesgrenze für Zeitausgleich)</CardTitle>
                 </div>
+                <CardDescription className="text-xs">
+                  Stunden bis zum Schwellenwert = Lohnstunden, alles darüber = Zeitausgleich.
+                </CardDescription>
               </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-7 gap-2">
-                  {DAY_KEYS.map((day) => (
-                    <div key={day} className="text-center">
-                      <Label className="text-xs">{DAY_LABELS[day]}</Label>
-                      <Input
-                        type="number"
-                        min="0"
-                        max="24"
-                        step="0.5"
-                        value={schwellenwert[day] ?? 0}
-                        disabled={!applySchwellenwert}
-                        onChange={(e) =>
-                          setSchwellenwert({
-                            ...schwellenwert,
-                            [day]: parseFloat(e.target.value) || 0,
-                          })
-                        }
-                        className="text-center text-sm"
-                      />
-                    </div>
-                  ))}
-                </div>
+              <CardContent className="space-y-3">
+                <label className="flex items-center gap-2 p-2 rounded-md border cursor-pointer hover:bg-muted/30">
+                  <Checkbox
+                    checked={swBiweekly}
+                    disabled={!applySchwellenwert}
+                    onCheckedChange={(v) => setSwBiweekly(!!v)}
+                  />
+                  <span className="text-sm">14-tägige Durchrechnung (kurze / lange Woche im Wechsel)</span>
+                </label>
+
+                {swBiweekly && applySchwellenwert && (
+                  <div className="flex items-center gap-3">
+                    <Label className="text-sm whitespace-nowrap">Anker (Mo der ersten Kurze-Woche-Periode):</Label>
+                    <Input
+                      type="date"
+                      value={swAnker}
+                      onChange={(e) => setSwAnker(e.target.value)}
+                      className="h-9 w-44"
+                    />
+                  </div>
+                )}
+
+                {swBiweekly ? (
+                  <Tabs defaultValue="A">
+                    <TabsList>
+                      <TabsTrigger value="A">Kurze Woche (A)</TabsTrigger>
+                      <TabsTrigger value="B">Lange Woche (B)</TabsTrigger>
+                    </TabsList>
+                    <TabsContent value="A" className="pt-3">{renderSchwellenwertGrid("A")}</TabsContent>
+                    <TabsContent value="B" className="pt-3">{renderSchwellenwertGrid("B")}</TabsContent>
+                  </Tabs>
+                ) : (
+                  renderSchwellenwertGrid("A")
+                )}
               </CardContent>
             </Card>
 
