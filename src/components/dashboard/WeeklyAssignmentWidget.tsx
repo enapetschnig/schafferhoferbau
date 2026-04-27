@@ -147,11 +147,12 @@ export function WeeklyAssignmentWidget({ userId }: Props) {
     fetch();
   }, [userId]);
 
-  // Don't show if no data at all
+  // Don't show if no data at all (auch worker_goals zaehlen als Daten)
   if (loading) return null;
 
+  const hasGoals = !!userWochenziel || Object.keys(userDayGoals).length > 0 || Object.keys(projectDayTargets).length > 0;
   const hasAnyData =
-    assignments.length > 0 || holidays.length > 0 || leaves.length > 0;
+    assignments.length > 0 || holidays.length > 0 || leaves.length > 0 || hasGoals;
   if (!hasAnyData) return null;
 
   const renderDay = (day: Date) => {
@@ -208,11 +209,20 @@ export function WeeklyAssignmentWidget({ userId }: Props) {
   };
 
   return (
-    <div className="mb-6">
-      <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
+    <div className="mb-6 space-y-3">
+      <h2 className="text-lg font-semibold flex items-center gap-2">
         <CalendarDays className="h-5 w-5 text-primary" />
         Meine Einteilung – KW {getISOWeek(weekStart)}
       </h2>
+
+      {/* Wochenziel als prominenter Banner ueber der Plantafel-Card */}
+      {userWochenziel && (
+        <div className="rounded-md border border-primary/30 bg-primary/5 px-3 py-2">
+          <p className="text-[10px] uppercase tracking-wide text-primary font-semibold">Wochenziel</p>
+          <p className="text-sm font-medium mt-0.5">{userWochenziel}</p>
+        </div>
+      )}
+
       <Card
         className="cursor-pointer hover:shadow-md hover:border-primary/40 transition-all"
         onClick={() => navigate("/schedule")}
@@ -230,13 +240,8 @@ export function WeeklyAssignmentWidget({ userId }: Props) {
             {row2Days.map((day) => renderDay(day))}
             <div /> {/* Leere 4. Spalte fuer Alignment */}
           </div>
-          {/* Wochenziel wird unten angezeigt; Tagesziele sind direkt unter dem jeweiligen Projekt */}
-          {userWochenziel && (
-            <div className="pt-1 border-t mt-2">
-              <p className="text-xs text-muted-foreground">Wochenziel:</p>
-              <p className="text-sm font-medium">{userWochenziel}</p>
-            </div>
-          )}
+          {/* Tagesziele werden direkt unter dem jeweiligen Projekt im Tag gezeigt;
+              das Wochenziel erscheint als Banner ueber dieser Card. */}
         </CardContent>
       </Card>
     </div>
