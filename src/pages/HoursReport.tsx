@@ -251,6 +251,30 @@ export default function HoursReport() {
     setLoading(false);
   };
 
+  /**
+   * Loescht alle time_entries fuer (selectedUserId, datum). Nur fuer Admin sinnvoll.
+   * Mit Bestaetigungs-Dialog, da nicht reversibel.
+   */
+  const handleDeleteDay = async (datum: string, count: number) => {
+    if (!selectedUserId) return;
+    const dateLabel = format(new Date(datum), "EEEE, dd.MM.yyyy", { locale: de });
+    const ok = window.confirm(
+      `${count} Zeiteintrag${count === 1 ? "" : "e"} am ${dateLabel} unwiderruflich loeschen?`
+    );
+    if (!ok) return;
+    const { error } = await supabase
+      .from("time_entries")
+      .delete()
+      .eq("user_id", selectedUserId)
+      .eq("datum", datum);
+    if (error) {
+      toast({ variant: "destructive", title: "Loeschen fehlgeschlagen", description: error.message });
+      return;
+    }
+    toast({ title: "Tag geloescht", description: `${count} Eintrag${count === 1 ? "" : "e"} entfernt.` });
+    fetchTimeEntries();
+  };
+
 
   const fetchReportExtras = async () => {
     if (!selectedUserId) return;
@@ -1186,14 +1210,28 @@ export default function HoursReport() {
                                   </TableCell>
                                   {isAdmin && (
                                     <TableCell>
-                                      <Button
-                                        size="sm"
-                                        variant="ghost"
-                                        className="h-7 w-7 p-0"
-                                        onClick={() => navigate(`/time-tracking?date=${entry.datum}&user_id=${entry.user_id}&return_month=${month}&return_year=${year}`)}
-                                      >
-                                        <Pencil className="h-3.5 w-3.5" />
-                                      </Button>
+                                      <div className="flex items-center gap-0.5">
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          className="h-7 w-7 p-0"
+                                          title="Eintrag bearbeiten"
+                                          onClick={() => navigate(`/time-tracking?date=${entry.datum}&user_id=${entry.user_id}&return_month=${month}&return_year=${year}`)}
+                                        >
+                                          <Pencil className="h-3.5 w-3.5" />
+                                        </Button>
+                                        {isFirstEntry && (
+                                          <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            className="h-7 w-7 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                            title={`Alle ${dayEntries.length} Einträge dieses Tages löschen`}
+                                            onClick={() => handleDeleteDay(entry.datum, dayEntries.length)}
+                                          >
+                                            <Trash2 className="h-3.5 w-3.5" />
+                                          </Button>
+                                        )}
+                                      </div>
                                     </TableCell>
                                   )}
                                 </TableRow>
