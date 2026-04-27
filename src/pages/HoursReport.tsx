@@ -122,6 +122,7 @@ export default function HoursReport() {
   const [editExtraBetrag, setEditExtraBetrag] = useState("");
 
   const [kategorieFilter, setKategorieFilter] = useState<string>("alle");
+  // Map: user_id -> App-Rolle (administrator | vorarbeiter | mitarbeiter | extern)
   const [employeeKategorien, setEmployeeKategorien] = useState<Record<string, string>>({});
 
   const [selectedView, setSelectedView] = useState<"mitarbeiter" | "externe" | null>(() => {
@@ -191,9 +192,10 @@ export default function HoursReport() {
   };
 
   const fetchProfiles = async () => {
-    const [{ data }, { data: externalData }] = await Promise.all([
+    const [{ data }, { data: externalData }, { data: rolesData }] = await Promise.all([
       supabase.from("profiles").select("id, vorname, nachname, is_active").eq("is_active", true),
       supabase.from("employees").select("user_id, is_external, kategorie"),
+      supabase.from("user_roles").select("user_id, role"),
     ]);
     const externalIds = new Set(
       (externalData || [])
@@ -209,13 +211,14 @@ export default function HoursReport() {
       });
       setProfiles(profileMap);
     }
-    // Build kategorie map
-    if (externalData) {
-      const katMap: Record<string, string> = {};
-      externalData.forEach((e) => {
-        if (e.user_id) katMap[e.user_id] = e.kategorie || "facharbeiter";
+
+    // Build app-role map (Single Source of Truth fuer 'Rolle' im UI)
+    if (rolesData) {
+      const roleMap: Record<string, string> = {};
+      (rolesData as any[]).forEach((r) => {
+        if (r.user_id) roleMap[r.user_id] = r.role;
       });
-      setEmployeeKategorien(katMap);
+      setEmployeeKategorien(roleMap);
     }
   };
 
@@ -945,13 +948,14 @@ export default function HoursReport() {
                   <>
                     <Select value={kategorieFilter} onValueChange={setKategorieFilter}>
                       <SelectTrigger className="h-11 w-40">
-                        <SelectValue placeholder="Kategorie" />
+                        <SelectValue placeholder="Rolle" />
                       </SelectTrigger>
                       <SelectContent position="popper">
-                        <SelectItem value="alle">Alle</SelectItem>
+                        <SelectItem value="alle">Alle Rollen</SelectItem>
+                        <SelectItem value="administrator">Administrator</SelectItem>
                         <SelectItem value="vorarbeiter">Vorarbeiter</SelectItem>
-                        <SelectItem value="facharbeiter">Facharbeiter</SelectItem>
-                        <SelectItem value="lehrling">Lehrling</SelectItem>
+                        <SelectItem value="mitarbeiter">Mitarbeiter</SelectItem>
+                        <SelectItem value="extern">Extern</SelectItem>
                       </SelectContent>
                     </Select>
                     <Select value={selectedUserId} onValueChange={setSelectedUserId}>
