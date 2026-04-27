@@ -40,6 +40,8 @@ export interface TimeTrackingEmbeddedProps {
    *  erfolgreichem Save wird onSaved aufgerufen statt zu navigieren. */
   embedded?: {
     defaultDate: string;
+    /** Optional: Projekt das im ersten Zeit-Block vorausgewaehlt sein soll (statt aus Plantafel) */
+    defaultProjectId?: string;
     hideHeader?: boolean;
     onSaved?: () => void;
   };
@@ -261,6 +263,32 @@ const TimeTracking = ({ embedded }: TimeTrackingEmbeddedProps = {}) => {
   }, [showBadWeatherDialog, selectedDate, employeeSchedule, targetUserId]);
   const [timeBlocks, setTimeBlocks] = useState<TimeBlock[]>([createDefaultBlock()]);
   const entryMode = "zeitraum" as const;
+
+  // Embedded-Modus: Projekt + Regelarbeitszeit aus den uebergebenen Defaults setzen
+  // (sobald employeeSchedule geladen ist). Laeuft nur einmal beim Mount.
+  const [embeddedDefaultsApplied, setEmbeddedDefaultsApplied] = useState(false);
+  useEffect(() => {
+    if (!embedded || embeddedDefaultsApplied) return;
+    if (scheduleData.loading) return;
+    const dateObj = new Date(selectedDate);
+    const defaults = getDefaultWorkTimes(dateObj, employeeSchedule);
+    setTimeBlocks((prev) => {
+      if (prev.length === 0) return prev;
+      const first = prev[0];
+      // Nur fuellen wenn noch leer (User hat noch nichts angefasst)
+      const updated = {
+        ...first,
+        projectId: first.projectId || embedded.defaultProjectId || "",
+        startTime: first.startTime || defaults?.startTime || "",
+        endTime: first.endTime || defaults?.endTime || "",
+        pauseStart: first.pauseStart || defaults?.pauseStart || "",
+        pauseEnd: first.pauseEnd || defaults?.pauseEnd || "",
+      };
+      return [updated, ...prev.slice(1)];
+    });
+    setEmbeddedDefaultsApplied(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [embedded, scheduleData.loading, employeeSchedule, selectedDate]);
 
   // Auto-fill project from Plantafel + Taetigkeit aus Tagesbericht, wenn noch leer
   useEffect(() => {

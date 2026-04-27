@@ -689,6 +689,7 @@ export function DailyReportForm({ open, onOpenChange, onSuccess, defaultProjectI
               <TimeTracking
                 embedded={{
                   defaultDate: datum,
+                  defaultProjectId: projectId || undefined,
                   hideHeader: true,
                   onSaved: () => {
                     onOpenChange(false);
