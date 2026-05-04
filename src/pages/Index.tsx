@@ -457,6 +457,7 @@ export default function Index() {
   };
 
   const loadForUser = async (userId: string) => {
+   try {
     // 1) Activation + name
     const profileReq = supabase
       .from("profiles")
@@ -478,7 +479,10 @@ export default function Index() {
       .eq("user_id", userId)
       .maybeSingle();
 
-    const [{ data: profileData }, { data: roleData }, { data: employeeData }] = await Promise.all([profileReq, roleReq, employeeReq]);
+    const settled = await Promise.allSettled([profileReq, roleReq, employeeReq]);
+    const profileData = settled[0].status === "fulfilled" ? (settled[0].value.data as any) : null;
+    const roleData = settled[1].status === "fulfilled" ? (settled[1].value.data as any) : null;
+    const employeeData = settled[2].status === "fulfilled" ? (settled[2].value.data as any) : null;
 
     // Prüfe ob Benutzer aktiviert ist
     if (profileData) {
@@ -571,7 +575,7 @@ export default function Index() {
       setLohnzettelNotifCount(count || 0);
     };
 
-    await Promise.all([
+    await Promise.allSettled([
       fetchProjects(),
       fetchRecentEntries(userId, role),
       checkMissingHours(userId),
@@ -730,8 +734,11 @@ export default function Index() {
         });
       }
     } catch { /* Wetter optional */ }
-
-    setLoading(false);
+   } catch (e) {
+     console.error("loadForUser failed:", e);
+   } finally {
+     setLoading(false);
+   }
   };
 
   const dismissLohnzettelNotifs = async () => {
@@ -769,7 +776,19 @@ export default function Index() {
       setLoading(true);
       setIsActivated(null);
 
-      await loadForUser(nextSession.user.id);
+      // Watchdog: Falls eine Query haengt, App nach 15s trotzdem freigeben
+      const watchdog = window.setTimeout(() => {
+        if (isMounted) {
+          console.warn("loadForUser watchdog fired — forcing loading=false");
+          setLoading(false);
+        }
+      }, 15000);
+
+      try {
+        await loadForUser(nextSession.user.id);
+      } finally {
+        window.clearTimeout(watchdog);
+      }
     };
 
     // Listen for auth changes FIRST
