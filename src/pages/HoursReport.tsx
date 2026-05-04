@@ -271,10 +271,10 @@ export default function HoursReport() {
       .eq("user_id", selectedUserId)
       .eq("datum", datum);
     if (error) {
-      toast({ variant: "destructive", title: "Loeschen fehlgeschlagen", description: error.message });
+      toast({ variant: "destructive", title: "Löschen fehlgeschlagen", description: error.message });
       return;
     }
-    toast({ title: "Tag geloescht", description: `${count} Eintrag${count === 1 ? "" : "e"} entfernt.` });
+    toast({ title: "Tag gelöscht", description: `${count} Eintrag${count === 1 ? "" : "e"} entfernt.` });
     fetchTimeEntries();
   };
 

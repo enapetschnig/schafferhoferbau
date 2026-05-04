@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import { Upload, FileText, Trash2, Eye, Download, Archive, CheckSquare, Square, ChevronLeft, ChevronRight, X, Pencil, Share2, Plus } from "lucide-react";
+import { Upload, FileText, Trash2, Eye, Download, Archive, CheckSquare, Square, ChevronLeft, ChevronRight, X, Pencil, Share2, Plus, Star, StickyNote } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { VoiceAIInput } from "@/components/VoiceAIInput";
@@ -8,6 +8,7 @@ import { ImageEditor } from "@/components/ImageEditor";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
@@ -34,6 +35,8 @@ type DocRecord = {
   archived: boolean;
   created_at: string;
   text_content?: string | null;
+  bezeichnung?: string | null;
+  beschreibung?: string | null;
 };
 
 const bucketMap: Record<DocumentType, string> = {
@@ -45,7 +48,7 @@ const bucketMap: Record<DocumentType, string> = {
 };
 
 const titleMap: Record<DocumentType, string> = {
-  plans: "Plaene / Auftraege",
+  plans: "Pläne / Aufträge",
   reports: "Regieberichte",
   photos: "Fotos",
   chef: "Chefordner",
@@ -108,6 +111,19 @@ const ProjectDetail = () => {
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
   const [urlsLoading, setUrlsLoading] = useState(false);
 
+  // Pro-User-Favoriten (nur fuer Plaene-Bereich)
+  const [favFiles, setFavFiles] = useState<Set<string>>(new Set());
+  const [favDocs, setFavDocs] = useState<Set<string>>(new Set());
+
+  // Edit-Dialog fuer Bezeichnung + Anmerkung
+  const [editMetaState, setEditMetaState] = useState<{
+    open: boolean;
+    fileName: string;
+    bezeichnung: string;
+    beschreibung: string;
+    saving: boolean;
+  }>({ open: false, fileName: "", bezeichnung: "", beschreibung: "", saving: false });
+
   const tabs = type ? tabConfig[type] : [];
 
   useEffect(() => {
@@ -117,6 +133,7 @@ const ProjectDetail = () => {
       fetchProjectName();
       fetchFiles();
       fetchDocRecords();
+      fetchFavorites();
     }
   }, [projectId, type]);
 
@@ -173,11 +190,114 @@ const ProjectDetail = () => {
     if (!projectId || !type) return;
     const { data } = await supabase
       .from("documents")
-      .select("id, name, file_url, sub_type, archived, created_at, text_content")
+      .select("id, name, file_url, sub_type, archived, created_at, text_content, bezeichnung, beschreibung")
       .eq("project_id", projectId)
       .eq("typ", type)
       .order("created_at", { ascending: false });
     if (data) setDocRecords(data as DocRecord[]);
+  };
+
+  const fetchFavorites = async () => {
+    if (!projectId || type !== "plans") return;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { data } = await supabase
+      .from("plan_favorites")
+      .select("file_name, document_id")
+      .eq("user_id", user.id)
+      .eq("project_id", projectId);
+    if (data) {
+      setFavFiles(new Set(data.filter((d: any) => d.file_name).map((d: any) => d.file_name)));
+      setFavDocs(new Set(data.filter((d: any) => d.document_id).map((d: any) => d.document_id)));
+    }
+  };
+
+  const toggleFavoriteFile = async (fileName: string) => {
+    if (!projectId) return;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const isFav = favFiles.has(fileName);
+    if (isFav) {
+      await supabase
+        .from("plan_favorites")
+        .delete()
+        .eq("user_id", user.id)
+        .eq("project_id", projectId)
+        .eq("file_name", fileName);
+      setFavFiles((prev) => { const n = new Set(prev); n.delete(fileName); return n; });
+    } else {
+      await supabase
+        .from("plan_favorites")
+        .insert({ user_id: user.id, project_id: projectId, file_name: fileName });
+      setFavFiles((prev) => new Set(prev).add(fileName));
+    }
+  };
+
+  const findDocRecord = (fileName: string): DocRecord | undefined => {
+    if (!projectId) return undefined;
+    return docRecords.find((d) => d.name === fileName || d.file_url === `${projectId}/${fileName}`);
+  };
+
+  const openEditMeta = (fileName: string) => {
+    const rec = findDocRecord(fileName);
+    setEditMetaState({
+      open: true,
+      fileName,
+      bezeichnung: rec?.bezeichnung || "",
+      beschreibung: rec?.beschreibung || "",
+      saving: false,
+    });
+  };
+
+  const saveEditMeta = async () => {
+    if (!projectId || !type) return;
+    setEditMetaState((s) => ({ ...s, saving: true }));
+    const filePath = `${projectId}/${editMetaState.fileName}`;
+    const existing = findDocRecord(editMetaState.fileName);
+    const payload = {
+      bezeichnung: editMetaState.bezeichnung.trim() || null,
+      beschreibung: editMetaState.beschreibung.trim() || null,
+    };
+    if (existing) {
+      await supabase.from("documents").update(payload).eq("id", existing.id);
+    } else {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        await supabase.from("documents").insert({
+          project_id: projectId,
+          user_id: user.id,
+          typ: type,
+          name: editMetaState.fileName,
+          file_url: filePath,
+          archived: false,
+          ...payload,
+        });
+      }
+    }
+    toast({ title: "Gespeichert" });
+    setEditMetaState({ open: false, fileName: "", bezeichnung: "", beschreibung: "", saving: false });
+    fetchDocRecords();
+  };
+
+  const toggleFavoriteDoc = async (docId: string) => {
+    if (!projectId) return;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const isFav = favDocs.has(docId);
+    if (isFav) {
+      await supabase
+        .from("plan_favorites")
+        .delete()
+        .eq("user_id", user.id)
+        .eq("project_id", projectId)
+        .eq("document_id", docId);
+      setFavDocs((prev) => { const n = new Set(prev); n.delete(docId); return n; });
+    } else {
+      await supabase
+        .from("plan_favorites")
+        .insert({ user_id: user.id, project_id: projectId, document_id: docId });
+      setFavDocs((prev) => new Set(prev).add(docId));
+    }
   };
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>, subType?: string) => {
@@ -596,12 +716,19 @@ const ProjectDetail = () => {
   if (!type) return <div>Ungültiger Dokumenttyp</div>;
   if (loading) return <div className="min-h-screen flex items-center justify-center"><p>Lädt...</p></div>;
 
+  const isFavTab = type === "plans" && activeTab !== "archiv";
   const filteredFiles = getFilteredFiles()
     .filter((f) => {
       if (!dateFilter) return true;
       return f.created_at.startsWith(dateFilter);
     })
     .sort((a, b) => {
+      // Favoriten (pro User) zuerst, danach normale Datums-Sortierung
+      if (isFavTab) {
+        const aFav = favFiles.has(a.name);
+        const bFav = favFiles.has(b.name);
+        if (aFav !== bFav) return aFav ? -1 : 1;
+      }
       const dateA = new Date(a.created_at).getTime();
       const dateB = new Date(b.created_at).getTime();
       return sortOrder === "desc" ? dateB - dateA : dateA - dateB;
@@ -783,13 +910,23 @@ const ProjectDetail = () => {
                       {/* Text-only Auftraege (keine Files in Storage) */}
                       {type === "plans" && (() => {
                         const archivMode = activeTab === "archiv";
-                        const textOnlyDocs = docRecords.filter((d) =>
-                          d.text_content && !d.file_url &&
-                          (archivMode ? d.archived : !d.archived) &&
-                          (archivMode
-                            ? (archiveSubType === "all" || d.sub_type === archiveSubType || (archiveSubType === "plan" && !d.sub_type))
-                            : (currentTabConfig?.subType ? d.sub_type === currentTabConfig.subType : (!d.sub_type || d.sub_type === "plan")))
-                        );
+                        const textOnlyDocs = docRecords
+                          .filter((d) =>
+                            d.text_content && !d.file_url &&
+                            (archivMode ? d.archived : !d.archived) &&
+                            (archivMode
+                              ? (archiveSubType === "all" || d.sub_type === archiveSubType || (archiveSubType === "plan" && !d.sub_type))
+                              : (currentTabConfig?.subType ? d.sub_type === currentTabConfig.subType : (!d.sub_type || d.sub_type === "plan")))
+                          )
+                          .sort((a, b) => {
+                            // Favoriten zuerst (nur ausserhalb Archiv)
+                            if (!archivMode) {
+                              const aFav = favDocs.has(a.id);
+                              const bFav = favDocs.has(b.id);
+                              if (aFav !== bFav) return aFav ? -1 : 1;
+                            }
+                            return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+                          });
                         return textOnlyDocs.map((doc) => (
                           <div
                             key={`text-${doc.id}`}
@@ -808,6 +945,19 @@ const ProjectDetail = () => {
                                 {doc.text_content}
                               </p>
                             </div>
+                            {!archivMode && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 shrink-0"
+                                onClick={() => toggleFavoriteDoc(doc.id)}
+                                title={favDocs.has(doc.id) ? "Favorit entfernen" : "Als Favorit markieren"}
+                              >
+                                <Star
+                                  className={`w-4 h-4 ${favDocs.has(doc.id) ? "fill-yellow-400 text-yellow-500" : "text-muted-foreground"}`}
+                                />
+                              </Button>
+                            )}
                             {/* Archiv/Endgueltig-Loeschen */}
                             {!archivMode ? (
                               <Button
@@ -873,21 +1023,77 @@ const ProjectDetail = () => {
                           )}
 
                           {/* Info */}
-                          <div className="flex-1 min-w-0 cursor-pointer" onClick={() => {
-                            if (file.name.match(/\.(jpg|jpeg|png|gif|webp)$/i) && signedUrls[file.name]) {
-                              setLightboxImage(signedUrls[file.name]);
-                            } else {
-                              handleFileOpen(file);
-                            }
-                          }}>
-                            <p className="text-sm font-medium truncate">{file.name}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {new Date(file.created_at).toLocaleDateString("de-DE")}
-                            </p>
-                          </div>
+                          {(() => {
+                            const rec = findDocRecord(file.name);
+                            const displayName = rec?.bezeichnung || file.name;
+                            const note = rec?.beschreibung;
+                            const hasMeta = !!(rec?.bezeichnung || rec?.beschreibung);
+                            return (
+                              <div className="flex-1 min-w-0">
+                                <div className="cursor-pointer" onClick={() => {
+                                  if (file.name.match(/\.(jpg|jpeg|png|gif|webp)$/i) && signedUrls[file.name]) {
+                                    setLightboxImage(signedUrls[file.name]);
+                                  } else {
+                                    handleFileOpen(file);
+                                  }
+                                }}>
+                                  <p className="text-sm font-medium truncate">{displayName}</p>
+                                  {rec?.bezeichnung && (
+                                    <p className="text-[11px] text-muted-foreground/70 truncate">{file.name}</p>
+                                  )}
+                                  <p className="text-xs text-muted-foreground">
+                                    {new Date(file.created_at).toLocaleDateString("de-DE")}
+                                  </p>
+                                  {note && (
+                                    <p className="text-xs text-foreground/80 mt-0.5 italic line-clamp-2 whitespace-pre-wrap">{note}</p>
+                                  )}
+                                </div>
+                                {!isArchivTab && !hasMeta && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); openEditMeta(file.name); }}
+                                    className="mt-1 inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                                  >
+                                    <Plus className="w-3 h-3" />
+                                    Notiz hinzufügen
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          })()}
 
                           {/* Actions */}
                           <div className="flex gap-1 shrink-0">
+                            {isFavTab && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => toggleFavoriteFile(file.name)}
+                                title={favFiles.has(file.name) ? "Favorit entfernen" : "Als Favorit markieren"}
+                              >
+                                <Star
+                                  className={`w-4 h-4 ${favFiles.has(file.name) ? "fill-yellow-400 text-yellow-500" : "text-muted-foreground"}`}
+                                />
+                              </Button>
+                            )}
+                            {!isArchivTab && (() => {
+                              const rec = findDocRecord(file.name);
+                              const hasMeta = !!(rec?.bezeichnung || rec?.beschreibung);
+                              return (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  onClick={() => openEditMeta(file.name)}
+                                  title={hasMeta ? "Notiz / Bezeichnung bearbeiten" : "Notiz hinzufügen"}
+                                >
+                                  <StickyNote
+                                    className={`w-4 h-4 ${hasMeta ? "fill-amber-200 text-amber-700" : "text-muted-foreground"}`}
+                                  />
+                                </Button>
+                              );
+                            })()}
                             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleFileOpen(file)}>
                               <Eye className="w-4 h-4" />
                             </Button>
@@ -1094,6 +1300,57 @@ const ProjectDetail = () => {
               disabled={savingTextAuftrag || !textAuftragTitle.trim() || !textAuftragContent.trim()}
             >
               {savingTextAuftrag ? "Speichert..." : "Auftrag speichern"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bezeichnung + Notiz bearbeiten */}
+      <Dialog
+        open={editMetaState.open}
+        onOpenChange={(o) => { if (!o && !editMetaState.saving) setEditMetaState((s) => ({ ...s, open: false })); }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <StickyNote className="w-5 h-5 text-amber-600" />
+              Bezeichnung & Notiz
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <label className="text-sm font-medium">Bezeichnung (Kurz-Name)</label>
+              <Input
+                value={editMetaState.bezeichnung}
+                onChange={(e) => setEditMetaState((s) => ({ ...s, bezeichnung: e.target.value }))}
+                placeholder="z.B. Grundriss EG"
+                className="mt-1"
+              />
+              <p className="text-xs text-muted-foreground mt-1 truncate">
+                Original-Datei: {editMetaState.fileName}
+              </p>
+            </div>
+            <div>
+              <label className="text-sm font-medium">Notiz</label>
+              <Textarea
+                value={editMetaState.beschreibung}
+                onChange={(e) => setEditMetaState((s) => ({ ...s, beschreibung: e.target.value }))}
+                placeholder="z.B. Übergeben am 28.4. vom Architekt, Statik noch zu prüfen…"
+                rows={3}
+                className="mt-1"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setEditMetaState({ open: false, fileName: "", bezeichnung: "", beschreibung: "", saving: false })}
+              disabled={editMetaState.saving}
+            >
+              Abbrechen
+            </Button>
+            <Button onClick={saveEditMeta} disabled={editMetaState.saving}>
+              {editMetaState.saving ? "Speichert..." : "Speichern"}
             </Button>
           </DialogFooter>
         </DialogContent>
