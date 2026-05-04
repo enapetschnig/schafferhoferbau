@@ -287,6 +287,7 @@ export default function BadWeather() {
                 <Label>Beginn Schlechtwetter *</Label>
                 <Input
                   type="time"
+                  step={900}
                   value={formData.beginn}
                   onChange={(e) => setFormData({ ...formData, beginn: e.target.value })}
                 />
@@ -295,6 +296,7 @@ export default function BadWeather() {
                 <Label>Ende Schlechtwetter *</Label>
                 <Input
                   type="time"
+                  step={900}
                   value={formData.ende}
                   onChange={(e) => setFormData({ ...formData, ende: e.target.value })}
                 />

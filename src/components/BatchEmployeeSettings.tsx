@@ -201,6 +201,7 @@ export function BatchEmployeeSettings({ employees, onSaved }: Props) {
             <Label className="text-xs text-center block font-bold">{DAY_LABELS[day]}</Label>
             <Input
               type="time"
+              step={900}
               value={data[day]?.start || ""}
               disabled={!applyRegelarbeitszeit}
               onChange={(e) => updateScheduleDay(week, day, "start", e.target.value || null)}
@@ -210,6 +211,7 @@ export function BatchEmployeeSettings({ employees, onSaved }: Props) {
             />
             <Input
               type="time"
+              step={900}
               value={data[day]?.end || ""}
               disabled={!applyRegelarbeitszeit}
               onChange={(e) => updateScheduleDay(week, day, "end", e.target.value || null)}
@@ -231,6 +233,7 @@ export function BatchEmployeeSettings({ employees, onSaved }: Props) {
             />
             <Input
               type="time"
+              step={900}
               value={(data[day] as any)?.pause_start || ""}
               disabled={!applyRegelarbeitszeit}
               onChange={(e) => updateScheduleDay(week, day, "pause_start" as any, e.target.value || null)}
@@ -240,6 +243,7 @@ export function BatchEmployeeSettings({ employees, onSaved }: Props) {
             />
             <Input
               type="time"
+              step={900}
               value={(data[day] as any)?.pause_end || ""}
               disabled={!applyRegelarbeitszeit}
               onChange={(e) => updateScheduleDay(week, day, "pause_end" as any, e.target.value || null)}

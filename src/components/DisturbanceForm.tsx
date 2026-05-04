@@ -424,6 +424,7 @@ export const DisturbanceForm = ({ open, onOpenChange, onSuccess, editData }: Dis
                 <Input
                   id="startTime"
                   type="time"
+                  step={900}
                   value={formData.startTime}
                   onChange={(e) => setFormData({ ...formData, startTime: e.target.value })}
                   required
@@ -434,6 +435,7 @@ export const DisturbanceForm = ({ open, onOpenChange, onSuccess, editData }: Dis
                 <Input
                   id="endTime"
                   type="time"
+                  step={900}
                   value={formData.endTime}
                   onChange={(e) => setFormData({ ...formData, endTime: e.target.value })}
                   required
@@ -444,6 +446,7 @@ export const DisturbanceForm = ({ open, onOpenChange, onSuccess, editData }: Dis
                 <Input
                   id="pauseStart"
                   type="time"
+                  step={900}
                   value={formData.pauseStart}
                   onChange={(e) => setFormData({ ...formData, pauseStart: e.target.value })}
                 />
@@ -453,6 +456,7 @@ export const DisturbanceForm = ({ open, onOpenChange, onSuccess, editData }: Dis
                 <Input
                   id="pauseEnd"
                   type="time"
+                  step={900}
                   value={formData.pauseEnd}
                   onChange={(e) => setFormData({ ...formData, pauseEnd: e.target.value })}
                 />

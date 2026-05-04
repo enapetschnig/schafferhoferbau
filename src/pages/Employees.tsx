@@ -543,6 +543,7 @@ export default function Employees() {
                                 <Label className="text-xs font-bold">{DAY_LABELS[idx]}</Label>
                                 <Input
                                   type="time"
+                                  step={900}
                                   value={day.start || ""}
                                   onChange={(e) => updateDay("start", e.target.value || null)}
                                   className="h-8 text-xs px-1"
@@ -550,6 +551,7 @@ export default function Employees() {
                                 />
                                 <Input
                                   type="time"
+                                  step={900}
                                   value={day.end || ""}
                                   onChange={(e) => updateDay("end", e.target.value || null)}
                                   className="h-8 text-xs px-1"
@@ -564,6 +566,7 @@ export default function Employees() {
                                 />
                                 <Input
                                   type="time"
+                                  step={900}
                                   value={day.pause_start || ""}
                                   onChange={(e) => {
                                     const val = e.target.value || null;
@@ -582,6 +585,7 @@ export default function Employees() {
                                 />
                                 <Input
                                   type="time"
+                                  step={900}
                                   value={day.pause_end || ""}
                                   onChange={(e) => {
                                     const val = e.target.value || null;

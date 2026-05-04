@@ -257,11 +257,35 @@ const TimeTracking = ({ embedded }: TimeTrackingEmbeddedProps = {}) => {
         ...prev,
         projectId: prev.projectId || autoProject,
         projektAdresse: prev.projektAdresse || autoAddress,
-        beginn: sched?.start || prev.beginn || "08:00",
+        // Beginn Schlechtwetter ist NICHT der Regelarbeitszeit-Beginn — User soll selbst eintragen.
+        // Wir lassen den vorigen Wert oder einen sinnvollen Default (09:00) stehen.
+        beginn: prev.beginn || "09:00",
         ende: sched?.end || prev.ende || "16:00",
       }));
     })();
   }, [showBadWeatherDialog, selectedDate, employeeSchedule, targetUserId]);
+
+  // Auto-Fill 'Arbeitsstunden vor Schlechtwetter' = Schlechtwetter-Beginn − Regelarbeitszeit-Beginn.
+  // Laeuft jedes Mal wenn der User den Schlechtwetter-Beginn aendert; bestehender Wert wird ueberschrieben.
+  useEffect(() => {
+    if (!showBadWeatherDialog) return;
+    if (!badWeatherData.beginn) return;
+    const DAY_KEYS = ["so", "mo", "di", "mi", "do", "fr", "sa"] as const;
+    const dayKey = DAY_KEYS[new Date(selectedDate).getDay()];
+    const sched = (employeeSchedule as any)?.[dayKey];
+    const regBeginn: string | undefined = sched?.start;
+    if (!regBeginn) return;
+    const toMin = (s: string) => {
+      const [h, m] = s.split(":").map(Number);
+      return (h || 0) * 60 + (m || 0);
+    };
+    const diffMin = toMin(badWeatherData.beginn) - toMin(regBeginn);
+    if (diffMin >= 0) {
+      const stundenVorher = (diffMin / 60).toFixed(2);
+      setBadWeatherData(prev => ({ ...prev, arbeitsstundenVorher: stundenVorher }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showBadWeatherDialog, badWeatherData.beginn, selectedDate, employeeSchedule]);
   const [timeBlocks, setTimeBlocks] = useState<TimeBlock[]>([createDefaultBlock()]);
   const entryMode = "zeitraum" as const;
 
@@ -1020,8 +1044,13 @@ const TimeTracking = ({ embedded }: TimeTrackingEmbeddedProps = {}) => {
 
       if (insertError) {
         hasError = true;
-        console.error("Error creating time entry:", insertError);
-        toast({ variant: "destructive", title: "Fehler beim Speichern", description: insertError.message });
+        console.error("Error creating time entry:", insertError, "payload:", entryData);
+        const parts = [insertError.message, (insertError as any).details, (insertError as any).hint, (insertError as any).code].filter(Boolean);
+        toast({
+          variant: "destructive",
+          title: "Fehler beim Speichern",
+          description: parts.join(" — ") || "Unbekannter Fehler",
+        });
         continue;
       }
 
