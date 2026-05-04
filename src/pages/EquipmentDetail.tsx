@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Pencil, Trash2, ArrowRightLeft, AlertTriangle, Camera, Receipt, CheckCircle } from "lucide-react";
+import { ArrowLeft, Pencil, Trash2, ArrowRightLeft, AlertTriangle, Camera, Receipt, CheckCircle, FileText, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -20,6 +20,9 @@ type Transfer = {
   id: string; von_typ: string; von_project_id: string | null;
   nach_typ: string; nach_project_id: string | null;
   transferiert_am: string; transferiert_von: string; notizen: string | null;
+};
+type EquipmentDoc = {
+  id: string; name: string; file_url: string; file_type: "image" | "pdf"; storage_path: string;
 };
 
 const KATEGORIE_LABELS: Record<string, string> = {
@@ -41,6 +44,7 @@ export default function EquipmentDetail() {
 
   const [item, setItem] = useState<any>(null);
   const [transfers, setTransfers] = useState<Transfer[]>([]);
+  const [docs, setDocs] = useState<EquipmentDoc[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [profiles, setProfiles] = useState<Record<string, string>>({});
   const [projectMap, setProjectMap] = useState<Record<string, string>>({});
@@ -77,6 +81,13 @@ export default function EquipmentDetail() {
 
     const { data: tr } = await supabase.from("equipment_transfers").select("*").eq("equipment_id", id).order("transferiert_am", { ascending: false });
     if (tr) setTransfers(tr as any);
+
+    const { data: docData } = await supabase
+      .from("equipment_documents")
+      .select("id, name, file_url, file_type, storage_path")
+      .eq("equipment_id", id)
+      .order("created_at");
+    if (docData) setDocs(docData as any);
 
     const { data: proj } = await supabase.from("projects").select("id, name").order("name");
     if (proj) {
@@ -221,6 +232,42 @@ export default function EquipmentDetail() {
             {item.notizen && <p className="text-muted-foreground pt-2 border-t">{item.notizen}</p>}
           </CardContent>
         </Card>
+
+        {/* Diverses-Dokumente */}
+        {docs.length > 0 && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <FileText className="w-5 h-5" /> Diverses
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                {docs.map((d) => (
+                  <a
+                    key={d.id}
+                    href={d.file_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="border rounded-md p-2 flex flex-col items-center gap-2 hover:bg-muted/50 transition-colors"
+                  >
+                    {d.file_type === "image" ? (
+                      <img src={d.file_url} alt={d.name} className="w-full h-24 object-cover rounded" />
+                    ) : (
+                      <div className="w-full h-24 rounded bg-muted flex items-center justify-center">
+                        <FileText className="w-10 h-10 text-muted-foreground" />
+                      </div>
+                    )}
+                    <div className="text-xs text-center w-full truncate flex items-center justify-center gap-1">
+                      <span className="truncate">{d.name}</span>
+                      <ExternalLink className="w-3 h-3 shrink-0 text-muted-foreground" />
+                    </div>
+                  </a>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Actions */}
         {canManage && (

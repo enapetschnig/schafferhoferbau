@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Plus, Wrench, Search, AlertTriangle, Camera, Receipt, X, Download, Upload, Sparkles, Loader2, CheckCircle2 } from "lucide-react";
+import { Plus, Wrench, Search, AlertTriangle, Camera, Receipt, X, Download, Upload, Sparkles, Loader2, CheckCircle2, FileText, ExternalLink } from "lucide-react";
 import * as XLSX from "xlsx-js-style";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -85,6 +85,21 @@ export default function EquipmentPage() {
   const fotoInputRef = useRef<HTMLInputElement>(null);
   const rechnungInputRef = useRef<HTMLInputElement>(null);
 
+  // Diverses-Dokumente state (Foto/PDF mit eigenem Namen, beliebig viele)
+  type EquipmentDoc = {
+    id?: string;
+    name: string;
+    originalName?: string;
+    file?: File;
+    file_url?: string;
+    file_type: "image" | "pdf";
+    storage_path?: string;
+    preview?: string;
+  };
+  const [docs, setDocs] = useState<EquipmentDoc[]>([]);
+  const [docsToDelete, setDocsToDelete] = useState<{ id: string; storage_path: string }[]>([]);
+  const docInputRef = useRef<HTMLInputElement>(null);
+
   const fetchData = useCallback(async () => {
     setLoading(true);
     const { data: { user } } = await supabase.auth.getUser();
@@ -125,9 +140,11 @@ export default function EquipmentPage() {
     setFotoPreview(null);
     setRechnungFile(null);
     setRechnungPreview(null);
+    setDocs([]);
+    setDocsToDelete([]);
   };
 
-  const openEdit = (item: Equipment) => {
+  const openEdit = async (item: Equipment) => {
     setEditingItem(item);
     setForm({
       name: item.name, kategorie: item.kategorie, seriennummer: item.seriennummer || "",
@@ -139,7 +156,24 @@ export default function EquipmentPage() {
     setFotoPreview(item.foto_url || null);
     setRechnungFile(null);
     setRechnungPreview(item.rechnung_foto_url || null);
+    setDocsToDelete([]);
     setShowForm(true);
+
+    const { data: docData } = await supabase
+      .from("equipment_documents")
+      .select("id, name, file_url, file_type, storage_path")
+      .eq("equipment_id", item.id)
+      .order("created_at");
+    setDocs(
+      (docData || []).map((d: any) => ({
+        id: d.id,
+        name: d.name,
+        originalName: d.name,
+        file_url: d.file_url,
+        file_type: d.file_type,
+        storage_path: d.storage_path,
+      }))
+    );
   };
 
   const uploadPhoto = async (file: File, equipmentId: string, prefix: string): Promise<string | null> => {
@@ -149,6 +183,20 @@ export default function EquipmentPage() {
     if (error) return null;
     const { data: urlData } = supabase.storage.from("equipment-photos").getPublicUrl(path);
     return urlData.publicUrl;
+  };
+
+  const uploadDocument = async (
+    file: File,
+    equipmentId: string,
+    name: string
+  ): Promise<{ file_url: string; storage_path: string } | null> => {
+    const ext = file.name.split(".").pop() || "bin";
+    const safe = name.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 40) || "dokument";
+    const path = `${equipmentId}/dokumente/${Date.now()}_${safe}.${ext}`;
+    const { error } = await supabase.storage.from("equipment-photos").upload(path, file);
+    if (error) return null;
+    const { data } = supabase.storage.from("equipment-photos").getPublicUrl(path);
+    return { file_url: data.publicUrl, storage_path: path };
   };
 
   const handleSave = async () => {
@@ -209,6 +257,46 @@ export default function EquipmentPage() {
 
       if (Object.keys(photoUpdates).length > 0) {
         await supabase.from("equipment").update(photoUpdates).eq("id", equipmentId);
+      }
+
+      // Diverses-Dokumente synchronisieren
+      // 1) Geloeschte Bestands-Docs entfernen (DB + Storage)
+      if (docsToDelete.length > 0) {
+        await supabase
+          .from("equipment_documents")
+          .delete()
+          .in("id", docsToDelete.map((d) => d.id));
+        const paths = docsToDelete.map((d) => d.storage_path).filter(Boolean);
+        if (paths.length > 0) {
+          await supabase.storage.from("equipment-photos").remove(paths);
+        }
+      }
+
+      // 2) Bestands-Docs mit geaendertem Namen updaten
+      const renamed = docs.filter(
+        (d) => d.id && d.originalName !== undefined && d.originalName !== d.name
+      );
+      for (const d of renamed) {
+        await supabase
+          .from("equipment_documents")
+          .update({ name: d.name })
+          .eq("id", d.id!);
+      }
+
+      // 3) Neue Docs hochladen + DB-Rows anlegen
+      const { data: { user } } = await supabase.auth.getUser();
+      const newDocs = docs.filter((d) => d.file);
+      for (const d of newDocs) {
+        const uploaded = await uploadDocument(d.file!, equipmentId, d.name);
+        if (!uploaded) continue;
+        await supabase.from("equipment_documents").insert({
+          equipment_id: equipmentId,
+          name: d.name.trim() || d.file!.name,
+          file_url: uploaded.file_url,
+          file_type: d.file_type,
+          storage_path: uploaded.storage_path,
+          created_by: user?.id || null,
+        });
       }
     }
 
@@ -676,6 +764,93 @@ export default function EquipmentPage() {
                 )}
               </div>
             </div>
+
+            {/* Diverses (Fotos & PDFs mit eigenem Namen) */}
+            <div>
+              <Label className="flex items-center gap-1.5 mb-1.5">
+                <FileText className="w-3.5 h-3.5" /> Diverses (Fotos & PDFs)
+              </Label>
+              <input
+                ref={docInputRef}
+                type="file"
+                accept="image/*,application/pdf"
+                multiple
+                className="hidden"
+                onChange={(e) => {
+                  const files = Array.from(e.target.files || []);
+                  const added: EquipmentDoc[] = files.map((f) => ({
+                    name: f.name.replace(/\.[^.]+$/, ""),
+                    file: f,
+                    file_type: f.type === "application/pdf" ? "pdf" : "image",
+                    preview: f.type.startsWith("image/") ? URL.createObjectURL(f) : undefined,
+                  }));
+                  setDocs((prev) => [...prev, ...added]);
+                  if (e.target) e.target.value = "";
+                }}
+              />
+
+              {docs.length > 0 && (
+                <div className="space-y-2 mb-2">
+                  {docs.map((d, idx) => (
+                    <div key={d.id || `new-${idx}`} className="flex items-center gap-2 p-2 border rounded-md">
+                      {d.file_type === "image" ? (
+                        <img
+                          src={d.preview || d.file_url}
+                          alt={d.name}
+                          className="w-10 h-10 object-cover rounded shrink-0"
+                        />
+                      ) : (
+                        <div className="w-10 h-10 rounded bg-muted flex items-center justify-center shrink-0">
+                          <FileText className="w-5 h-5 text-muted-foreground" />
+                        </div>
+                      )}
+                      <Input
+                        value={d.name}
+                        onChange={(e) =>
+                          setDocs((prev) =>
+                            prev.map((p, i) => (i === idx ? { ...p, name: e.target.value } : p))
+                          )
+                        }
+                        placeholder="Dokumentname"
+                        className="flex-1 h-8 text-sm"
+                      />
+                      {d.file_url && (
+                        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" asChild>
+                          <a href={d.file_url} target="_blank" rel="noopener noreferrer" aria-label="Oeffnen">
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </a>
+                        </Button>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 shrink-0"
+                        onClick={() => {
+                          if (d.id && d.storage_path) {
+                            setDocsToDelete((prev) => [...prev, { id: d.id!, storage_path: d.storage_path! }]);
+                          }
+                          setDocs((prev) => prev.filter((_, i) => i !== idx));
+                        }}
+                        aria-label="Entfernen"
+                      >
+                        <X className="w-3.5 h-3.5 text-destructive" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => docInputRef.current?.click()}
+                className="w-full"
+              >
+                <Plus className="w-3.5 h-3.5 mr-1.5" /> Dokument hinzufügen
+              </Button>
+            </div>
+
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="outline" onClick={() => { resetForm(); setShowForm(false); }}>Abbrechen</Button>
               <Button onClick={handleSave} disabled={saving}>{saving ? "Speichert..." : editingItem ? "Aktualisieren" : "Speichern"}</Button>
