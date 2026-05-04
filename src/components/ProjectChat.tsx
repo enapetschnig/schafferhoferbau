@@ -160,28 +160,35 @@ export function ProjectChat({ projectId, projectName, isAdmin }: { projectId: st
     };
   }, [projectId]);
 
-  // Auto-scroll: immer ganz runter bei neuen Nachrichten und beim Oeffnen
+  // Auto-scroll: nach jeder messages-Aenderung an das Container-Ende setzen.
+  // Wir setzen scrollTop direkt am Container, statt scrollIntoView vom Sentinel —
+  // das funktioniert auch wenn der Sentinel-Ref noch nicht stabil ist.
+  // Mit mehreren rAF/Timeouts robust gegen verzoegerte Bild-Loads.
   useEffect(() => {
     if (messages.length === 0) return;
-    // Initial + neue Nachrichten: zum Ende scrollen.
-    // instant beim ersten Laden, smooth danach
-    const behavior: ScrollBehavior = initialLoad ? "auto" : "smooth";
-    // Doppelt mit Delay: einmal sofort, dann nach Render (Bilder, Reaktionen geladen)
-    messagesEndRef.current?.scrollIntoView({ behavior, block: "end" });
-    const t = setTimeout(() => {
-      messagesEndRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
-    }, 100);
-    return () => clearTimeout(t);
+    const scrollToBottom = (smooth = false) => {
+      const c = scrollContainerRef.current;
+      if (!c) return;
+      if (smooth) {
+        c.scrollTo({ top: c.scrollHeight, behavior: "smooth" });
+      } else {
+        c.scrollTop = c.scrollHeight;
+      }
+    };
+    // Sofort + 2 rAF-Frames (eigentlicher Layout-Pass) + zusaetzliche Timeouts fuer Bilder
+    scrollToBottom(false);
+    const r1 = requestAnimationFrame(() => {
+      scrollToBottom(false);
+      requestAnimationFrame(() => scrollToBottom(false));
+    });
+    const t1 = setTimeout(() => scrollToBottom(false), 100);
+    const t2 = setTimeout(() => scrollToBottom(false), 400);
+    const t3 = setTimeout(() => scrollToBottom(false), 1000);
+    return () => {
+      cancelAnimationFrame(r1);
+      clearTimeout(t1); clearTimeout(t2); clearTimeout(t3);
+    };
   }, [messages, initialLoad]);
-
-  // Extra Scroll nach dem initialen Laden (falls Bilder erst geladen werden)
-  useEffect(() => {
-    if (initialLoad) return;
-    const t1 = setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "auto", block: "end" }), 50);
-    const t2 = setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "auto", block: "end" }), 300);
-    const t3 = setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "auto", block: "end" }), 800);
-    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
-  }, [initialLoad]);
 
   // Load older messages
   const loadMore = async () => {
@@ -415,17 +422,14 @@ export function ProjectChat({ projectId, projectName, isAdmin }: { projectId: st
     return gap > 5 * 60 * 1000;
   };
 
-  if (initialLoad) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <p className="text-muted-foreground">Chat wird geladen...</p>
-      </div>
-    );
-  }
-
   return (
-    <div className="flex flex-col h-[calc(100vh-8rem)]">
-      {/* Messages area */}
+    <div className="flex flex-col h-[calc(100vh-8rem)] relative">
+      {initialLoad && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/70">
+          <p className="text-muted-foreground">Chat wird geladen...</p>
+        </div>
+      )}
+      {/* Messages area — immer im DOM, damit scrollContainerRef beim ersten Effect-Lauf existiert */}
       <div
         ref={scrollContainerRef}
         className="flex-1 overflow-y-auto px-3 py-4 space-y-1"
