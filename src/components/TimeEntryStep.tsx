@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { TimeInput } from "@/components/ui/time-input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
@@ -157,20 +158,16 @@ export function TimeEntryStep({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label className="text-xs">Beginn</Label>
-              <Input
-                type="time"
-                step={900}
+              <TimeInput
                 value={value.startTime}
-                onChange={(e) => onChange({ ...value, startTime: e.target.value })}
+                onChange={(v) => onChange({ ...value, startTime: v })}
               />
             </div>
             <div>
               <Label className="text-xs">Ende</Label>
-              <Input
-                type="time"
-                step={900}
+              <TimeInput
                 value={value.endTime}
-                onChange={(e) => onChange({ ...value, endTime: e.target.value })}
+                onChange={(v) => onChange({ ...value, endTime: v })}
               />
             </div>
           </div>

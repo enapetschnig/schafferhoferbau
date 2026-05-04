@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { TimeInput } from "@/components/ui/time-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -285,20 +286,16 @@ export default function BadWeather() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Beginn Schlechtwetter *</Label>
-                <Input
-                  type="time"
-                  step={900}
+                <TimeInput
                   value={formData.beginn}
-                  onChange={(e) => setFormData({ ...formData, beginn: e.target.value })}
+                  onChange={(v) => setFormData({ ...formData, beginn: v })}
                 />
               </div>
               <div>
                 <Label>Ende Schlechtwetter *</Label>
-                <Input
-                  type="time"
-                  step={900}
+                <TimeInput
                   value={formData.ende}
-                  onChange={(e) => setFormData({ ...formData, ende: e.target.value })}
+                  onChange={(v) => setFormData({ ...formData, ende: v })}
                 />
               </div>
             </div>

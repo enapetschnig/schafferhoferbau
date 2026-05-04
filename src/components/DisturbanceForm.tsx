@@ -4,6 +4,7 @@ import { Calendar, Clock, User, Mail, Phone, MapPin, FileText, Package, Plus, Tr
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { TimeInput } from "@/components/ui/time-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
@@ -421,44 +422,36 @@ export const DisturbanceForm = ({ open, onOpenChange, onSuccess, editData }: Dis
               </div>
               <div>
                 <Label htmlFor="startTime">Startzeit</Label>
-                <Input
+                <TimeInput
                   id="startTime"
-                  type="time"
-                  step={900}
                   value={formData.startTime}
-                  onChange={(e) => setFormData({ ...formData, startTime: e.target.value })}
+                  onChange={(v) => setFormData({ ...formData, startTime: v })}
                   required
                 />
               </div>
               <div>
                 <Label htmlFor="endTime">Endzeit</Label>
-                <Input
+                <TimeInput
                   id="endTime"
-                  type="time"
-                  step={900}
                   value={formData.endTime}
-                  onChange={(e) => setFormData({ ...formData, endTime: e.target.value })}
+                  onChange={(v) => setFormData({ ...formData, endTime: v })}
                   required
                 />
               </div>
               <div>
                 <Label htmlFor="pauseStart">Pause von</Label>
-                <Input
+                <TimeInput
                   id="pauseStart"
-                  type="time"
-                  step={900}
                   value={formData.pauseStart}
-                  onChange={(e) => setFormData({ ...formData, pauseStart: e.target.value })}
+                  onChange={(v) => setFormData({ ...formData, pauseStart: v })}
                 />
               </div>
               <div>
                 <Label htmlFor="pauseEnd">Pause bis</Label>
-                <Input
+                <TimeInput
                   id="pauseEnd"
-                  type="time"
-                  step={900}
                   value={formData.pauseEnd}
-                  onChange={(e) => setFormData({ ...formData, pauseEnd: e.target.value })}
+                  onChange={(v) => setFormData({ ...formData, pauseEnd: v })}
                 />
               </div>
               {calculatePauseMinutes() > 0 && (

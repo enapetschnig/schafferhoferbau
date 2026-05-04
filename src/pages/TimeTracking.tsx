@@ -8,6 +8,7 @@ import { de } from "date-fns/locale";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { TimeInput } from "@/components/ui/time-input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -1596,22 +1597,18 @@ const TimeTracking = ({ embedded }: TimeTrackingEmbeddedProps = {}) => {
                         <div className="grid grid-cols-2 gap-2">
                           <div className="space-y-1">
                             <Label className="text-xs">Beginn</Label>
-                            <Input
-                              type="time"
-                              step={900}
+                            <TimeInput
                               value={block.startTime}
-                              onChange={(e) => updateBlock(block.id, { startTime: e.target.value })}
+                              onChange={(v) => updateBlock(block.id, { startTime: v })}
                               required
                               className="h-10"
                             />
                           </div>
                           <div className="space-y-1">
                             <Label className="text-xs">Ende</Label>
-                            <Input
-                              type="time"
-                              step={900}
+                            <TimeInput
                               value={block.endTime}
-                              onChange={(e) => updateBlock(block.id, { endTime: e.target.value })}
+                              onChange={(v) => updateBlock(block.id, { endTime: v })}
                               required
                               className="h-10"
                             />
@@ -1620,21 +1617,17 @@ const TimeTracking = ({ embedded }: TimeTrackingEmbeddedProps = {}) => {
                         <div className="grid grid-cols-2 gap-3 mt-2">
                           <div className="space-y-1">
                             <Label className="text-xs">Pause von</Label>
-                            <Input
-                              type="time"
-                              step={900}
+                            <TimeInput
                               value={block.pauseStart}
-                              onChange={(e) => updateBlock(block.id, { pauseStart: e.target.value })}
+                              onChange={(v) => updateBlock(block.id, { pauseStart: v })}
                               className="h-10"
                             />
                           </div>
                           <div className="space-y-1">
                             <Label className="text-xs">Pause bis</Label>
-                            <Input
-                              type="time"
-                              step={900}
+                            <TimeInput
                               value={block.pauseEnd}
-                              onChange={(e) => updateBlock(block.id, { pauseEnd: e.target.value })}
+                              onChange={(v) => updateBlock(block.id, { pauseEnd: v })}
                               className="h-10"
                             />
                           </div>
@@ -1900,20 +1893,16 @@ const TimeTracking = ({ embedded }: TimeTrackingEmbeddedProps = {}) => {
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
                       <Label>Von</Label>
-                      <Input
-                        type="time"
-                        step={900}
+                      <TimeInput
                         value={absenceData.absenceStartTime}
-                        onChange={(e) => setAbsenceData({ ...absenceData, absenceStartTime: e.target.value })}
+                        onChange={(v) => setAbsenceData({ ...absenceData, absenceStartTime: v })}
                       />
                     </div>
                     <div className="space-y-1.5">
                       <Label>Bis</Label>
-                      <Input
-                        type="time"
-                        step={900}
+                      <TimeInput
                         value={absenceData.absenceEndTime}
-                        onChange={(e) => setAbsenceData({ ...absenceData, absenceEndTime: e.target.value })}
+                        onChange={(v) => setAbsenceData({ ...absenceData, absenceEndTime: v })}
                       />
                     </div>
                   </div>
@@ -2061,20 +2050,16 @@ const TimeTracking = ({ embedded }: TimeTrackingEmbeddedProps = {}) => {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <Label>Beginn Schlechtwetter *</Label>
-                  <Input
-                    type="time"
-                    step={900}
+                  <TimeInput
                     value={badWeatherData.beginn}
-                    onChange={(e) => setBadWeatherData({ ...badWeatherData, beginn: e.target.value })}
+                    onChange={(v) => setBadWeatherData({ ...badWeatherData, beginn: v })}
                   />
                 </div>
                 <div>
                   <Label>Ende Schlechtwetter *</Label>
-                  <Input
-                    type="time"
-                    step={900}
+                  <TimeInput
                     value={badWeatherData.ende}
-                    onChange={(e) => setBadWeatherData({ ...badWeatherData, ende: e.target.value })}
+                    onChange={(v) => setBadWeatherData({ ...badWeatherData, ende: v })}
                   />
                 </div>
               </div>

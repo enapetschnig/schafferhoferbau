@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { TimeInput } from "@/components/ui/time-input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
@@ -541,19 +542,15 @@ export default function Employees() {
                             return (
                               <div key={key} className="space-y-1 text-center">
                                 <Label className="text-xs font-bold">{DAY_LABELS[idx]}</Label>
-                                <Input
-                                  type="time"
-                                  step={900}
+                                <TimeInput
                                   value={day.start || ""}
-                                  onChange={(e) => updateDay("start", e.target.value || null)}
+                                  onChange={(v) => updateDay("start", v || null)}
                                   className="h-8 text-xs px-1"
                                   placeholder="--:--"
                                 />
-                                <Input
-                                  type="time"
-                                  step={900}
+                                <TimeInput
                                   value={day.end || ""}
-                                  onChange={(e) => updateDay("end", e.target.value || null)}
+                                  onChange={(v) => updateDay("end", v || null)}
                                   className="h-8 text-xs px-1"
                                   placeholder="--:--"
                                 />
@@ -564,12 +561,10 @@ export default function Employees() {
                                   className="h-8 text-xs px-1"
                                   placeholder="h"
                                 />
-                                <Input
-                                  type="time"
-                                  step={900}
+                                <TimeInput
                                   value={day.pause_start || ""}
-                                  onChange={(e) => {
-                                    const val = e.target.value || null;
+                                  onChange={(v) => {
+                                    const val = v || null;
                                     updateDay("pause_start", val);
                                     // pause_minutes automatisch nachfuehren wenn beide Zeiten gesetzt sind
                                     if (val && day.pause_end) {
@@ -583,12 +578,10 @@ export default function Employees() {
                                   placeholder="P-Start"
                                   title="Pausen-Beginn"
                                 />
-                                <Input
-                                  type="time"
-                                  step={900}
+                                <TimeInput
                                   value={day.pause_end || ""}
-                                  onChange={(e) => {
-                                    const val = e.target.value || null;
+                                  onChange={(v) => {
+                                    const val = v || null;
                                     updateDay("pause_end", val);
                                     if (day.pause_start && val) {
                                       const [sh, sm] = day.pause_start.split(":").map(Number);

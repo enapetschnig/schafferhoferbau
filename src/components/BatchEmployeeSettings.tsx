@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { TimeInput } from "@/components/ui/time-input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
@@ -199,22 +200,18 @@ export function BatchEmployeeSettings({ employees, onSaved }: Props) {
         {DAY_KEYS.map((day) => (
           <div key={day} className="space-y-1">
             <Label className="text-xs text-center block font-bold">{DAY_LABELS[day]}</Label>
-            <Input
-              type="time"
-              step={900}
+            <TimeInput
               value={data[day]?.start || ""}
               disabled={!applyRegelarbeitszeit}
-              onChange={(e) => updateScheduleDay(week, day, "start", e.target.value || null)}
+              onChange={(v) => updateScheduleDay(week, day, "start", v || null)}
               className="text-xs h-8 px-1"
               placeholder="Start"
               title="Beginn"
             />
-            <Input
-              type="time"
-              step={900}
+            <TimeInput
               value={data[day]?.end || ""}
               disabled={!applyRegelarbeitszeit}
-              onChange={(e) => updateScheduleDay(week, day, "end", e.target.value || null)}
+              onChange={(v) => updateScheduleDay(week, day, "end", v || null)}
               className="text-xs h-8 px-1"
               placeholder="Ende"
               title="Ende"
@@ -231,22 +228,18 @@ export function BatchEmployeeSettings({ employees, onSaved }: Props) {
               placeholder="h"
               title="Stunden"
             />
-            <Input
-              type="time"
-              step={900}
+            <TimeInput
               value={(data[day] as any)?.pause_start || ""}
               disabled={!applyRegelarbeitszeit}
-              onChange={(e) => updateScheduleDay(week, day, "pause_start" as any, e.target.value || null)}
+              onChange={(v) => updateScheduleDay(week, day, "pause_start" as any, v || null)}
               className="text-xs h-8 px-1"
               placeholder="P-Start"
               title="Pausen-Beginn"
             />
-            <Input
-              type="time"
-              step={900}
+            <TimeInput
               value={(data[day] as any)?.pause_end || ""}
               disabled={!applyRegelarbeitszeit}
-              onChange={(e) => updateScheduleDay(week, day, "pause_end" as any, e.target.value || null)}
+              onChange={(v) => updateScheduleDay(week, day, "pause_end" as any, v || null)}
               className="text-xs h-8 px-1"
               placeholder="P-Ende"
               title="Pausen-Ende"
