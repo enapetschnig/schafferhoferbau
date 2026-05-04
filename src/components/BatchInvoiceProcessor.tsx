@@ -242,7 +242,7 @@ export function BatchInvoiceProcessor({ open, onOpenChange }: Props) {
                 {items.map((item, idx) => (
                   <div key={item.id} className="flex items-center gap-2 p-2 text-sm">
                     <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
-                    <span className="flex-1 truncate">{item.file.name}</span>
+                    <span className="flex-1 truncate min-w-0">{item.file.name}</span>
                     {item.status === "pending" && <Badge variant="outline" className="text-xs">Bereit</Badge>}
                     {item.status === "processing" && (
                       <Badge className="text-xs bg-blue-100 text-blue-800">

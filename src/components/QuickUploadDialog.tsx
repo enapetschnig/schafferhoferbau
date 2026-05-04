@@ -177,7 +177,7 @@ export function QuickUploadDialog({
                   key={index}
                   className="flex items-center justify-between p-2 bg-muted rounded-lg"
                 >
-                  <span className="text-sm truncate flex-1">{file.name}</span>
+                  <span className="text-sm truncate flex-1 min-w-0">{file.name}</span>
                   <Button
                     variant="ghost"
                     size="sm"

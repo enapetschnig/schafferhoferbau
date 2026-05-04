@@ -1310,34 +1310,34 @@ const ProjectDetail = () => {
         open={editMetaState.open}
         onOpenChange={(o) => { if (!o && !editMetaState.saving) setEditMetaState((s) => ({ ...s, open: false })); }}
       >
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md sm:max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <StickyNote className="w-5 h-5 text-amber-600" />
-              Bezeichnung & Notiz
+              <StickyNote className="w-5 h-5 text-amber-600 shrink-0" />
+              <span className="truncate">Bezeichnung & Notiz</span>
             </DialogTitle>
           </DialogHeader>
-          <div className="space-y-3">
-            <div>
-              <label className="text-sm font-medium">Bezeichnung (Kurz-Name)</label>
+          <div className="space-y-3 pt-2 min-w-0">
+            <div className="min-w-0">
+              <Label>Bezeichnung (Kurz-Name)</Label>
               <Input
                 value={editMetaState.bezeichnung}
                 onChange={(e) => setEditMetaState((s) => ({ ...s, bezeichnung: e.target.value }))}
                 placeholder="z.B. Grundriss EG"
-                className="mt-1"
+                className="mt-1 w-full"
               />
-              <p className="text-xs text-muted-foreground mt-1 truncate">
+              <p className="text-xs text-muted-foreground mt-1 break-all">
                 Original-Datei: {editMetaState.fileName}
               </p>
             </div>
-            <div>
-              <label className="text-sm font-medium">Notiz</label>
+            <div className="min-w-0">
+              <Label>Notiz</Label>
               <Textarea
                 value={editMetaState.beschreibung}
                 onChange={(e) => setEditMetaState((s) => ({ ...s, beschreibung: e.target.value }))}
                 placeholder="z.B. Übergeben am 28.4. vom Architekt, Statik noch zu prüfen…"
                 rows={3}
-                className="mt-1"
+                className="mt-1 w-full"
               />
             </div>
           </div>
