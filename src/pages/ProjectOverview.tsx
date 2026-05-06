@@ -1541,7 +1541,7 @@ const ProjectOverview = () => {
                   <Input value={editForm.bauherr} onChange={(e) => setEditForm(f => ({ ...f, bauherr: e.target.value }))} className="h-10" />
                 </div>
                 <div className="space-y-1">
-                  <Label>Bauherr Kontakt</Label>
+                  <Label>Bauherr 1 Telefonnummer</Label>
                   <Input value={editForm.bauherr_kontakt} onChange={(e) => setEditForm(f => ({ ...f, bauherr_kontakt: e.target.value }))} className="h-10" />
                 </div>
                 <div className="space-y-1">
@@ -1549,7 +1549,7 @@ const ProjectOverview = () => {
                   <Input value={editForm.bauherr2} onChange={(e) => setEditForm(f => ({ ...f, bauherr2: e.target.value }))} className="h-10" />
                 </div>
                 <div className="space-y-1">
-                  <Label>Bauherr 2 Kontakt</Label>
+                  <Label>Bauherr 2 Telefonnummer</Label>
                   <Input value={editForm.bauherr2_kontakt} onChange={(e) => setEditForm(f => ({ ...f, bauherr2_kontakt: e.target.value }))} className="h-10" />
                 </div>
                 <div className="space-y-1">
