@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { sanitizeStorageFileName } from "@/lib/storageFileName";
 import { SafetyChecklist, DEFAULT_SAFETY_ITEMS, type SafetyItem } from "@/components/SafetyChecklist";
 import { DailyReportForm } from "@/components/DailyReportForm";
 import { SignaturePad } from "@/components/SignaturePad";
@@ -273,7 +274,7 @@ export default function DailyReportDetail() {
       // Foto zusätzlich im Projekt-Foto-Ordner spiegeln, damit es im
       // Projekt-Bereich unter "Fotos" auftaucht.
       if (report?.project_id && file.type.startsWith("image/")) {
-        const photoPath = `${report.project_id}/${Date.now()}_${file.name}`;
+        const photoPath = `${report.project_id}/${Date.now()}_${sanitizeStorageFileName(file.name)}`;
         const { error: mirrorErr } = await supabase.storage
           .from("project-photos")
           .upload(photoPath, rotatedBlob, { upsert: false });

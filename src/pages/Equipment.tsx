@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { sanitizeStorageFileName } from "@/lib/storageFileName";
 import { PageHeader } from "@/components/PageHeader";
 import { VoiceAIInput } from "@/components/VoiceAIInput";
 
@@ -191,8 +192,8 @@ export default function EquipmentPage() {
     name: string
   ): Promise<{ file_url: string; storage_path: string } | null> => {
     const ext = file.name.split(".").pop() || "bin";
-    const safe = name.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 40) || "dokument";
-    const path = `${equipmentId}/dokumente/${Date.now()}_${safe}.${ext}`;
+    const safeBase = sanitizeStorageFileName(name).replace(/\.[^.]+$/, "") || "dokument";
+    const path = `${equipmentId}/dokumente/${Date.now()}_${safeBase}.${ext}`;
     const { error } = await supabase.storage.from("equipment-photos").upload(path, file);
     if (error) return null;
     const { data } = supabase.storage.from("equipment-photos").getPublicUrl(path);

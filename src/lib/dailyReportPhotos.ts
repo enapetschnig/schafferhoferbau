@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { sanitizeStorageFileName } from "@/lib/storageFileName";
 
 export async function autoRotateImage(file: File): Promise<Blob> {
   return new Promise((resolve) => {
@@ -47,7 +48,7 @@ export async function uploadDailyReportPhoto(params: {
 
   // Spiegel im Projekt-Foto-Bereich
   if (isImage && projectId) {
-    const photoPath = `${projectId}/${Date.now()}_${file.name}`;
+    const photoPath = `${projectId}/${Date.now()}_${sanitizeStorageFileName(file.name)}`;
     const { error: mirrorErr } = await supabase.storage
       .from("project-photos")
       .upload(photoPath, blob, { upsert: false });

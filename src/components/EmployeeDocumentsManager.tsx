@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { sanitizeStorageFileName } from "@/lib/storageFileName";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -126,14 +127,16 @@ export default function EmployeeDocumentsManager({ employeeId, userId }: Props) 
     setUploading(type);
 
     try {
-      const uploadPromises = Array.from(files).map(async (file) => {
-        const filePath = `${userId || employeeId}/${type}/${Date.now()}_${file.name}`;
+      // Pfad EINMAL generieren und sowohl fuer Upload als auch DB-Insert nutzen
+      const uploadEntries = Array.from(files).map((file) => ({
+        file,
+        filePath: `${userId || employeeId}/${type}/${Date.now()}_${Math.random().toString(36).slice(2, 8)}_${sanitizeStorageFileName(file.name)}`,
+      }));
+
+      await Promise.all(uploadEntries.map(async ({ file, filePath }) => {
         const { error } = await supabase.storage.from("employee-documents").upload(filePath, file);
-
         if (error) throw error;
-      });
-
-      await Promise.all(uploadPromises);
+      }));
 
       toast({ title: "Erfolg", description: `${files.length} Dokument(e) hochgeladen` });
       fetchDocuments();
@@ -143,9 +146,8 @@ export default function EmployeeDocumentsManager({ employeeId, userId }: Props) 
         const targetUserId = userId || employeeId;
         const { data: { user: currentUser } } = await supabase.auth.getUser();
 
-        // Freigabetermin speichern
-        for (const file of Array.from(files)) {
-          const filePath = `${userId || employeeId}/lohnzettel/${Date.now()}_${file.name}`;
+        // Freigabetermin speichern (gleiche filePaths wie beim Upload)
+        for (const { filePath } of uploadEntries) {
           await supabase.from("payslip_settings").insert({
             file_path: filePath,
             user_id: targetUserId,

@@ -9,6 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { sanitizeStorageFileName } from "@/lib/storageFileName";
 import { PageHeader } from "@/components/PageHeader";
 import { DocumentDetailDialog, type IncomingDocument } from "@/components/DocumentDetailDialog";
 import { BatchInvoiceProcessor } from "@/components/BatchInvoiceProcessor";
@@ -490,7 +491,7 @@ export default function IncomingInvoices() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Nicht eingeloggt");
 
-      const filePath = `temp/${user.id}/${Date.now()}_${uploadFile.name}`;
+      const filePath = `temp/${user.id}/${Date.now()}_${sanitizeStorageFileName(uploadFile.name)}`;
       const { error: uploadError } = await supabase.storage
         .from("incoming-documents")
         .upload(filePath, uploadFile);
@@ -557,7 +558,7 @@ export default function IncomingInvoices() {
       if (!user) throw new Error("Nicht eingeloggt");
 
       // Upload final file
-      const filePath = `${user.id}/rechnungen/${Date.now()}_${uploadFile.name}`;
+      const filePath = `${user.id}/rechnungen/${Date.now()}_${sanitizeStorageFileName(uploadFile.name)}`;
       const { error: uploadError } = await supabase.storage
         .from("incoming-documents")
         .upload(filePath, uploadFile);

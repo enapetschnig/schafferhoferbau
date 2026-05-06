@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { sanitizeStorageFileName } from "@/lib/storageFileName";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -127,7 +128,7 @@ export default function MyDocuments() {
 
     setUploading(true);
 
-    const filePath = `${userId}/${type}/${Date.now()}_${file.name}`;
+    const filePath = `${userId}/${type}/${Date.now()}_${sanitizeStorageFileName(file.name)}`;
     const { error } = await supabase.storage
       .from("employee-documents")
       .upload(filePath, file);

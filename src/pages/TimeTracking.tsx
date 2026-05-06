@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { sanitizeStorageFileName } from "@/lib/storageFileName";
 import { toast as sonnerToast } from "sonner";
 import {
   getNormalWorkingHours,
@@ -722,7 +723,7 @@ const TimeTracking = ({ embedded }: TimeTrackingEmbeddedProps = {}) => {
 
     let documentPath = null;
     if (absenceData.type === "krankenstand" && absenceData.document) {
-      const fileName = `${user.id}/${Date.now()}_${absenceData.document.name}`;
+      const fileName = `${user.id}/${Date.now()}_${sanitizeStorageFileName(absenceData.document.name)}`;
       const { error: uploadError } = await supabase.storage
         .from("employee-documents")
         .upload(fileName, absenceData.document);

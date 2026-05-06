@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { sanitizeStorageFileName } from "@/lib/storageFileName";
 
 type DocFile = { name: string; id: string; created_at: string };
 type Category = { id: string; key: string; label: string; sort_order: number };
@@ -89,7 +90,7 @@ export default function DocumentLibrary() {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploading(true);
-    const path = `${activeTab}/${file.name}`;
+    const path = `${activeTab}/${sanitizeStorageFileName(file.name)}`;
     const { error } = await supabase.storage.from("document-library").upload(path, file, { upsert: true });
     if (error) toast({ variant: "destructive", title: "Fehler", description: error.message });
     else { toast({ title: "Hochgeladen", description: file.name }); fetchAllFiles(categories); }

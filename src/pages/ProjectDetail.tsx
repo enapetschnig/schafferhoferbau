@@ -17,6 +17,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { FileViewer } from "@/components/FileViewer";
 import { Nachkalkulation } from "@/components/Nachkalkulation";
 import { normalizeImageOrientation } from "@/lib/imageOrientation";
+import { sanitizeStorageFileName } from "@/lib/storageFileName";
 
 type DocumentType = "plans" | "reports" | "photos" | "chef" | "polier";
 
@@ -310,7 +311,8 @@ const ProjectDetail = () => {
       // EXIF-Rotation in Pixeldaten einbacken (iPhone-/Android-Fotos korrekt ausrichten)
       const file = await normalizeImageOrientation(rawFile);
       const bucket = bucketMap[type];
-      const filePath = `${projectId}/${Date.now()}_${file.name}`;
+      const safeName = sanitizeStorageFileName(file.name);
+      const filePath = `${projectId}/${Date.now()}_${safeName}`;
       const { error } = await supabase.storage.from(bucket).upload(filePath, file);
 
       if (!error && user) {
@@ -1025,7 +1027,7 @@ const ProjectDetail = () => {
                           {/* Info */}
                           {(() => {
                             const rec = findDocRecord(file.name);
-                            const displayName = rec?.bezeichnung || file.name;
+                            const displayName = rec?.bezeichnung || rec?.name || file.name;
                             const note = rec?.beschreibung;
                             const hasMeta = !!(rec?.bezeichnung || rec?.beschreibung);
                             return (

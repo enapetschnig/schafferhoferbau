@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogClose } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
+import { sanitizeStorageFileName } from "@/lib/storageFileName";
 import { useToast } from "@/hooks/use-toast";
 import { normalizeImageOrientation } from "@/lib/imageOrientation";
 
@@ -92,7 +93,7 @@ export const DisturbancePhotos = ({ disturbanceId, canEdit }: DisturbancePhotosP
       }
 
       const normalizedFile = await normalizeImageOrientation(file);
-      const fileName = `${disturbanceId}/${Date.now()}_${normalizedFile.name}`;
+      const fileName = `${disturbanceId}/${Date.now()}_${sanitizeStorageFileName(normalizedFile.name)}`;
 
       const { error: uploadError } = await supabase.storage
         .from("disturbance-photos")

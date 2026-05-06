@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Upload, X, Info } from "lucide-react";
+import { sanitizeStorageFileName } from "@/lib/storageFileName";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Progress } from "@/components/ui/progress";
@@ -65,7 +66,7 @@ export function QuickUploadDialog({
 
     for (let i = 0; i < selectedFiles.length; i++) {
       const file = selectedFiles[i];
-      const filePath = `${projectId}/${Date.now()}_${file.name}`;
+      const filePath = `${projectId}/${Date.now()}_${sanitizeStorageFileName(file.name)}`;
 
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from(bucket)

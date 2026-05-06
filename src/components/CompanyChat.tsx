@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Camera, Send, ChevronUp, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { sanitizeStorageFileName } from "@/lib/storageFileName";
 import { useToast } from "@/hooks/use-toast";
 import { normalizeImageOrientation } from "@/lib/imageOrientation";
 import { VoiceAIInput } from "@/components/VoiceAIInput";
@@ -241,7 +242,7 @@ export function CompanyChat({
     setSending(true);
     // EXIF-Rotation in Pixeldaten einbacken
     const file = await normalizeImageOrientation(rawFile);
-    const filePath = `${Date.now()}_${file.name}`;
+    const filePath = `${Date.now()}_${sanitizeStorageFileName(file.name)}`;
 
     const { error: uploadError } = await supabase.storage
       .from("broadcast-chat")

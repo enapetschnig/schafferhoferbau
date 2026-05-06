@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { sanitizeStorageFileName } from "@/lib/storageFileName";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { QuickUploadDialog } from "@/components/QuickUploadDialog";
@@ -450,7 +451,7 @@ const Projects = () => {
     }
 
     const timestamp = Date.now();
-    const filePath = `${quickUploadProject.projectId}/${timestamp}_${file.name}`;
+    const filePath = `${quickUploadProject.projectId}/${timestamp}_${sanitizeStorageFileName(file.name)}`;
     
     const { error: uploadError } = await supabase
       .storage

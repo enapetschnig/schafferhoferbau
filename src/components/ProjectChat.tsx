@@ -6,6 +6,7 @@ import { Camera, Send, ChevronUp, Trash2, X, ChevronLeft, ChevronRight, Download
 import { VoiceAIInput } from "@/components/VoiceAIInput";
 import { ImageEditor } from "@/components/ImageEditor";
 import { supabase } from "@/integrations/supabase/client";
+import { sanitizeStorageFileName } from "@/lib/storageFileName";
 import { useToast } from "@/hooks/use-toast";
 import { normalizeImageOrientation } from "@/lib/imageOrientation";
 
@@ -334,7 +335,8 @@ export function ProjectChat({ projectId, projectName, isAdmin }: { projectId: st
     const isPdf = rawFile.type === "application/pdf" || rawFile.name.toLowerCase().endsWith(".pdf");
     // Nur Bilder durch die EXIF-Rotation schicken - PDFs unveraendert
     const file = isPdf ? rawFile : await normalizeImageOrientation(rawFile);
-    const filePath = `${projectId}/${Date.now()}_${file.name}`;
+    const safeName = sanitizeStorageFileName(file.name);
+    const filePath = `${projectId}/${Date.now()}_${safeName}`;
 
     const { error: uploadError } = await supabase.storage
       .from("project-chat")
@@ -348,7 +350,7 @@ export function ProjectChat({ projectId, projectName, isAdmin }: { projectId: st
 
     // Bilder zusaetzlich in den Projekt-Fotoordner spiegeln (PDFs nicht)
     if (!isPdf) {
-      const photosPath = `${projectId}/${Date.now()}_${file.name}`;
+      const photosPath = `${projectId}/${Date.now()}_${safeName}`;
       await supabase.storage
         .from("project-photos")
         .upload(photosPath, file, { cacheControl: "3600", upsert: false });
