@@ -5,6 +5,7 @@ import { Download, X, ZoomIn, ZoomOut, Loader2, Pencil } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { PdfEditor } from "@/components/PdfEditor";
+import { PdfPreview } from "@/components/PdfPreview";
 
 interface FileViewerProps {
   open: boolean;
@@ -233,12 +234,7 @@ export function FileViewer({
               />
             </div>
           ) : actualFileType === "pdf" ? (
-            <iframe
-              src={`${signedUrl}#toolbar=1&navpanes=0`}
-              className="w-full h-full rounded-lg border"
-              title={fileName}
-              style={{ minHeight: "calc(90vh - 80px)" }}
-            />
+            <PdfPreview pdfUrl={signedUrl} className="w-full" />
           ) : (
             <div className="flex flex-col items-center justify-center h-full gap-4">
               <p className="text-muted-foreground">
