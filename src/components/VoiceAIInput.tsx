@@ -35,6 +35,8 @@ interface Props {
   aiOnly?: boolean;
   /** Tastatur-Handler (z.B. Enter zum Senden) */
   onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => void;
+  /** Wenn gesetzt: aufgerufen wenn ein Bild aus der Zwischenablage eingefuegt wurde (Strg+V). */
+  onPasteImage?: (file: File) => void;
 }
 
 /**
@@ -56,6 +58,7 @@ export function VoiceAIInput({
   voiceOnly = false,
   aiOnly = false,
   onKeyDown,
+  onPasteImage,
 }: Props) {
   const { toast } = useToast();
   const [recording, setRecording] = useState(false);
@@ -246,6 +249,22 @@ export function VoiceAIInput({
 
   // autoComplete="off" verhindert Browser-Autofill mit zufaellig uebernommenen
   // Texten aus anderen Feldern (z.B. Tagesbericht-Beschreibung → Taetigkeit)
+  const handlePaste = (e: React.ClipboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    if (!onPasteImage) return;
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of Array.from(items)) {
+      if (item.kind === "file" && item.type.startsWith("image/")) {
+        const file = item.getAsFile();
+        if (file) {
+          e.preventDefault();
+          onPasteImage(file);
+          return;
+        }
+      }
+    }
+  };
+
   const inputElement = multiline ? (
     <Textarea
       rows={rows}
@@ -255,6 +274,7 @@ export function VoiceAIInput({
       disabled={disabled}
       autoComplete="off"
       onKeyDown={onKeyDown}
+      onPaste={onPasteImage ? handlePaste : undefined}
       className={cn("flex-1", inputClassName)}
     />
   ) : (
@@ -265,6 +285,7 @@ export function VoiceAIInput({
       disabled={disabled}
       autoComplete="off"
       onKeyDown={onKeyDown}
+      onPaste={onPasteImage ? handlePaste : undefined}
       className={cn("flex-1", inputClassName)}
     />
   );

@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Camera, Send, ChevronUp, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { sanitizeStorageFileName } from "@/lib/storageFileName";
+import { formatChatText } from "@/lib/formatChatText";
 import { useToast } from "@/hooks/use-toast";
 import { normalizeImageOrientation } from "@/lib/imageOrientation";
 import { VoiceAIInput } from "@/components/VoiceAIInput";
@@ -235,12 +236,9 @@ export function CompanyChat({
   };
 
   // Send photo
-  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const rawFile = e.target.files?.[0];
-    if (!rawFile || !currentUserId || !channelId || !channel) return;
-
+  const uploadAndSendImage = async (rawFile: File) => {
+    if (!currentUserId || !channelId || !channel) return;
     setSending(true);
-    // EXIF-Rotation in Pixeldaten einbacken
     const file = await normalizeImageOrientation(rawFile);
     const filePath = `${Date.now()}_${sanitizeStorageFileName(file.name)}`;
 
@@ -255,7 +253,6 @@ export function CompanyChat({
     }
 
     const { data: urlData } = supabase.storage.from("broadcast-chat").getPublicUrl(filePath);
-
     const roles = channel.target_roles.length > 0 ? channel.target_roles : ["alle"];
     const { error } = await supabase.from("broadcast_messages").insert({
       user_id: currentUserId,
@@ -270,9 +267,20 @@ export function CompanyChat({
       sendNotifications("📷 Foto gesendet", roles, channel);
       sendPush("📷 Foto gesendet", roles, channel);
     }
-
     setSending(false);
+  };
+
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const rawFile = e.target.files?.[0];
+    if (!rawFile) return;
+    await uploadAndSendImage(rawFile);
     if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  // Strg+V: Bilder aus Zwischenablage einfuegen (Screenshots, Excel-Auszuege)
+  const handlePasteImage = async (file: File) => {
+    const renamed = new File([file], `clipboard_${Date.now()}.${(file.type.split("/")[1] || "png")}`, { type: file.type });
+    await uploadAndSendImage(renamed);
   };
 
   // Send in-app notifications
@@ -446,7 +454,7 @@ export function CompanyChat({
                   )}
 
                   {/* Text */}
-                  {msg.message && <p className="text-sm whitespace-pre-wrap break-words">{msg.message}</p>}
+                  {msg.message && <p className="text-sm whitespace-pre-wrap break-words">{formatChatText(msg.message)}</p>}
 
                   {/* Timestamp */}
                   <p className={`text-[10px] mt-0.5 text-right ${isOwn ? "opacity-70" : "text-muted-foreground"}`}>
@@ -495,15 +503,19 @@ export function CompanyChat({
             context="notiz"
             value={newMessage}
             onChange={setNewMessage}
-            placeholder="Nachricht schreiben..."
+            placeholder="Nachricht schreiben... (Shift+Enter = neue Zeile)"
             className="flex-1"
             disabled={sending}
+            multiline
+            rows={1}
+            inputClassName="min-h-[40px] max-h-32 resize-none"
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
                 handleSend();
               }
             }}
+            onPasteImage={handlePasteImage}
           />
           <Button
             size="icon"

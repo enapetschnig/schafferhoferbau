@@ -7,6 +7,7 @@ import { VoiceAIInput } from "@/components/VoiceAIInput";
 import { ImageEditor } from "@/components/ImageEditor";
 import { supabase } from "@/integrations/supabase/client";
 import { sanitizeStorageFileName } from "@/lib/storageFileName";
+import { formatChatText } from "@/lib/formatChatText";
 import { useToast } from "@/hooks/use-toast";
 import { normalizeImageOrientation } from "@/lib/imageOrientation";
 
@@ -327,10 +328,8 @@ export function ProjectChat({ projectId, projectName, isAdmin }: { projectId: st
 
   // Send photo or PDF. `image_url` haelt beide Typen (Bilder + PDFs) -
   // beim Rendern wird anhand der Dateiendung unterschieden.
-  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const rawFile = e.target.files?.[0];
-    if (!rawFile || !currentUserId) return;
-
+  const uploadAndSendFile = async (rawFile: File) => {
+    if (!currentUserId) return;
     setSending(true);
     const isPdf = rawFile.type === "application/pdf" || rawFile.name.toLowerCase().endsWith(".pdf");
     // Nur Bilder durch die EXIF-Rotation schicken - PDFs unveraendert
@@ -370,14 +369,25 @@ export function ProjectChat({ projectId, projectName, isAdmin }: { projectId: st
     if (error) {
       toast({ variant: "destructive", title: "Fehler", description: "Datei konnte nicht gesendet werden" });
     } else {
-      // Notify project members (fire-and-forget)
       sendNotifications(isPdf ? "📎 PDF gesendet" : "📷 Foto gesendet");
     }
-
     setSending(false);
-    // Reset file input
+  };
+
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const rawFile = e.target.files?.[0];
+    if (!rawFile) return;
+    await uploadAndSendFile(rawFile);
     if (fileInputRef.current) fileInputRef.current.value = "";
     if (pdfInputRef.current) pdfInputRef.current.value = "";
+  };
+
+  // Strg+V: Bilder aus Zwischenablage einfuegen (Screenshots, Excel-Auszuege)
+  const handlePasteImage = async (file: File) => {
+    // File aus Clipboard hat oft generischen Namen ('image.png'). Mit Timestamp
+    // sicherstellen, dass jeder Paste einen neuen Upload-Pfad bekommt.
+    const renamed = new File([file], `clipboard_${Date.now()}.${(file.type.split("/")[1] || "png")}`, { type: file.type });
+    await uploadAndSendFile(renamed);
   };
 
   const formatTime = (dateStr: string) => {
@@ -591,7 +601,7 @@ export function ProjectChat({ projectId, projectName, isAdmin }: { projectId: st
 
                         {/* Text - bei PDF steht Dateiname bereits im Attachment-Block */}
                         {msg.message && !(hasAttachment && isPdf) && (
-                          <p className="text-sm whitespace-pre-wrap break-words">{msg.message}</p>
+                          <p className="text-sm whitespace-pre-wrap break-words">{formatChatText(msg.message)}</p>
                         )}
 
                         {/* Reaktions-Leiste nur am Textende anzeigen, wenn KEIN Anhang da ist */}
@@ -665,15 +675,19 @@ export function ProjectChat({ projectId, projectName, isAdmin }: { projectId: st
             context="notiz"
             value={newMessage}
             onChange={setNewMessage}
-            placeholder="Nachricht schreiben..."
+            placeholder="Nachricht schreiben... (Shift+Enter = neue Zeile)"
             className="flex-1"
             disabled={sending}
+            multiline
+            rows={1}
+            inputClassName="min-h-[40px] max-h-32 resize-none"
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
                 handleSend();
               }
             }}
+            onPasteImage={handlePasteImage}
           />
           <Button
             size="icon"
