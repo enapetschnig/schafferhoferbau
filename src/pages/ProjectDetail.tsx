@@ -1249,6 +1249,7 @@ const ProjectDetail = () => {
         fileName={viewerState.fileName}
         filePath={viewerState.filePath}
         bucketName={type ? bucketMap[type] : ""}
+        onPdfSaved={() => { fetchFiles(); fetchDocRecords(); }}
       />
 
       {/* Image Editor */}

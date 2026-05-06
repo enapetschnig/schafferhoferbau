@@ -483,6 +483,17 @@ export default function ProjectHoursReport() {
               >
                 Letztes Quartal
               </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  // Komplette Projekt-Historie - sehr fruehes Start- bis sehr spaetes End-Datum
+                  setStartDate("2020-01-01");
+                  setEndDate("2099-12-31");
+                }}
+              >
+                Komplett
+              </Button>
             </div>
           </CardContent>
         </Card>

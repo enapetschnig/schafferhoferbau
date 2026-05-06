@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Download, X, ZoomIn, ZoomOut, Loader2 } from "lucide-react";
+import { Download, X, ZoomIn, ZoomOut, Loader2, Pencil } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
+import { PdfEditor } from "@/components/PdfEditor";
 
 interface FileViewerProps {
   open: boolean;
@@ -12,20 +13,24 @@ interface FileViewerProps {
   filePath: string;
   bucketName: string;
   fileType?: "image" | "pdf" | "other";
+  /** Wenn gesetzt, wird nach erfolgreichem PDF-Save aufgerufen (z.B. zum Refresh der Liste) */
+  onPdfSaved?: () => void;
 }
 
-export function FileViewer({ 
-  open, 
-  onClose, 
-  fileName, 
-  filePath, 
+export function FileViewer({
+  open,
+  onClose,
+  fileName,
+  filePath,
   bucketName,
-  fileType = "other"
+  fileType = "other",
+  onPdfSaved,
 }: FileViewerProps) {
   const [zoom, setZoom] = useState(100);
   const [loading, setLoading] = useState(false);
   const [signedUrl, setSignedUrl] = useState<string | null>(null);
   const [urlLoading, setUrlLoading] = useState(false);
+  const [editPdfOpen, setEditPdfOpen] = useState(false);
 
   // Check if bucket is public
   const isPublicBucket = bucketName === "project-photos";
@@ -101,6 +106,41 @@ export function FileViewer({
     }
   };
 
+  const handlePdfSave = async (blob: Blob, mode: "replace" | "copy") => {
+    let targetPath = filePath;
+    if (mode === "copy") {
+      const ext = fileName.match(/\.[^.]+$/)?.[0] || ".pdf";
+      const baseName = fileName.slice(0, fileName.length - ext.length);
+      const folder = filePath.includes("/") ? filePath.slice(0, filePath.lastIndexOf("/") + 1) : "";
+      targetPath = `${folder}${baseName}_annotiert_${Date.now()}${ext}`;
+    }
+    const { error } = await supabase.storage
+      .from(bucketName)
+      .upload(targetPath, blob, { contentType: "application/pdf", upsert: mode === "replace" });
+    if (error) {
+      toast({ variant: "destructive", title: "Speichern fehlgeschlagen", description: error.message });
+      throw error;
+    }
+    toast({
+      title: mode === "replace" ? "Original ueberschrieben" : "Als Kopie gespeichert",
+      description: mode === "replace" ? fileName : targetPath.split("/").pop(),
+    });
+    setEditPdfOpen(false);
+    if (onPdfSaved) onPdfSaved();
+    if (mode === "replace") {
+      // Signed-URL erneuern, damit Vorschau die neue Datei zeigt (Cache-Bust)
+      try {
+        if (isPublicBucket) {
+          const { data } = supabase.storage.from(bucketName).getPublicUrl(filePath);
+          setSignedUrl(`${data.publicUrl}?t=${Date.now()}`);
+        } else {
+          const { data } = await supabase.storage.from(bucketName).createSignedUrl(filePath, 3600);
+          if (data) setSignedUrl(data.signedUrl);
+        }
+      } catch { /* nicht kritisch */ }
+    }
+  };
+
   const detectFileType = (): "image" | "pdf" | "other" => {
     if (fileType !== "other") return fileType;
     const ext = fileName.toLowerCase().split(".").pop();
@@ -138,6 +178,16 @@ export function FileViewer({
                   </Button>
                 </>
               )}
+              {actualFileType === "pdf" && signedUrl && (
+                <Button
+                  variant="outline"
+                  onClick={() => setEditPdfOpen(true)}
+                  className="gap-2"
+                >
+                  <Pencil className="w-4 h-4" />
+                  <span className="hidden sm:inline">Bearbeiten</span>
+                </Button>
+              )}
               <Button
                 variant="outline"
                 onClick={handleDownload}
@@ -145,7 +195,7 @@ export function FileViewer({
                 className="gap-2"
               >
                 <Download className="w-4 h-4" />
-                Download
+                <span className="hidden sm:inline">Download</span>
               </Button>
               <Button variant="ghost" size="icon" onClick={onClose}>
                 <X className="w-4 h-4" />
@@ -202,6 +252,16 @@ export function FileViewer({
           )}
         </div>
       </DialogContent>
+
+      {actualFileType === "pdf" && signedUrl && (
+        <PdfEditor
+          open={editPdfOpen}
+          onClose={() => setEditPdfOpen(false)}
+          pdfUrl={signedUrl}
+          fileName={fileName}
+          onSave={handlePdfSave}
+        />
+      )}
     </Dialog>
   );
 }
