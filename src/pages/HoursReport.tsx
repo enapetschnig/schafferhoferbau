@@ -7,7 +7,6 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "@/hooks/use-toast";
 import { ArrowLeft, Download, FileSpreadsheet, Building2, Warehouse, ChevronDown, AlertTriangle, Pencil, Plus, Trash2, Save, Users, Clock } from "lucide-react";
 import { format, isSameDay, parseISO } from "date-fns";
@@ -658,7 +657,8 @@ export default function HoursReport() {
           }
         });
 
-        // Tagessumme wenn mehrere Einträge am Tag
+        // Tagessumme wenn mehrere Einträge am Tag - immer echte Stunden,
+        // includeOvertime steuert nur ob die Ueberstunden-Spalte sichtbar ist.
         if (uniqueDayEntries.length > 1) {
           const dayTotalHours = uniqueDayEntries.reduce((sum, e) => {
             const s = toMin(e.start_time);
@@ -667,32 +667,15 @@ export default function HoursReport() {
             return sum + Math.max(0, (en - s - p) / 60);
           }, 0);
           const dayTotalOvertime = calculateOvertime(dayDate, dayTotalHours);
-          if (includeOvertime) {
-            worksheetData.push(["", "", "", "", "", "Tagessumme:", dayTotalHours.toFixed(2), dayTotalOvertime > 0 ? dayTotalOvertime.toFixed(2) : "", "", "", "", ""]);
-          } else {
-            // Regelarbeitszeit fuer den Tag aus dem Mitarbeiter-Schedule (biweekly-aware)
-            const regelarbeitszeitTag = getNormalWorkingHours(dayDate, employeeSchedule);
-            worksheetData.push(["", "", "", "", "", "Tagessumme:", regelarbeitszeitTag.toFixed(2), "", "", "", "", ""]);
-          }
+          worksheetData.push([
+            "", "", "", "", "", "Tagessumme:",
+            dayTotalHours.toFixed(2),
+            includeOvertime && dayTotalOvertime > 0 ? dayTotalOvertime.toFixed(2) : "",
+            "", "", "", "",
+          ]);
         }
       }
     }
-
-    // Regelarbeitszeit-Summe berechnen für Export ohne Überstunden (dedupliziert)
-    const calculateRegelarbeitszeitSumme = () => {
-      let summe = 0;
-      for (let day = 1; day <= daysInMonth; day++) {
-        const dayDate = new Date(year, month - 1, day);
-        const dayEntries = timeEntries.filter((e) => isSameDay(parseISO(e.datum), dayDate));
-        const uniqueDayEntries = deduplicateDayEntries(dayEntries);
-        if (uniqueDayEntries.length > 0) {
-          const dayOfWeek = dayDate.getDay();
-          const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-          summe += isWeekend ? 0 : 8;
-        }
-      }
-      return summe;
-    };
 
     // Zusatzaufwendungen Block (vor SUMME)
     if (reportExtras.length > 0) {
@@ -706,13 +689,14 @@ export default function HoursReport() {
       worksheetData.push(["", "", "", "", "", "Summe Diverses:", totalExtras.toFixed(2), "", "", "", "", ""]);
     }
 
-    // Summenzeile mit oder ohne Überstunden
-    if (includeOvertime) {
-      worksheetData.push(["", "", "", "", "", "SUMME", totalHours.toFixed(2), totalOvertime.toFixed(2), "", "", "", ""]);
-    } else {
-      const regelarbeitszeitSumme = calculateRegelarbeitszeitSumme();
-      worksheetData.push(["", "", "", "", "", "SUMME", regelarbeitszeitSumme.toFixed(2), "", "", "", "", ""]);
-    }
+    // Summenzeile - immer echte totalHours; includeOvertime steuert nur,
+    // ob die Ueberstunden-Spalte (rechts daneben) befuellt wird.
+    worksheetData.push([
+      "", "", "", "", "", "SUMME",
+      totalHours.toFixed(2),
+      includeOvertime ? totalOvertime.toFixed(2) : "",
+      "", "", "", "",
+    ]);
 
     // Footer: 1 Leerzeile + Datum/Unterschrift
     worksheetData.push(["", "", "", "", "", "", "", "", "", "", "", ""]);
@@ -1029,8 +1013,8 @@ export default function HoursReport() {
                     </div>
                   </div>
 
-                  <ScrollArea className="h-[500px] rounded-md border">
-                    <Table>
+                  <div className="h-[500px] overflow-auto rounded-md border">
+                    <Table className="min-w-[900px]">
                       <TableHeader>
                         <TableRow>
                           <TableHead className="w-[100px]">Datum</TableHead>
@@ -1265,7 +1249,7 @@ export default function HoursReport() {
                         </TableRow>
                       </TableFooter>
                     </Table>
-                  </ScrollArea>
+                  </div>
 
                   {/* Zusatzaufwendungen */}
                   <Card className="mt-4">
