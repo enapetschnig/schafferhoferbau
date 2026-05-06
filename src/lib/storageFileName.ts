@@ -2,42 +2,44 @@
 // ASCII-Pfad-Bestandteil. Ohne diese Konvertierung schlagen Uploads mit
 // Umlauten/Sonderzeichen/sehr langen Namen sporadisch fehl, oder die
 // generierte Public-URL zeigt nach dem Upload auf einen abweichenden Pfad.
+// Basename und Extension werden separat sanitisiert, damit die Extension
+// (z.B. ".pdf", ".jpg") auch bei sehr "krummen" Filenames erhalten bleibt.
 export function sanitizeStorageFileName(name: string): string {
   if (!name) return "datei";
 
-  let s = name
-    .replace(/ä/g, "ae")
-    .replace(/ö/g, "oe")
-    .replace(/ü/g, "ue")
-    .replace(/Ä/g, "Ae")
-    .replace(/Ö/g, "Oe")
-    .replace(/Ü/g, "Ue")
-    .replace(/ß/g, "ss");
+  // Split in basename + extension (extension nur wenn 1-8 Zeichen nach letztem Punkt)
+  const lastDot = name.lastIndexOf(".");
+  const hasExt = lastDot > 0 && name.length - lastDot - 1 <= 8 && name.length - lastDot - 1 >= 1;
+  let base = hasExt ? name.slice(0, lastDot) : name;
+  let ext = hasExt ? name.slice(lastDot + 1) : "";
 
-  // Akzent-/Diakritika-Entfernung (é → e, à → a, ñ → n, …)
-  s = s.normalize("NFKD").replace(/[̀-ͯ]/g, "");
+  const cleanPart = (s: string): string => {
+    let r = s
+      .replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue")
+      .replace(/Ä/g, "Ae").replace(/Ö/g, "Oe").replace(/Ü/g, "Ue")
+      .replace(/ß/g, "ss");
+    // Akzente/Diakritika entfernen (é → e, à → a, ñ → n, …)
+    r = r.normalize("NFKD").replace(/[̀-ͯ]/g, "");
+    // Erlaubte Zeichen: a-z A-Z 0-9 _ -
+    r = r.replace(/[^a-zA-Z0-9_-]/g, "_");
+    // Mehrfache Underscores zu einem
+    r = r.replace(/_+/g, "_");
+    // Leading/Trailing _ - entfernen
+    r = r.replace(/^[_-]+|[_-]+$/g, "");
+    return r;
+  };
 
-  // Erlaubte Zeichen: a-z A-Z 0-9 . _ -
-  s = s.replace(/[^a-zA-Z0-9._-]/g, "_");
+  base = cleanPart(base);
+  ext = cleanPart(ext);
 
-  // Mehrfache Underscores zu einem
-  s = s.replace(/_+/g, "_");
+  if (!base) base = "datei";
 
-  // Fuehrende/abschliessende _ - . entfernen
-  s = s.replace(/^[_.-]+|[_.-]+$/g, "");
-
-  if (!s) return "datei";
-
-  // Auf 80 Zeichen kuerzen, Extension bewahren
-  if (s.length > 80) {
-    const lastDot = s.lastIndexOf(".");
-    if (lastDot > 0 && s.length - lastDot <= 8) {
-      const ext = s.slice(lastDot);
-      s = s.slice(0, 80 - ext.length) + ext;
-    } else {
-      s = s.slice(0, 80);
-    }
+  // Auf 80 Zeichen Gesamtlaenge begrenzen, Extension prioritaer behalten
+  const fullLen = ext ? base.length + 1 + ext.length : base.length;
+  if (fullLen > 80) {
+    const allowedBase = ext ? 80 - 1 - ext.length : 80;
+    base = base.slice(0, Math.max(1, allowedBase));
   }
 
-  return s;
+  return ext ? `${base}.${ext}` : base;
 }
