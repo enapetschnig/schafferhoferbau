@@ -28,6 +28,7 @@ export function FileViewer({
   onPdfSaved,
 }: FileViewerProps) {
   const [zoom, setZoom] = useState(100);
+  const [pdfZoom, setPdfZoom] = useState(100); // PDF-Zoom in % (25-200)
   const [loading, setLoading] = useState(false);
   const [signedUrl, setSignedUrl] = useState<string | null>(null);
   const [urlLoading, setUrlLoading] = useState(false);
@@ -180,14 +181,37 @@ export function FileViewer({
                 </>
               )}
               {actualFileType === "pdf" && signedUrl && (
-                <Button
-                  variant="outline"
-                  onClick={() => setEditPdfOpen(true)}
-                  className="gap-2"
-                >
-                  <Pencil className="w-4 h-4" />
-                  <span className="hidden sm:inline">Bearbeiten</span>
-                </Button>
+                <>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => setPdfZoom(Math.max(25, pdfZoom - 25))}
+                    disabled={pdfZoom <= 25}
+                    title="Verkleinern"
+                  >
+                    <ZoomOut className="w-4 h-4" />
+                  </Button>
+                  <span className="text-xs text-muted-foreground self-center min-w-[3ch] text-center hidden sm:inline">
+                    {pdfZoom}%
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => setPdfZoom(Math.min(200, pdfZoom + 25))}
+                    disabled={pdfZoom >= 200}
+                    title="Vergroessern"
+                  >
+                    <ZoomIn className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => setEditPdfOpen(true)}
+                    className="gap-2"
+                  >
+                    <Pencil className="w-4 h-4" />
+                    <span className="hidden sm:inline">Bearbeiten</span>
+                  </Button>
+                </>
               )}
               <Button
                 variant="outline"
@@ -234,7 +258,7 @@ export function FileViewer({
               />
             </div>
           ) : actualFileType === "pdf" ? (
-            <PdfPreview pdfUrl={signedUrl} className="w-full" />
+            <PdfPreview pdfUrl={signedUrl} zoom={pdfZoom / 100} className="w-full" />
           ) : (
             <div className="flex flex-col items-center justify-center h-full gap-4">
               <p className="text-muted-foreground">
