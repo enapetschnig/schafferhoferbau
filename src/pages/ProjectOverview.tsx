@@ -1026,6 +1026,7 @@ const ProjectOverview = () => {
               )}
               <div className="flex flex-wrap gap-x-4 gap-y-0.5">
                 {projectInfo.bauherr && <span>Bauherr: <strong>{projectInfo.bauherr}</strong>{projectInfo.bauherr_kontakt ? ` (${projectInfo.bauherr_kontakt})` : ""}</span>}
+                {projectInfo.bauherr2 && <span>Bauherr 2: <strong>{projectInfo.bauherr2}</strong>{projectInfo.bauherr2_kontakt ? ` (${projectInfo.bauherr2_kontakt})` : ""}</span>}
                 {projectInfo.bauleiter && <span>Bauleiter: <strong>{projectInfo.bauleiter}</strong></span>}
                 {projectInfo.budget != null && <span>Budget: <strong>{new Intl.NumberFormat("de-AT", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(projectInfo.budget)}</strong></span>}
               </div>
@@ -1039,7 +1040,7 @@ const ProjectOverview = () => {
         </div>
 
         {/* Kundendaten */}
-        {projectInfo && (projectInfo.bauherr || projectInfo.kunde_telefon || projectInfo.kunde_email) && (
+        {projectInfo && (projectInfo.bauherr || projectInfo.bauherr2 || projectInfo.kunde_telefon || projectInfo.kunde_email) && (
           <Card className="mb-4">
             <CardHeader className="pb-2">
               <CardTitle className="text-lg">Kundendaten</CardTitle>
@@ -1047,6 +1048,9 @@ const ProjectOverview = () => {
             <CardContent className="space-y-1 text-sm">
               {projectInfo.bauherr && (
                 <p><strong>{projectInfo.bauherr}</strong>{projectInfo.bauherr_kontakt ? ` · ${projectInfo.bauherr_kontakt}` : ""}</p>
+              )}
+              {projectInfo.bauherr2 && (
+                <p><strong>{projectInfo.bauherr2}</strong>{projectInfo.bauherr2_kontakt ? ` · ${projectInfo.bauherr2_kontakt}` : ""}</p>
               )}
               {projectInfo.adresse && (
                 <p>
