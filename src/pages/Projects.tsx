@@ -65,6 +65,7 @@ const Projects = () => {
     hinweise: "",
   });
   const [newContacts, setNewContacts] = useState<{ rolle: string; name: string; telefon: string; email: string }[]>([]);
+  const [newWeitereAdressen, setNewWeitereAdressen] = useState<{ label: string; adresse: string }[]>([]);
   const [quickUploadProject, setQuickUploadProject] = useState<{
     projectId: string;
     documentType: 'photos' | 'plans' | 'reports';
@@ -234,6 +235,11 @@ const Projects = () => {
       return;
     }
 
+    // Nur ausgefuellte Zusatz-Adressen behalten
+    const cleanedWeitereAdressen = newWeitereAdressen
+      .map((a) => ({ label: a.label.trim(), adresse: a.adresse.trim() }))
+      .filter((a) => a.adresse);
+
     const { data: inserted, error } = await supabase
       .from("projects")
       .insert({
@@ -244,6 +250,7 @@ const Projects = () => {
         erreichbarkeit: newProject.erreichbarkeit.trim() || null,
         besonderheiten: newProject.besonderheiten.trim() || null,
         hinweise: newProject.hinweise.trim() || null,
+        weitere_adressen: cleanedWeitereAdressen as any,
       })
       .select("id")
       .single();
@@ -311,6 +318,7 @@ const Projects = () => {
       });
       setNewProject({ name: "", adresse: "", kunde_telefon: "", kunde_email: "", erreichbarkeit: "", besonderheiten: "", hinweise: "" });
       setNewContacts([]);
+      setNewWeitereAdressen([]);
       setAccessEmployeeIds([]);
       setShowNewDialog(false);
       fetchProjects();
@@ -598,7 +606,7 @@ const Projects = () => {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="adresse">Adresse</Label>
+                      <Label htmlFor="adresse">Adresse (Baustelle)</Label>
                       <Input
                         id="adresse"
                         value={newProject.adresse}
@@ -608,6 +616,59 @@ const Projects = () => {
                       <p className="text-xs text-muted-foreground">
                         z.B. Hauptstraße 12, 8010 Graz
                       </p>
+                    </div>
+
+                    {/* Weitere Adressen - beliebig viele mit Bezeichnung */}
+                    <div className="space-y-2">
+                      {newWeitereAdressen.map((entry, idx) => (
+                        <div key={idx} className="rounded-lg border p-3 space-y-2 relative">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="absolute top-1 right-1 h-7 w-7 p-0"
+                            onClick={() => setNewWeitereAdressen((prev) => prev.filter((_, i) => i !== idx))}
+                            type="button"
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                          <div className="space-y-1">
+                            <Label className="text-xs">Bezeichnung</Label>
+                            <Input
+                              value={entry.label}
+                              onChange={(e) => {
+                                const updated = [...newWeitereAdressen];
+                                updated[idx] = { ...updated[idx], label: e.target.value };
+                                setNewWeitereAdressen(updated);
+                              }}
+                              placeholder="z.B. Wohnadresse"
+                              className="h-9"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs">Adresse</Label>
+                            <Input
+                              value={entry.adresse}
+                              onChange={(e) => {
+                                const updated = [...newWeitereAdressen];
+                                updated[idx] = { ...updated[idx], adresse: e.target.value };
+                                setNewWeitereAdressen(updated);
+                              }}
+                              placeholder="Straße und Hausnummer, PLZ Ort"
+                              className="h-9"
+                            />
+                          </div>
+                        </div>
+                      ))}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="w-full gap-2"
+                        onClick={() => setNewWeitereAdressen((prev) => [...prev, { label: "", adresse: "" }])}
+                      >
+                        <Plus className="h-4 w-4" />
+                        Weitere Adresse hinzufügen
+                      </Button>
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-2">

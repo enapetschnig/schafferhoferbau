@@ -122,6 +122,7 @@ const ProjectOverview = () => {
     budget: number | null; start_datum: string | null; end_datum: string | null;
     beschreibung: string | null; kunde_telefon: string | null; kunde_email: string | null;
     erreichbarkeit: string | null; besonderheiten: string | null; hinweise: string | null;
+    weitere_adressen: { label: string; adresse: string }[] | null;
   } | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isVorarbeiter, setIsVorarbeiter] = useState(false);
@@ -194,6 +195,7 @@ const ProjectOverview = () => {
     kunde_telefon: "", kunde_email: "",
     erreichbarkeit: "", besonderheiten: "", hinweise: "",
   });
+  const [editWeitereAdressen, setEditWeitereAdressen] = useState<{ label: string; adresse: string }[]>([]);
   const [savingEdit, setSavingEdit] = useState(false);
 
   const openEditDialog = () => {
@@ -219,6 +221,11 @@ const ProjectOverview = () => {
       besonderheiten: projectInfo.besonderheiten || "",
       hinweise: projectInfo.hinweise || "",
     });
+    setEditWeitereAdressen(
+      Array.isArray(projectInfo.weitere_adressen)
+        ? projectInfo.weitere_adressen.map((a) => ({ label: a.label || "", adresse: a.adresse || "" }))
+        : []
+    );
     setShowEditDialog(true);
   };
 
@@ -247,6 +254,9 @@ const ProjectOverview = () => {
         erreichbarkeit: editForm.erreichbarkeit.trim() || null,
         besonderheiten: editForm.besonderheiten.trim() || null,
         hinweise: editForm.hinweise.trim() || null,
+        weitere_adressen: editWeitereAdressen
+          .map((a) => ({ label: a.label.trim(), adresse: a.adresse.trim() }))
+          .filter((a) => a.adresse) as any,
       })
       .eq("id", projectId);
     setSavingEdit(false);
@@ -350,7 +360,7 @@ const ProjectOverview = () => {
 
     const { data } = await supabase
       .from("projects")
-      .select("name, adresse, plz, bauherr, bauherr_kontakt, bauherr2, bauherr2_kontakt, baustellenart, anfahrt_ueber_100km, bauleiter, budget, start_datum, end_datum, beschreibung, kunde_telefon, kunde_email, erreichbarkeit, besonderheiten, hinweise")
+      .select("name, adresse, plz, bauherr, bauherr_kontakt, bauherr2, bauherr2_kontakt, baustellenart, anfahrt_ueber_100km, bauleiter, budget, start_datum, end_datum, beschreibung, kunde_telefon, kunde_email, erreichbarkeit, besonderheiten, hinweise, weitere_adressen")
       .eq("id", projectId)
       .single();
 
@@ -367,6 +377,7 @@ const ProjectOverview = () => {
         beschreibung: d.beschreibung, kunde_telefon: d.kunde_telefon,
         kunde_email: d.kunde_email, erreichbarkeit: d.erreichbarkeit,
         besonderheiten: d.besonderheiten, hinweise: d.hinweise,
+        weitere_adressen: Array.isArray(d.weitere_adressen) ? d.weitere_adressen : [],
       });
     }
 
@@ -1061,10 +1072,27 @@ const ProjectOverview = () => {
                     className="inline-flex items-center gap-1 text-primary hover:underline"
                   >
                     <MapPin className="h-3.5 w-3.5" />
+                    <span className="text-xs text-muted-foreground mr-1">Baustelle:</span>
                     {projectInfo.adresse}{projectInfo.plz ? `, ${projectInfo.plz}` : ""}
                   </a>
                 </p>
               )}
+              {projectInfo.weitere_adressen && projectInfo.weitere_adressen.length > 0 && projectInfo.weitere_adressen.map((wa, i) => (
+                wa.adresse && (
+                  <p key={`wa-${i}`}>
+                    <a
+                      href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(wa.adresse)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-primary hover:underline"
+                    >
+                      <MapPin className="h-3.5 w-3.5" />
+                      {wa.label && <span className="text-xs text-muted-foreground mr-1">{wa.label}:</span>}
+                      {wa.adresse}
+                    </a>
+                  </p>
+                )
+              ))}
               <div className="flex flex-wrap gap-4">
                 {projectInfo.kunde_telefon && (
                   <a href={`tel:${projectInfo.kunde_telefon}`} className="inline-flex items-center gap-1 text-primary hover:underline">
@@ -1529,12 +1557,67 @@ const ProjectOverview = () => {
               <p className="text-sm font-medium mb-2">Adresse & Kunde</p>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1 col-span-2 sm:col-span-1">
-                  <Label>Adresse</Label>
+                  <Label>Adresse (Baustelle)</Label>
                   <Input value={editForm.adresse} onChange={(e) => setEditForm(f => ({ ...f, adresse: e.target.value }))} className="h-10" />
                 </div>
                 <div className="space-y-1 col-span-2 sm:col-span-1">
                   <Label>PLZ</Label>
                   <Input value={editForm.plz} onChange={(e) => setEditForm(f => ({ ...f, plz: e.target.value }))} className="h-10" />
+                </div>
+
+                {/* Weitere Adressen - beliebig viele mit Bezeichnung */}
+                <div className="col-span-2 space-y-2">
+                  {editWeitereAdressen.map((entry, idx) => (
+                    <div key={idx} className="rounded-lg border p-3 space-y-2 relative">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="absolute top-1 right-1 h-7 w-7 p-0"
+                        onClick={() => setEditWeitereAdressen((prev) => prev.filter((_, i) => i !== idx))}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <Label className="text-xs">Bezeichnung</Label>
+                          <Input
+                            value={entry.label}
+                            onChange={(e) => {
+                              const updated = [...editWeitereAdressen];
+                              updated[idx] = { ...updated[idx], label: e.target.value };
+                              setEditWeitereAdressen(updated);
+                            }}
+                            placeholder="z.B. Wohnadresse"
+                            className="h-9"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">Adresse</Label>
+                          <Input
+                            value={entry.adresse}
+                            onChange={(e) => {
+                              const updated = [...editWeitereAdressen];
+                              updated[idx] = { ...updated[idx], adresse: e.target.value };
+                              setEditWeitereAdressen(updated);
+                            }}
+                            placeholder="Straße und Hausnummer, PLZ Ort"
+                            className="h-9"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="w-full gap-2"
+                    onClick={() => setEditWeitereAdressen((prev) => [...prev, { label: "", adresse: "" }])}
+                  >
+                    <Plus className="h-4 w-4" />
+                    Weitere Adresse hinzufügen
+                  </Button>
                 </div>
                 <div className="space-y-1">
                   <Label>Bauherr</Label>
