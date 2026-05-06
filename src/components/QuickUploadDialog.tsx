@@ -151,7 +151,7 @@ export function QuickUploadDialog({
               className="hidden"
               onChange={handleFileSelect}
               disabled={uploading}
-              accept={documentType === "photos" ? "image/*" : "*"}
+              {...(documentType === "photos" ? { accept: "image/*" } : {})}
               multiple
             />
           </label>

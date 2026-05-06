@@ -301,15 +301,18 @@ const ProjectDetail = () => {
     }
   };
 
-  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>, subType?: string) => {
-    if (!e.target.files || e.target.files.length === 0 || !projectId || !type) return;
+  const uploadFiles = async (files: FileList | File[], subType?: string) => {
+    if (!files || files.length === 0 || !projectId || !type) return;
     setUploading(true);
 
     const { data: { user } } = await supabase.auth.getUser();
 
-    for (const rawFile of Array.from(e.target.files)) {
-      // EXIF-Rotation in Pixeldaten einbacken (iPhone-/Android-Fotos korrekt ausrichten)
-      const file = await normalizeImageOrientation(rawFile);
+    const arr = Array.from(files);
+    for (const rawFile of arr) {
+      // EXIF-Rotation in Pixeldaten einbacken (iPhone-/Android-Fotos korrekt ausrichten).
+      // Bei PDFs nichts manipulieren.
+      const isImage = rawFile.type.startsWith("image/");
+      const file = isImage ? await normalizeImageOrientation(rawFile) : rawFile;
       const bucket = bucketMap[type];
       const safeName = sanitizeStorageFileName(file.name);
       const filePath = `${projectId}/${Date.now()}_${safeName}`;
@@ -326,13 +329,20 @@ const ProjectDetail = () => {
           user_id: user.id,
           archived: false,
         });
+      } else if (error) {
+        toast({ variant: "destructive", title: "Upload fehlgeschlagen", description: `${rawFile.name}: ${error.message}` });
       }
     }
 
-    toast({ title: "Hochgeladen", description: `${e.target.files.length} Datei(en) hochgeladen` });
+    toast({ title: "Hochgeladen", description: `${arr.length} Datei(en) hochgeladen` });
     fetchFiles();
     fetchDocRecords();
     setUploading(false);
+  };
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>, subType?: string) => {
+    if (!e.target.files) return;
+    await uploadFiles(e.target.files, subType);
     e.target.value = "";
   };
 
@@ -802,8 +812,21 @@ const ProjectDetail = () => {
                   {/* Upload - nur im aktiven Tab, nicht im Archiv */}
                   {!isArchivTab && (isAdmin || type === "photos") && (
                     <div className="mb-4">
-                      <label htmlFor={`file-upload-${tab.key}`} className="cursor-pointer">
-                        <div className="border-2 border-dashed rounded-lg p-4 text-center hover:border-primary/50 transition-colors">
+                      <label htmlFor={`file-upload-${tab.key}`} className="cursor-pointer block">
+                        <div
+                          className="border-2 border-dashed rounded-lg p-4 text-center hover:border-primary/50 transition-colors"
+                          onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                          onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (uploading) return;
+                            const files = e.dataTransfer.files;
+                            if (files && files.length > 0) {
+                              void uploadFiles(files, currentTabConfig?.subType);
+                            }
+                          }}
+                        >
                           <Upload className="h-6 w-6 mx-auto mb-2 text-muted-foreground" />
                           <p className="text-sm font-medium">
                             {uploading ? "Lädt hoch..." : "Dateien auswählen oder hierher ziehen"}
@@ -817,7 +840,7 @@ const ProjectDetail = () => {
                         disabled={uploading}
                         multiple
                         className="hidden"
-                        accept={type === "photos" ? "image/*" : "*"}
+                        {...(type === "photos" ? { accept: "image/*" } : {})}
                       />
                     </div>
                   )}
