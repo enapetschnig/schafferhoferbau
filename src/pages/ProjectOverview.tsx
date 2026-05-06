@@ -30,6 +30,8 @@ type DocumentCategory = {
 type Contact = {
   id: string; name: string; rolle: string | null; telefon: string | null;
   email: string | null; firma: string | null; phase: string; notizen: string | null;
+  weitere_telefone?: string[] | null;
+  weitere_emails?: string[] | null;
 };
 
 interface SortableContactItemProps {
@@ -74,17 +76,21 @@ function SortableContactItem({ contact, isAdmin, onCopy, onExportVCF, onEdit, on
             {contact.rolle} · {contact.phase === "planungsphase" ? "Planungsphase" : contact.phase === "beide" ? "Alle Phasen" : "Bauphase"}
           </div>
         )}
-        <div className="flex flex-wrap gap-3 mt-1">
-          {contact.telefon && (
-            <a href={`tel:${contact.telefon}`} className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
-              <Phone className="h-3 w-3" /> {contact.telefon}
-            </a>
-          )}
-          {contact.email && (
-            <a href={`mailto:${contact.email}`} className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
-              <Mail className="h-3 w-3" /> {contact.email}
-            </a>
-          )}
+        <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1">
+          {[contact.telefon, ...(Array.isArray(contact.weitere_telefone) ? contact.weitere_telefone : [])]
+            .filter(Boolean)
+            .map((tel, i) => (
+              <a key={`tel-${i}`} href={`tel:${tel}`} className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
+                <Phone className="h-3 w-3" /> {tel}
+              </a>
+            ))}
+          {[contact.email, ...(Array.isArray(contact.weitere_emails) ? contact.weitere_emails : [])]
+            .filter(Boolean)
+            .map((mail, i) => (
+              <a key={`mail-${i}`} href={`mailto:${mail}`} className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
+                <Mail className="h-3 w-3" /> {mail}
+              </a>
+            ))}
         </div>
       </div>
       <div className="flex gap-1 shrink-0">
@@ -168,7 +174,11 @@ const ProjectOverview = () => {
   const [showAllContacts, setShowAllContacts] = useState(false);
   const [showContactDialog, setShowContactDialog] = useState(false);
   const [editingContact, setEditingContact] = useState<Contact | null>(null);
-  const [contactForm, setContactForm] = useState({ name: "", rolle: "", telefon: "", email: "", firma: "", phase: "bauphase", notizen: "" });
+  const [contactForm, setContactForm] = useState<{
+    name: string; rolle: string; telefon: string; email: string;
+    firma: string; phase: string; notizen: string;
+    weitereTelefone: string[]; weitereEmails: string[];
+  }>({ name: "", rolle: "", telefon: "", email: "", firma: "", phase: "bauphase", notizen: "", weitereTelefone: [], weitereEmails: [] });
 
   // Template picker state
   const [showTemplatePicker, setShowTemplatePicker] = useState(false);
@@ -440,7 +450,7 @@ const ProjectOverview = () => {
 
   const handleSaveContact = async () => {
     if (!projectId || !contactForm.name.trim()) return;
-    const payload = {
+    const payload: any = {
       project_id: projectId,
       name: contactForm.name.trim(),
       rolle: contactForm.rolle.trim() || null,
@@ -449,6 +459,8 @@ const ProjectOverview = () => {
       firma: contactForm.firma.trim() || null,
       phase: contactForm.phase,
       notizen: contactForm.notizen.trim() || null,
+      weitere_telefone: contactForm.weitereTelefone.map((t) => t.trim()).filter(Boolean),
+      weitere_emails: contactForm.weitereEmails.map((e) => e.trim()).filter(Boolean),
     };
 
     if (editingContact) {
@@ -473,7 +485,7 @@ const ProjectOverview = () => {
   const resetContactDialog = () => {
     setShowContactDialog(false);
     setEditingContact(null);
-    setContactForm({ name: "", rolle: "", telefon: "", email: "", firma: "", phase: "bauphase", notizen: "" });
+    setContactForm({ name: "", rolle: "", telefon: "", email: "", firma: "", phase: "bauphase", notizen: "", weitereTelefone: [], weitereEmails: [] });
   };
 
   const openEditContact = (c: Contact) => {
@@ -481,12 +493,19 @@ const ProjectOverview = () => {
     setContactForm({
       name: c.name, rolle: c.rolle || "", telefon: c.telefon || "",
       email: c.email || "", firma: c.firma || "", phase: c.phase, notizen: c.notizen || "",
+      weitereTelefone: Array.isArray(c.weitere_telefone) ? c.weitere_telefone : [],
+      weitereEmails: Array.isArray(c.weitere_emails) ? c.weitere_emails : [],
     });
     setShowContactDialog(true);
   };
 
+  const allPhones = (c: Contact): string[] =>
+    [c.telefon, ...(Array.isArray(c.weitere_telefone) ? c.weitere_telefone : [])].filter(Boolean) as string[];
+  const allEmails = (c: Contact): string[] =>
+    [c.email, ...(Array.isArray(c.weitere_emails) ? c.weitere_emails : [])].filter(Boolean) as string[];
+
   const copyContact = (c: Contact) => {
-    const text = [c.name, c.firma, c.telefon, c.email].filter(Boolean).join("\n");
+    const text = [c.name, c.firma, ...allPhones(c), ...allEmails(c)].filter(Boolean).join("\n");
     navigator.clipboard.writeText(text);
     toast({ title: "Kopiert", description: "Kontaktdaten in Zwischenablage" });
   };
@@ -495,6 +514,8 @@ const ProjectOverview = () => {
     const nameParts = c.name.split(" ");
     const lastName = nameParts.pop() || "";
     const firstName = nameParts.join(" ");
+    const phones = allPhones(c);
+    const emails = allEmails(c);
     const vcf = [
       "BEGIN:VCARD",
       "VERSION:3.0",
@@ -502,8 +523,9 @@ const ProjectOverview = () => {
       `FN:${c.name}`,
       c.firma ? `ORG:${c.firma}` : "",
       c.rolle ? `TITLE:${c.rolle}` : "",
-      c.telefon ? `TEL;TYPE=WORK:${c.telefon}` : "",
-      c.email ? `EMAIL:${c.email}` : "",
+      // Erste Nummer = WORK, weitere = CELL
+      ...phones.map((tel, i) => `TEL;TYPE=${i === 0 ? "WORK" : "CELL"}:${tel}`),
+      ...emails.map((mail) => `EMAIL:${mail}`),
       `NOTE:Projekt: ${projectName}`,
       "END:VCARD",
     ].filter(Boolean).join("\r\n");
@@ -1389,14 +1411,84 @@ const ProjectOverview = () => {
               <Label>Rolle</Label>
               <Input placeholder="z.B. Zimmerer, Dachdecker, Energieversorger" value={contactForm.rolle} onChange={(e) => setContactForm(f => ({ ...f, rolle: e.target.value }))} className="h-10" />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label>Telefon</Label>
                 <Input type="tel" value={contactForm.telefon} onChange={(e) => setContactForm(f => ({ ...f, telefon: e.target.value }))} className="h-10" />
+                {contactForm.weitereTelefone.map((tel, idx) => (
+                  <div key={`tel-${idx}`} className="flex gap-1 mt-1">
+                    <Input
+                      type="tel"
+                      value={tel}
+                      onChange={(e) => {
+                        const updated = [...contactForm.weitereTelefone];
+                        updated[idx] = e.target.value;
+                        setContactForm((f) => ({ ...f, weitereTelefone: updated }));
+                      }}
+                      className="h-9"
+                      placeholder="Weitere Nummer"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-9 w-9 shrink-0"
+                      onClick={() => setContactForm((f) => ({
+                        ...f, weitereTelefone: f.weitereTelefone.filter((_, i) => i !== idx),
+                      }))}
+                    >
+                      <X className="h-4 w-4 text-destructive" />
+                    </Button>
+                  </div>
+                ))}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  onClick={() => setContactForm((f) => ({ ...f, weitereTelefone: [...f.weitereTelefone, ""] }))}
+                >
+                  <Plus className="h-3 w-3 mr-1" /> Weitere Nummer
+                </Button>
               </div>
               <div className="space-y-1">
                 <Label>E-Mail</Label>
                 <Input type="email" value={contactForm.email} onChange={(e) => setContactForm(f => ({ ...f, email: e.target.value }))} className="h-10" />
+                {contactForm.weitereEmails.map((mail, idx) => (
+                  <div key={`mail-${idx}`} className="flex gap-1 mt-1">
+                    <Input
+                      type="email"
+                      value={mail}
+                      onChange={(e) => {
+                        const updated = [...contactForm.weitereEmails];
+                        updated[idx] = e.target.value;
+                        setContactForm((f) => ({ ...f, weitereEmails: updated }));
+                      }}
+                      className="h-9"
+                      placeholder="Weitere E-Mail"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-9 w-9 shrink-0"
+                      onClick={() => setContactForm((f) => ({
+                        ...f, weitereEmails: f.weitereEmails.filter((_, i) => i !== idx),
+                      }))}
+                    >
+                      <X className="h-4 w-4 text-destructive" />
+                    </Button>
+                  </div>
+                ))}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  onClick={() => setContactForm((f) => ({ ...f, weitereEmails: [...f.weitereEmails, ""] }))}
+                >
+                  <Plus className="h-3 w-3 mr-1" /> Weitere E-Mail
+                </Button>
               </div>
             </div>
             <div className="space-y-1">
