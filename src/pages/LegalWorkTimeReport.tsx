@@ -5,14 +5,20 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { PageHeader } from "@/components/PageHeader";
-import { Download } from "lucide-react";
-import { format, getDaysInMonth } from "date-fns";
+import { Download, ChevronDown } from "lucide-react";
+import { format, getDaysInMonth, parseISO } from "date-fns";
 import { de } from "date-fns/locale";
 import * as XLSX from "xlsx-js-style";
 import { generateLegalWorkTimePDF } from "@/lib/generateLegalWorkTimePDF";
+import { getNormalWorkingHours, type WeekSchedule } from "@/lib/workingHours";
 
 type Profile = { id: string; vorname: string; nachname: string };
+
+type DiaetenTyp = "klein" | "gross" | "anfahrt" | "keine" | null;
 
 type DayRow = {
   datum: string;
@@ -20,8 +26,16 @@ type DayRow = {
   ende: string | null;
   pauseMinutes: number;
   arbeitszeit: number;
+  ueberstunden: number;
   anmerkung: string | null; // SW = Schlechtwetter, U = Urlaub, K = Krank
   schlechtwetterStunden: number;
+  diaetenTyp: DiaetenTyp;
+};
+
+const DIAETEN_LABEL: Record<string, string> = {
+  klein: "Klein",
+  gross: "Groß",
+  anfahrt: "Anfahrt",
 };
 
 const monthNames = [
@@ -41,6 +55,7 @@ export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeR
   const [employees, setEmployees] = useState<Profile[]>([]);
   const [rows, setRows] = useState<DayRow[]>([]);
   const [loading, setLoading] = useState(false);
+  const [employeeSchedule, setEmployeeSchedule] = useState<WeekSchedule | null>(null);
 
   // Fetch employees (exclude external)
   useEffect(() => {
@@ -68,6 +83,7 @@ export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeR
   const fetchData = useCallback(async () => {
     if (!selectedUserId) {
       setRows([]);
+      setEmployeeSchedule(null);
       return;
     }
     setLoading(true);
@@ -76,11 +92,11 @@ export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeR
     const daysInMonth = getDaysInMonth(new Date(year, month - 1));
     const endDate = `${year}-${String(month).padStart(2, "0")}-${String(daysInMonth).padStart(2, "0")}`;
 
-    // Fetch time entries and bad weather records in parallel
-    const [{ data }, { data: weatherData }] = await Promise.all([
+    // Time entries + Schlechtwetter + Regelarbeitszeit-Schedule parallel
+    const [{ data }, { data: weatherData }, { data: empData }] = await Promise.all([
       supabase
         .from("time_entries")
-        .select("datum, start_time, end_time, pause_minutes, stunden, taetigkeit")
+        .select("datum, start_time, end_time, pause_minutes, stunden, taetigkeit, diaeten_typ")
         .eq("user_id", selectedUserId)
         .gte("datum", startDate)
         .lte("datum", endDate)
@@ -92,20 +108,34 @@ export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeR
         .eq("user_id", selectedUserId)
         .gte("datum", startDate)
         .lte("datum", endDate),
+      supabase
+        .from("employees")
+        .select("regelarbeitszeit")
+        .eq("user_id", selectedUserId)
+        .maybeSingle(),
     ]);
 
+    const schedule = empData?.regelarbeitszeit ? (empData.regelarbeitszeit as unknown as WeekSchedule) : null;
+    setEmployeeSchedule(schedule);
+
     // Group time entries by datum
-    const grouped: Record<string, { starts: string[]; ends: string[]; pause: number; stunden: number; taetigkeit: string[] }> = {};
+    const grouped: Record<string, {
+      starts: string[]; ends: string[]; pause: number; stunden: number;
+      taetigkeit: string[]; diaeten: string[];
+    }> = {};
     if (data) {
       for (const entry of data) {
         if (!grouped[entry.datum]) {
-          grouped[entry.datum] = { starts: [], ends: [], pause: 0, stunden: 0, taetigkeit: [] };
+          grouped[entry.datum] = { starts: [], ends: [], pause: 0, stunden: 0, taetigkeit: [], diaeten: [] };
         }
         if (entry.start_time) grouped[entry.datum].starts.push(entry.start_time);
         if (entry.end_time) grouped[entry.datum].ends.push(entry.end_time);
         grouped[entry.datum].pause += entry.pause_minutes || 0;
         grouped[entry.datum].stunden += entry.stunden || 0;
         if (entry.taetigkeit) grouped[entry.datum].taetigkeit.push(entry.taetigkeit);
+        if (entry.diaeten_typ && entry.diaeten_typ !== "keine") {
+          grouped[entry.datum].diaeten.push(entry.diaeten_typ);
+        }
       }
     }
 
@@ -123,6 +153,7 @@ export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeR
       const datum = `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
       const g = grouped[datum];
       const swHours = weatherByDate[datum] || 0;
+      const dayDate = parseISO(datum);
 
       // Determine annotation
       let anmerkung: string | null = null;
@@ -132,22 +163,40 @@ export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeR
       if (g?.taetigkeit.includes("Feiertag")) anmerkung = "F";
       if (g?.taetigkeit.includes("Zeitausgleich")) anmerkung = "ZA";
 
+      // Diaeten-Typ pro Tag: erster nicht-keine Eintrag (typischerweise nur einer pro Tag)
+      const diaetenTyp = (g?.diaeten[0] as DiaetenTyp) || null;
+
       if (g) {
         const beginn = g.starts.length > 0 ? g.starts.sort()[0]?.slice(0, 5) : null;
         const ende = g.ends.length > 0 ? g.ends.sort().reverse()[0]?.slice(0, 5) : null;
+        const arbeitszeit = Math.round(g.stunden * 100) / 100;
+        // Ueberstunden = (geleistet - Regelarbeitszeit), nur fuer reine Arbeitszeit
+        // (Urlaub/Krank/etc. werden nicht als Ueberstunden gewertet)
+        let ueberstunden = 0;
+        const isPureWorkDay = !["Urlaub", "Krankenstand", "Feiertag", "Zeitausgleich"]
+          .some((t) => g.taetigkeit.includes(t));
+        if (isPureWorkDay && schedule) {
+          const regelStd = getNormalWorkingHours(dayDate, schedule);
+          if (regelStd > 0 && arbeitszeit > regelStd) {
+            ueberstunden = Math.round((arbeitszeit - regelStd) * 100) / 100;
+          }
+        }
         dayRows.push({
           datum, beginn, ende,
           pauseMinutes: g.pause,
-          arbeitszeit: Math.round(g.stunden * 100) / 100,
+          arbeitszeit,
+          ueberstunden,
           anmerkung,
           schlechtwetterStunden: swHours,
+          diaetenTyp,
         });
       } else {
         dayRows.push({
           datum, beginn: null, ende: null,
-          pauseMinutes: 0, arbeitszeit: 0,
+          pauseMinutes: 0, arbeitszeit: 0, ueberstunden: 0,
           anmerkung: swHours > 0 ? "SW" : null,
           schlechtwetterStunden: swHours,
+          diaetenTyp: null,
         });
       }
     }
@@ -159,9 +208,11 @@ export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeR
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const totalHours = rows.reduce((sum, r) => sum + r.arbeitszeit, 0);
+  const totalOvertime = rows.reduce((sum, r) => sum + r.ueberstunden, 0);
   const totalPause = rows.reduce((sum, r) => sum + r.pauseMinutes, 0);
   const workingDays = rows.filter((r) => r.arbeitszeit > 0).length;
   const totalBadWeatherHours = rows.reduce((sum, r) => sum + r.schlechtwetterStunden, 0);
+  const totalDiaeten = rows.filter((r) => r.diaetenTyp && r.diaetenTyp !== "keine").length;
 
   const selectedEmployee = employees.find((e) => e.id === selectedUserId);
   const employeeName = selectedEmployee ? `${selectedEmployee.vorname} ${selectedEmployee.nachname}` : "";
@@ -173,15 +224,20 @@ export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeR
     return h > 0 ? `${h}h ${m}min` : `${m}min`;
   };
 
-  const handleExportExcel = () => {
+  const handleExportExcel = (includeOvertime: boolean = false) => {
     if (!selectedUserId || rows.length === 0) return;
+
+    // Header-Zeilen je nach Modus: mit oder ohne Ueberstunden-Spalte
+    const headerCols = includeOvertime
+      ? ["Datum", "Wochentag", "Arbeitsbeginn", "Arbeitsende", "Pause", "Arbeitszeit (h)", "Überstunden (h)", "Diäten", "Anmerkung"]
+      : ["Datum", "Wochentag", "Arbeitsbeginn", "Arbeitsende", "Pause", "Arbeitszeit (h)", "Diäten", "Anmerkung"];
 
     const wsData: string[][] = [
       ["Arbeitszeitaufzeichnung"],
       [`Mitarbeiter: ${employeeName}`],
       [`Zeitraum: ${monthNames[month - 1]} ${year}`],
       [],
-      ["Datum", "Wochentag", "Arbeitsbeginn", "Arbeitsende", "Pause", "Arbeitszeit (h)", "Anmerkung"],
+      headerCols,
     ];
 
     for (const row of rows) {
@@ -189,40 +245,54 @@ export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeR
       const anmerkungText = row.anmerkung
         ? row.anmerkung === "SW" ? `SW (${row.schlechtwetterStunden.toFixed(1)}h)` : row.anmerkung
         : "";
-      wsData.push([
+      const diaetenText = row.diaetenTyp && row.diaetenTyp !== "keine" ? DIAETEN_LABEL[row.diaetenTyp] : "";
+      const baseRow = [
         format(new Date(row.datum), "dd.MM.yyyy"),
         dayName,
         row.beginn || "",
         row.ende || "",
         row.pauseMinutes > 0 ? formatPause(row.pauseMinutes) : "",
         row.arbeitszeit > 0 ? row.arbeitszeit.toFixed(2) : "",
-        anmerkungText,
-      ]);
+      ];
+      if (includeOvertime) {
+        wsData.push([...baseRow, row.ueberstunden > 0 ? row.ueberstunden.toFixed(2) : "", diaetenText, anmerkungText]);
+      } else {
+        wsData.push([...baseRow, diaetenText, anmerkungText]);
+      }
     }
 
     wsData.push([]);
-    wsData.push(["", "", "", "Summe:", formatPause(totalPause), totalHours.toFixed(2), ""]);
-    wsData.push(["", "", "", "Arbeitstage:", "", workingDays.toString(), ""]);
+    if (includeOvertime) {
+      wsData.push(["", "", "", "Summe:", formatPause(totalPause), totalHours.toFixed(2), totalOvertime > 0 ? totalOvertime.toFixed(2) : "", "", ""]);
+    } else {
+      wsData.push(["", "", "", "Summe:", formatPause(totalPause), totalHours.toFixed(2), "", ""]);
+    }
+    wsData.push(["", "", "", "Arbeitstage:", "", workingDays.toString()]);
+    if (totalDiaeten > 0) {
+      wsData.push(["", "", "", "Diäten-Tage:", "", totalDiaeten.toString()]);
+    }
     if (totalBadWeatherHours > 0) {
-      wsData.push(["", "", "", "Schlechtwetter:", "", totalBadWeatherHours.toFixed(1), ""]);
+      wsData.push(["", "", "", "Schlechtwetter:", "", totalBadWeatherHours.toFixed(1)]);
     }
 
     const ws = XLSX.utils.aoa_to_sheet(wsData);
 
     // Column widths
-    ws["!cols"] = [
-      { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 14 }, { wch: 16 },
-    ];
+    ws["!cols"] = includeOvertime
+      ? [{ wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 10 }, { wch: 16 }]
+      : [{ wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 14 }, { wch: 10 }, { wch: 16 }];
 
     // Bold header row
-    for (let c = 0; c < 7; c++) {
+    const colCount = headerCols.length;
+    for (let c = 0; c < colCount; c++) {
       const cell = ws[XLSX.utils.encode_cell({ r: 4, c })];
       if (cell) cell.s = { font: { bold: true } };
     }
 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Arbeitszeitaufzeichnung");
-    XLSX.writeFile(wb, `Arbeitszeitaufzeichnung_${employeeName.replace(/\s/g, "_")}_${monthNames[month - 1]}_${year}.xlsx`);
+    const suffix = includeOvertime ? "_mit_Ueberstunden" : "_ohne_Ueberstunden";
+    XLSX.writeFile(wb, `Arbeitszeitaufzeichnung_${employeeName.replace(/\s/g, "_")}_${monthNames[month - 1]}_${year}${suffix}.xlsx`);
   };
 
   const handleExportPDF = async () => {
@@ -284,7 +354,7 @@ export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeR
       ) : (
         <>
           {/* Summary */}
-          <div className={`grid gap-3 mb-4 ${totalBadWeatherHours > 0 ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-3"}`}>
+          <div className="grid gap-3 mb-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
             <Card>
               <CardHeader className="pb-2 pt-3 px-3">
                 <CardTitle className="text-sm font-medium text-muted-foreground">Arbeitstage</CardTitle>
@@ -301,6 +371,16 @@ export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeR
                 <p className="text-2xl font-bold">{totalHours.toFixed(1)}h</p>
               </CardContent>
             </Card>
+            {totalOvertime > 0 && (
+              <Card className="border-orange-200 dark:border-orange-800">
+                <CardHeader className="pb-2 pt-3 px-3">
+                  <CardTitle className="text-sm font-medium text-orange-600 dark:text-orange-400">Überstunden</CardTitle>
+                </CardHeader>
+                <CardContent className="px-3 pb-3">
+                  <p className="text-2xl font-bold text-orange-600 dark:text-orange-400">{totalOvertime.toFixed(1)}h</p>
+                </CardContent>
+              </Card>
+            )}
             <Card>
               <CardHeader className="pb-2 pt-3 px-3">
                 <CardTitle className="text-sm font-medium text-muted-foreground">Gesamtpause</CardTitle>
@@ -309,6 +389,16 @@ export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeR
                 <p className="text-2xl font-bold">{formatPause(totalPause)}</p>
               </CardContent>
             </Card>
+            {totalDiaeten > 0 && (
+              <Card>
+                <CardHeader className="pb-2 pt-3 px-3">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">Diäten</CardTitle>
+                </CardHeader>
+                <CardContent className="px-3 pb-3">
+                  <p className="text-2xl font-bold">{totalDiaeten} <span className="text-sm font-normal">Tage</span></p>
+                </CardContent>
+              </Card>
+            )}
             {totalBadWeatherHours > 0 && (
               <Card className="border-blue-200 dark:border-blue-800">
                 <CardHeader className="pb-2 pt-3 px-3">
@@ -323,9 +413,21 @@ export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeR
 
           {/* Export Buttons */}
           <div className="flex gap-2 mb-4">
-            <Button variant="outline" size="sm" onClick={handleExportExcel}>
-              <Download className="w-4 h-4 mr-1" /> Excel
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <Download className="w-4 h-4 mr-1" /> Excel <ChevronDown className="w-4 h-4 ml-1" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuItem onClick={() => handleExportExcel(true)}>
+                  Mit Überstunden
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleExportExcel(false)}>
+                  Ohne Überstunden
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button variant="outline" size="sm" onClick={handleExportPDF}>
               <Download className="w-4 h-4 mr-1" /> PDF
             </Button>
@@ -335,7 +437,7 @@ export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeR
           <Card>
             <CardContent className="p-0">
               <div className="overflow-x-auto">
-                <Table>
+                <Table className="min-w-[900px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead>Datum</TableHead>
@@ -344,6 +446,8 @@ export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeR
                       <TableHead>Ende</TableHead>
                       <TableHead>Pause</TableHead>
                       <TableHead className="text-right">Arbeitszeit</TableHead>
+                      <TableHead className="text-right">Überstunden</TableHead>
+                      <TableHead className="text-center">Diäten</TableHead>
                       <TableHead className="text-center">Anmerkung</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -363,6 +467,14 @@ export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeR
                           <TableCell className="text-sm">{row.pauseMinutes > 0 ? formatPause(row.pauseMinutes) : "–"}</TableCell>
                           <TableCell className="text-sm text-right font-medium">
                             {row.arbeitszeit > 0 ? `${row.arbeitszeit.toFixed(2)}h` : "–"}
+                          </TableCell>
+                          <TableCell className="text-sm text-right font-medium">
+                            {row.ueberstunden > 0 ? (
+                              <span className="text-orange-600 dark:text-orange-400">{row.ueberstunden.toFixed(2)}h</span>
+                            ) : "–"}
+                          </TableCell>
+                          <TableCell className="text-sm text-center">
+                            {row.diaetenTyp && row.diaetenTyp !== "keine" ? DIAETEN_LABEL[row.diaetenTyp] : "–"}
                           </TableCell>
                           <TableCell className="text-sm text-center">
                             {row.anmerkung === "SW" ? (
@@ -388,6 +500,12 @@ export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeR
                       <TableCell colSpan={4} className="font-bold">Summe</TableCell>
                       <TableCell className="font-bold">{formatPause(totalPause)}</TableCell>
                       <TableCell className="text-right font-bold">{totalHours.toFixed(2)}h</TableCell>
+                      <TableCell className="text-right font-bold text-orange-600 dark:text-orange-400">
+                        {totalOvertime > 0 ? `${totalOvertime.toFixed(2)}h` : "–"}
+                      </TableCell>
+                      <TableCell className="text-center font-bold">
+                        {totalDiaeten > 0 ? `${totalDiaeten} Tage` : "–"}
+                      </TableCell>
                       <TableCell className="text-center font-bold">
                         {totalBadWeatherHours > 0 ? `SW: ${totalBadWeatherHours.toFixed(1)}h` : ""}
                       </TableCell>
