@@ -14,6 +14,7 @@ export type VoiceAIContext =
   | "notiz"
   | "bestellung"
   | "anmerkung"
+  | "fahrtengeld"
   | "default";
 
 interface Props {
@@ -75,6 +76,15 @@ export function VoiceAIInput({
   useEffect(() => () => cleanupStream(), [cleanupStream]);
 
   const startRecording = async () => {
+    // Vor-Check: getUserMedia ueberhaupt verfuegbar?
+    if (!navigator.mediaDevices?.getUserMedia) {
+      toast({
+        variant: "destructive",
+        title: "Mikrofon nicht verfuegbar",
+        description: "Dein Browser unterstuetzt Audio-Aufnahme nicht. Bitte tippe den Text manuell ein.",
+      });
+      return;
+    }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
@@ -105,11 +115,26 @@ export function VoiceAIInput({
       setRecording(true);
     } catch (err: any) {
       cleanupStream();
-      toast({
-        variant: "destructive",
-        title: "Mikrofon-Zugriff verweigert",
-        description: err.message || "Bitte Mikrofonberechtigung im Browser erlauben.",
-      });
+      // Differenzierte Fehlermeldungen je nach DOMException-Typ
+      const name = err?.name || "";
+      let title = "Mikrofon-Zugriff verweigert";
+      let description = "Du kannst den Text einfach manuell eintippen.";
+      if (name === "NotAllowedError" || name === "PermissionDeniedError") {
+        title = "Mikrofon-Berechtigung fehlt";
+        description = "Tippe in der Browser-Adressleiste auf das Schloss-Symbol → Mikrofon erlauben. Oder einfach den Text eintippen.";
+      } else if (name === "NotFoundError" || name === "DevicesNotFoundError") {
+        title = "Kein Mikrofon gefunden";
+        description = "An diesem Geraet ist kein Mikrofon angeschlossen. Bitte tippe den Text ein.";
+      } else if (name === "NotReadableError" || name === "TrackStartError") {
+        title = "Mikrofon belegt";
+        description = "Das Mikrofon wird gerade von einer anderen App verwendet. Schliesse die andere App und versuche es nochmal.";
+      } else if (name === "SecurityError") {
+        title = "Mikrofon nicht erlaubt";
+        description = "Diese Seite muss ueber HTTPS laufen, damit das Mikrofon funktioniert.";
+      } else if (err?.message) {
+        description = err.message;
+      }
+      toast({ variant: "destructive", title, description });
     }
   };
 

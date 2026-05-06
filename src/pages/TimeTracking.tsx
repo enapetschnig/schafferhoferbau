@@ -1202,23 +1202,28 @@ const TimeTracking = ({ embedded }: TimeTrackingEmbeddedProps = {}) => {
     // 3. Sonst: der angemeldete User
     const fahrtenUserId = fahrtenData.fuerUserId || targetUserId || user.id;
 
-    const { error } = await supabase.from("time_entries").insert({
+    // Fuer Fahrtengeld-Eintraege start_time/end_time NICHT mitgeben - die DB
+    // hat einen CHECK end_time > start_time, der bei Gleichheit fehlschlaegt.
+    // Beide Spalten sind nullable, also weglassen = DB-Default NULL.
+    const fahrtenPayload: any = {
       user_id: fahrtenUserId,
       datum: selectedDate,
       project_id: null,
       taetigkeit: "Fahrtengeld",
       stunden: 0,
-      start_time: "00:00",
-      end_time: "00:00",
       pause_minutes: 0,
       location_type: "baustelle",
       kilometer: km,
       km_beschreibung: fahrtenData.strecke.trim() || null,
       zeit_typ: km >= 100 ? "fahrt_100km" : "normal",
-    });
+    };
+    const { error } = await supabase.from("time_entries").insert(fahrtenPayload);
 
     if (error) {
-      toast({ variant: "destructive", title: "Fehler", description: error.message });
+      const detail = [error.message, (error as any).details, (error as any).hint, (error as any).code]
+        .filter(Boolean).join(" • ");
+      toast({ variant: "destructive", title: "Fehler", description: detail });
+      console.error("Fahrtengeld save error:", error);
     } else {
       toast({ title: "Gespeichert", description: `Fahrtengeld ${km} km erfasst` });
       setShowFahrtenDialog(false);
