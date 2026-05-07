@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, FileText, FileCheck, Camera, ImagePlus, Lock, Plus, MapPin, Users, Copy, Pencil, Trash2, Phone, Mail, Shield, MessageCircle, Download, Upload, GripVertical } from "lucide-react";
+import { ArrowLeft, FileText, FileCheck, Camera, ImagePlus, Lock, Plus, MapPin, Users, Copy, Pencil, Trash2, Phone, Mail, Shield, MessageCircle, Download, Upload, GripVertical, X } from "lucide-react";
 import * as XLSX from "xlsx-js-style";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
