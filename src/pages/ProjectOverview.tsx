@@ -1080,10 +1080,38 @@ const ProjectOverview = () => {
             </CardHeader>
             <CardContent className="space-y-1 text-sm">
               {projectInfo.bauherr && (
-                <p><strong>{projectInfo.bauherr}</strong>{projectInfo.bauherr_kontakt ? ` · ${projectInfo.bauherr_kontakt}` : ""}</p>
+                <p>
+                  <strong>{projectInfo.bauherr}</strong>
+                  {projectInfo.bauherr_kontakt && (
+                    <>
+                      {" · "}
+                      <a
+                        href={`tel:${projectInfo.bauherr_kontakt}`}
+                        className="inline-flex items-center gap-1 text-destructive font-semibold hover:underline"
+                      >
+                        <Phone className="h-3.5 w-3.5" />
+                        {projectInfo.bauherr_kontakt}
+                      </a>
+                    </>
+                  )}
+                </p>
               )}
               {projectInfo.bauherr2 && (
-                <p><strong>{projectInfo.bauherr2}</strong>{projectInfo.bauherr2_kontakt ? ` · ${projectInfo.bauherr2_kontakt}` : ""}</p>
+                <p>
+                  <strong>{projectInfo.bauherr2}</strong>
+                  {projectInfo.bauherr2_kontakt && (
+                    <>
+                      {" · "}
+                      <a
+                        href={`tel:${projectInfo.bauherr2_kontakt}`}
+                        className="inline-flex items-center gap-1 text-destructive font-semibold hover:underline"
+                      >
+                        <Phone className="h-3.5 w-3.5" />
+                        {projectInfo.bauherr2_kontakt}
+                      </a>
+                    </>
+                  )}
+                </p>
               )}
               {projectInfo.adresse && (
                 <p>
