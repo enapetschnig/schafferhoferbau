@@ -6,14 +6,23 @@ import React from "react";
 //   ~durchgestrichen~-> <s>
 //   `code`           -> <code>
 // Plus: Zeilenumbruechen werden zu <br>.
-// Konservativ: Marker werden nur erkannt, wenn sie nicht mitten im Wort
-// stehen (Wort-Grenze davor/danach).
+// Wort-Marker (*, _, ~) werden nur an Wort-Grenzen erkannt; `code` darf
+// auch mitten im Wort vorkommen.
 
-const PATTERNS: { regex: RegExp; tag: "strong" | "em" | "s" | "code" }[] = [
-  { regex: /(^|[\s(])\*([^\s*][^*]*?[^\s*]|[^\s*])\*(?=[\s),.!?:;]|$)/g, tag: "strong" },
-  { regex: /(^|[\s(])_([^\s_][^_]*?[^\s_]|[^\s_])_(?=[\s),.!?:;]|$)/g, tag: "em" },
-  { regex: /(^|[\s(])~([^\s~][^~]*?[^\s~]|[^\s~])~(?=[\s),.!?:;]|$)/g, tag: "s" },
-  { regex: /`([^`]+)`/g, tag: "code" },
+type PatternDef = {
+  regex: RegExp;
+  tag: "strong" | "em" | "s" | "code";
+  // hasLeading=true: erste Capture-Group ist Lookbehind-Pseudo (^|[\s(]),
+  //                  zweite Group ist der innere Inhalt
+  // hasLeading=false: erste Capture-Group ist direkt der innere Inhalt
+  hasLeading: boolean;
+};
+
+const PATTERNS: PatternDef[] = [
+  { regex: /(^|[\s(])\*([^\s*][^*]*?[^\s*]|[^\s*])\*(?=[\s),.!?:;]|$)/g, tag: "strong", hasLeading: true },
+  { regex: /(^|[\s(])_([^\s_][^_]*?[^\s_]|[^\s_])_(?=[\s),.!?:;]|$)/g, tag: "em", hasLeading: true },
+  { regex: /(^|[\s(])~([^\s~][^~]*?[^\s~]|[^\s~])~(?=[\s),.!?:;]|$)/g, tag: "s", hasLeading: true },
+  { regex: /`([^`]+)`/g, tag: "code", hasLeading: false },
 ];
 
 type Token = { type: "text"; text: string } | { type: "tag"; tag: string; text: string };
@@ -21,20 +30,22 @@ type Token = { type: "text"; text: string } | { type: "tag"; tag: string; text: 
 function tokenizeLine(line: string): Token[] {
   // Naive sequentielle Suche: finde frueheste Match aus allen Pattern,
   // splice sie raus und fahre rekursiv mit dem Rest fort.
-  let earliest: { start: number; end: number; inner: string; tag: Token["type"] extends "tag" ? "tag" : never; tagName: string } | null = null;
+  let earliest: { start: number; end: number; inner: string; tagName: PatternDef["tag"] } | null = null;
 
-  for (const { regex, tag } of PATTERNS) {
+  for (const { regex, tag, hasLeading } of PATTERNS) {
     regex.lastIndex = 0;
     const m = regex.exec(line);
-    if (m) {
-      // Bei Patterns mit Lookbehind-Pseudo (m[1]) den eigentlichen Marker-Start nehmen
-      const offset = m[1] !== undefined ? m[1].length : 0;
-      const start = m.index + offset;
-      const end = m.index + m[0].length;
-      const inner = m[2] !== undefined ? m[2] : m[1];
-      if (earliest === null || start < earliest.start) {
-        earliest = { start, end, inner, tag: "tag" as never, tagName: tag };
-      }
+    if (!m) continue;
+
+    // Bei hasLeading-Pattern: m[1] ist der Leading-Char (oder ""), m[2] ist Inhalt.
+    // Bei !hasLeading (code): m[1] ist direkt der Inhalt.
+    const offset = hasLeading ? (m[1]?.length ?? 0) : 0;
+    const start = m.index + offset;
+    const end = m.index + m[0].length;
+    const inner = hasLeading ? (m[2] ?? "") : (m[1] ?? "");
+
+    if (earliest === null || start < earliest.start) {
+      earliest = { start, end, inner, tagName: tag };
     }
   }
 
