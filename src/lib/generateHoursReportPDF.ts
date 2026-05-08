@@ -141,6 +141,10 @@ export async function generateHoursReportPDF(params: HoursReportPdfParams) {
     if (includeZA) {
       if (r.zaStunden > 0) {
         doc.setTextColor(234, 88, 12); // orange
+        doc.text(`+${r.zaStunden.toFixed(2)}`, cols[6].x, y);
+        doc.setTextColor(0, 0, 0);
+      } else if (r.zaStunden < 0) {
+        doc.setTextColor(220, 38, 38); // rot
         doc.text(r.zaStunden.toFixed(2), cols[6].x, y);
         doc.setTextColor(0, 0, 0);
       } else {
@@ -181,11 +185,16 @@ export async function generateHoursReportPDF(params: HoursReportPdfParams) {
   doc.text(`Gesamtstunden: ${totalStunden.toFixed(2)} h`, margin, y);
   y += 5;
   if (includeZA) {
-    doc.setTextColor(234, 88, 12);
-    doc.text(`Davon ZA-Stunden: ${totalZA.toFixed(2)} h`, margin, y);
+    if (totalZA > 0) {
+      doc.setTextColor(234, 88, 12);
+      doc.text(`ZA-Saldo: +${totalZA.toFixed(2)} h (gutgeschrieben)`, margin, y);
+    } else if (totalZA < 0) {
+      doc.setTextColor(220, 38, 38);
+      doc.text(`ZA-Saldo: ${totalZA.toFixed(2)} h (vom Konto abgezogen)`, margin, y);
+    } else {
+      doc.text(`ZA-Saldo: 0 h`, margin, y);
+    }
     doc.setTextColor(0, 0, 0);
-    y += 5;
-    doc.text(`Lohnstunden (Stunden − ZA): ${(totalStunden - totalZA).toFixed(2)} h`, margin, y);
     y += 5;
   } else {
     doc.text(`Lohnstunden (gesamt): ${totalStunden.toFixed(2)} h`, margin, y);

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   calculateOvertime,
+  calculateZASaldo,
   getEntrySplit,
   getSchwellenwert,
   splitHours,
@@ -172,6 +173,57 @@ describe("getEntrySplit", () => {
     // DEFAULT_SCHEDULE Mo = 10h Schwelle (kein expliziter Schwellenwert)
     expect(result.lohnstunden).toBe(10);
     expect(result.zeitausgleich).toBe(1);
+  });
+});
+
+describe("calculateZASaldo (ZA-Konto-Saldo, kann negativ)", () => {
+  it("ueber Schwelle -> positiver Saldo", () => {
+    const sw: Schwellenwert = { mo: 10, di: 10, mi: 10, do: 10, fr: 0, sa: 0, so: 0 };
+    expect(calculateZASaldo(11, mondayDate, DEFAULT_SCHEDULE, sw)).toBe(1);
+    expect(calculateZASaldo(12.5, mondayDate, DEFAULT_SCHEDULE, sw)).toBe(2.5);
+  });
+
+  it("unter Schwelle -> negativer Saldo (Stunden werden vom ZA-Konto abgezogen)", () => {
+    const sw: Schwellenwert = { mo: 10, di: 10, mi: 10, do: 10, fr: 0, sa: 0, so: 0 };
+    expect(calculateZASaldo(8, mondayDate, DEFAULT_SCHEDULE, sw)).toBe(-2);
+    expect(calculateZASaldo(7.5, mondayDate, DEFAULT_SCHEDULE, sw)).toBe(-2.5);
+  });
+
+  it("genau auf Schwelle -> 0", () => {
+    const sw: Schwellenwert = { mo: 10, di: 10, mi: 10, do: 10, fr: 0, sa: 0, so: 0 };
+    expect(calculateZASaldo(10, mondayDate, DEFAULT_SCHEDULE, sw)).toBe(0);
+  });
+
+  it("Wochenend-Arbeit (Schwelle 0) -> alle Stunden positiv", () => {
+    const sw: Schwellenwert = { mo: 10, di: 10, mi: 10, do: 10, fr: 10, sa: 0, so: 0 };
+    expect(calculateZASaldo(5, saturdayDate, DEFAULT_SCHEDULE, sw)).toBe(5);
+  });
+
+  it("ohne Schwellenwert (NULL) -> Fallback auf Regelarbeitszeit, kann negativ", () => {
+    // DEFAULT_SCHEDULE Mo = 10h Soll. Arbeit 7h -> Saldo -3
+    expect(calculateZASaldo(7, mondayDate, DEFAULT_SCHEDULE, null)).toBe(-3);
+  });
+
+  it("Franz' echter Real-Case", () => {
+    // Franz: Schwelle Mo 10h, Schedule Mo 10h
+    const franzSchwelle: Schwellenwert = { mo: 10, di: 10, mi: 10, do: 10, fr: 0, sa: 0, so: 0 };
+    expect(calculateZASaldo(10.5, mondayDate, DEFAULT_SCHEDULE, franzSchwelle)).toBe(0.5);
+    expect(calculateZASaldo(8, mondayDate, DEFAULT_SCHEDULE, franzSchwelle)).toBe(-2);
+    expect(calculateZASaldo(11.5, mondayDate, DEFAULT_SCHEDULE, franzSchwelle)).toBe(1.5);
+  });
+
+  it("Saldo-Summe ueber mehrere Tage funktioniert (Saldo-Konzept)", () => {
+    const sw: Schwellenwert = { mo: 10, di: 10, mi: 10, do: 10, fr: 0, sa: 0, so: 0 };
+    const tage = [
+      { stunden: 11, datum: mondayDate },    // +1
+      { stunden: 12, datum: tuesdayDate },   // +2
+      { stunden: 8, datum: wednesdayDate },  // -2
+    ];
+    const summe = tage.reduce(
+      (s, t) => s + calculateZASaldo(t.stunden, t.datum, DEFAULT_SCHEDULE, sw),
+      0
+    );
+    expect(summe).toBe(1); // +1 +2 -2 = +1
   });
 });
 

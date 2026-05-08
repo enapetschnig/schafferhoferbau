@@ -253,6 +253,9 @@ export function isNonWorkingDay(date: Date, schedule?: WeekSchedule | null): boo
  * Berechnet Überstunden (= Stunden über dem Schwellenwert) für einen Tag.
  * Wenn ein expliziter Schwellenwert pro Mitarbeiter gesetzt ist, wird dieser genutzt.
  * Sonst Fallback auf die Regelarbeitszeit-Stunden des Tages (= alte Logik).
+ *
+ * Liefert nur >= 0 zurueck. Fuer ZA-Saldo (kann negativ sein wenn unter
+ * Schwellenwert gearbeitet wurde) bitte calculateZASaldo() nutzen.
  */
 export function calculateOvertime(
   actualHours: number,
@@ -262,6 +265,28 @@ export function calculateOvertime(
 ): number {
   const threshold = getSchwellenwert(date, schwellenwert, schedule);
   return Math.max(0, actualHours - threshold);
+}
+
+/**
+ * ZA-Saldo (Zeitausgleichs-Saldo) eines Tages.
+ *   actualHours - Schwellenwert
+ * Im Gegensatz zu calculateOvertime kann der Wert NEGATIV sein:
+ *   - Positiv: Stunden ueber Schwelle, gehen INS ZA-Konto.
+ *   - Negativ: Stunden unter Schwelle, werden VOM ZA-Konto abgezogen.
+ *   - 0: Genau auf Schwelle.
+ *
+ * Wichtig: Der Aufrufer muss vorher pruefen, ob es sich um einen reinen
+ * Arbeitstag handelt. Krankenstand/Urlaub/Feiertag/ZA-Tage duerfen NICHT
+ * als negativer Saldo gewertet werden (= 0 zurueckgeben statt aufrufen).
+ */
+export function calculateZASaldo(
+  actualHours: number,
+  date: Date,
+  schedule?: WeekSchedule | null,
+  schwellenwert?: Schwellenwert | null
+): number {
+  const threshold = getSchwellenwert(date, schwellenwert, schedule);
+  return Math.round((actualHours - threshold) * 100) / 100;
 }
 
 /**

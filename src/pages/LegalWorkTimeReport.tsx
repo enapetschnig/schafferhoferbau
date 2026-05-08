@@ -14,7 +14,7 @@ import { format, getDaysInMonth, parseISO } from "date-fns";
 import { de } from "date-fns/locale";
 import * as XLSX from "xlsx-js-style";
 import { generateLegalWorkTimePDF } from "@/lib/generateLegalWorkTimePDF";
-import { calculateOvertime, type WeekSchedule, type Schwellenwert } from "@/lib/workingHours";
+import { calculateZASaldo, type WeekSchedule, type Schwellenwert } from "@/lib/workingHours";
 
 type Profile = { id: string; vorname: string; nachname: string };
 
@@ -173,16 +173,14 @@ export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeR
         const beginn = g.starts.length > 0 ? g.starts.sort()[0]?.slice(0, 5) : null;
         const ende = g.ends.length > 0 ? g.ends.sort().reverse()[0]?.slice(0, 5) : null;
         const arbeitszeit = Math.round(g.stunden * 100) / 100;
-        // ZA-Stunden = (geleistet - Schwellenwert), nur fuer reine Arbeitszeit
-        // (Urlaub/Krank/etc. werden nicht als ZA gewertet).
-        // calculateOvertime nutzt den expliziten Schwellenwert oder faellt
-        // auf Regelarbeitszeit zurueck wenn nicht gesetzt - konsistent mit
-        // dem, was beim Speichern (TimeTracking) berechnet wurde.
+        // ZA-Saldo = (geleistet - Schwellenwert), KANN NEGATIV sein wenn
+        // unter Schwelle gearbeitet (Stunden werden vom ZA-Konto abgezogen).
+        // Nur fuer reine Arbeitstage gewertet (Urlaub/Krank/etc. = 0 Saldo).
         let ueberstunden = 0;
         const isPureWorkDay = !["Urlaub", "Krankenstand", "Feiertag", "Zeitausgleich"]
           .some((t) => g.taetigkeit.includes(t));
         if (isPureWorkDay) {
-          ueberstunden = calculateOvertime(arbeitszeit, dayDate, schedule, schwellenwert);
+          ueberstunden = calculateZASaldo(arbeitszeit, dayDate, schedule, schwellenwert);
         }
         dayRows.push({
           datum, beginn, ende,
@@ -258,7 +256,14 @@ export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeR
         row.arbeitszeit > 0 ? row.arbeitszeit.toFixed(2) : "",
       ];
       if (includeOvertime) {
-        wsData.push([...baseRow, row.ueberstunden > 0 ? row.ueberstunden.toFixed(2) : "", diaetenText, anmerkungText]);
+        wsData.push([
+          ...baseRow,
+          row.ueberstunden !== 0
+            ? (row.ueberstunden > 0 ? `+${row.ueberstunden.toFixed(2)}` : row.ueberstunden.toFixed(2))
+            : "",
+          diaetenText,
+          anmerkungText,
+        ]);
       } else {
         wsData.push([...baseRow, diaetenText, anmerkungText]);
       }
@@ -266,7 +271,13 @@ export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeR
 
     wsData.push([]);
     if (includeOvertime) {
-      wsData.push(["", "", "", "Summe:", formatPause(totalPause), totalHours.toFixed(2), totalOvertime > 0 ? totalOvertime.toFixed(2) : "", "", ""]);
+      wsData.push([
+        "", "", "", "Summe:", formatPause(totalPause), totalHours.toFixed(2),
+        totalOvertime !== 0
+          ? (totalOvertime > 0 ? `+${totalOvertime.toFixed(2)}` : totalOvertime.toFixed(2))
+          : "",
+        "", "",
+      ]);
     } else {
       wsData.push(["", "", "", "Summe:", formatPause(totalPause), totalHours.toFixed(2), "", ""]);
     }
@@ -376,13 +387,17 @@ export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeR
                 <p className="text-2xl font-bold">{totalHours.toFixed(1)}h</p>
               </CardContent>
             </Card>
-            {totalOvertime > 0 && (
-              <Card className="border-orange-200 dark:border-orange-800">
+            {totalOvertime !== 0 && (
+              <Card className={totalOvertime < 0 ? "border-red-200 dark:border-red-800" : "border-orange-200 dark:border-orange-800"}>
                 <CardHeader className="pb-2 pt-3 px-3">
-                  <CardTitle className="text-sm font-medium text-orange-600 dark:text-orange-400">Überstunden</CardTitle>
+                  <CardTitle className={`text-sm font-medium ${totalOvertime < 0 ? "text-red-600 dark:text-red-400" : "text-orange-600 dark:text-orange-400"}`}>
+                    ZA-Saldo
+                  </CardTitle>
                 </CardHeader>
                 <CardContent className="px-3 pb-3">
-                  <p className="text-2xl font-bold text-orange-600 dark:text-orange-400">{totalOvertime.toFixed(1)}h</p>
+                  <p className={`text-2xl font-bold ${totalOvertime < 0 ? "text-red-600 dark:text-red-400" : "text-orange-600 dark:text-orange-400"}`}>
+                    {totalOvertime > 0 ? "+" : ""}{totalOvertime.toFixed(1)}h
+                  </p>
                 </CardContent>
               </Card>
             )}
@@ -487,7 +502,9 @@ export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeR
                           </TableCell>
                           <TableCell className="text-sm text-right font-medium">
                             {row.ueberstunden > 0 ? (
-                              <span className="text-orange-600 dark:text-orange-400">{row.ueberstunden.toFixed(2)}h</span>
+                              <span className="text-orange-600 dark:text-orange-400">+{row.ueberstunden.toFixed(2)}h</span>
+                            ) : row.ueberstunden < 0 ? (
+                              <span className="text-red-600 dark:text-red-400">{row.ueberstunden.toFixed(2)}h</span>
                             ) : "–"}
                           </TableCell>
                           <TableCell className="text-sm text-center">
@@ -517,8 +534,10 @@ export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeR
                       <TableCell colSpan={4} className="font-bold">Summe</TableCell>
                       <TableCell className="font-bold">{formatPause(totalPause)}</TableCell>
                       <TableCell className="text-right font-bold">{totalHours.toFixed(2)}h</TableCell>
-                      <TableCell className="text-right font-bold text-orange-600 dark:text-orange-400">
-                        {totalOvertime > 0 ? `${totalOvertime.toFixed(2)}h` : "–"}
+                      <TableCell className={`text-right font-bold ${totalOvertime < 0 ? "text-red-600 dark:text-red-400" : "text-orange-600 dark:text-orange-400"}`}>
+                        {totalOvertime !== 0
+                          ? (totalOvertime > 0 ? `+${totalOvertime.toFixed(2)}h` : `${totalOvertime.toFixed(2)}h`)
+                          : "–"}
                       </TableCell>
                       <TableCell className="text-center font-bold">
                         {totalDiaeten > 0 ? `${totalDiaeten} Tage` : "–"}

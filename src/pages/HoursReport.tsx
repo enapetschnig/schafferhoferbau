@@ -22,7 +22,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { getNormalWorkingHours, type WeekSchedule, DEFAULT_SCHEDULE, type Schwellenwert, calculateOvertime as calculateOvertimeShared, getEntrySplit } from "@/lib/workingHours";
+import { getNormalWorkingHours, type WeekSchedule, DEFAULT_SCHEDULE, type Schwellenwert, calculateZASaldo, getEntrySplit, getSchwellenwert } from "@/lib/workingHours";
 import { generateHoursReportPDF } from "@/lib/generateHoursReportPDF";
 
 interface TimeEntry {
@@ -372,10 +372,15 @@ export default function HoursReport() {
     return days;
   };
 
-  // Nutzt die zentrale calculateOvertime mit dem expliziten Schwellenwert -
-  // konsistent mit dem, was beim Speichern (TimeTracking) berechnet wurde.
+  // ZA-Saldo eines Tages (kann negativ sein wenn unter Schwellenwert gearbeitet).
+  // Aufrufer-Verantwortung: bei Abwesenheits-Tagen (Urlaub/Krank/Feiertag/ZA)
+  // gar nicht erst aufrufen, sonst wird der Tag faelschlicherweise als
+  // negative ZA gewertet.
+  const ABSENCE_TAETIGKEITEN = new Set(["Urlaub", "Krankenstand", "Feiertag", "Zeitausgleich"]);
+  const isAbsenceTaetigkeit = (taetigkeit?: string | null) =>
+    !!taetigkeit && ABSENCE_TAETIGKEITEN.has(taetigkeit);
   const calculateOvertime = (date: Date, totalHours: number): number => {
-    return calculateOvertimeShared(totalHours, date, employeeSchedule, employeeSchwellenwert);
+    return calculateZASaldo(totalHours, date, employeeSchedule, employeeSchwellenwert);
   };
 
   const toMin = (t: string) => {
@@ -446,7 +451,10 @@ export default function HoursReport() {
   ).flatMap((dayEntries) => deduplicateDayEntries(dayEntries));
 
   const totalHours = uniqueEntriesByDay.reduce((sum, entry) => sum + entry.stunden, 0);
+  // Saldo-Summe: positive ZA-Stunden minus negative (= unter Schwelle gearbeitete Stunden).
+  // Abwesenheits-Tage tragen nichts zum Saldo bei.
   const totalOvertime = uniqueEntriesByDay.reduce((sum, entry) => {
+    if (isAbsenceTaetigkeit(entry.taetigkeit)) return sum;
     const entryDate = parseISO(entry.datum);
     return sum + calculateOvertime(entryDate, entry.stunden);
   }, 0);
@@ -491,17 +499,23 @@ export default function HoursReport() {
       .sort((a, b) => a.datum.localeCompare(b.datum))
       .map((d) => {
         const totalStd = d.entries.reduce((s, e) => s + e.stunden, 0);
-        // ZA-Stunden: aus DB summieren, fallback auf Live-Berechnung
         const totalZAFromDB = d.entries.reduce((s, e) => s + (e.zeitausgleich_stunden ?? 0), 0);
         const totalLohnFromDB = d.entries.reduce((s, e) => s + (e.lohnstunden ?? 0), 0);
         const hasDBValues = d.entries.some((e) => e.lohnstunden != null || e.zeitausgleich_stunden != null);
         const dayDate = parseISO(d.datum);
-        const za = hasDBValues
-          ? totalZAFromDB
-          : calculateOvertime(dayDate, totalStd);
+        // Bei reinen Arbeitstagen: ZA-Saldo (kann negativ); bei Abwesenheit: 0
+        const isAbsence = d.entries.some((e) => isAbsenceTaetigkeit(e.taetigkeit));
+        const za = isAbsence
+          ? 0
+          : hasDBValues
+            ? totalZAFromDB
+            : calculateOvertime(dayDate, totalStd);
+        // Lohnstunden = min(actualHours, schwellenwert) bei Live-Berechnung,
+        // sonst aus DB. Damit funktioniert es auch bei negativem Saldo.
+        const threshold = getSchwellenwert(dayDate, employeeSchwellenwert, employeeSchedule);
         const lohn = hasDBValues
           ? totalLohnFromDB
-          : Math.max(0, totalStd - za);
+          : Math.min(totalStd, threshold);
 
         // Beginn/Ende: Min Start / Max End
         const starts = d.entries.map((e) => e.start_time).filter(Boolean).sort();
@@ -658,8 +672,11 @@ export default function HoursReport() {
               const endMin = toMin(entry.end_time);
               const pauseMins = entry.pause_minutes || 0;
               const calculatedHours = Math.max(0, (endMin - startMin - pauseMins) / 60);
-              const overtime = calculateOvertime(dayDate, calculatedHours);
-              const overtimeText = overtime > 0 ? overtime.toFixed(2) : "";
+              const overtime = isAbsenceTaetigkeit(entry.taetigkeit)
+                ? 0
+                : calculateOvertime(dayDate, calculatedHours);
+              // Saldo: positive Werte mit +Vorzeichen, negative mit -Vorzeichen, 0 leer
+              const overtimeText = overtime !== 0 ? (overtime > 0 ? `+${overtime.toFixed(2)}` : overtime.toFixed(2)) : "";
 
               let morningStart = "";
               let morningEnd = "";
@@ -757,11 +774,16 @@ export default function HoursReport() {
             const p = e.pause_minutes || 0;
             return sum + Math.max(0, (en - s - p) / 60);
           }, 0);
-          const dayTotalOvertime = calculateOvertime(dayDate, dayTotalHours);
+          // Tagessumme: Saldo-Anzeige nur fuer reine Arbeitstage (kein Mix Urlaub+Arbeit)
+          const dayHasAbsence = uniqueDayEntries.some((e) => isAbsenceTaetigkeit(e.taetigkeit));
+          const dayTotalOvertime = dayHasAbsence ? 0 : calculateOvertime(dayDate, dayTotalHours);
+          const dayOvertimeText = includeOvertime && dayTotalOvertime !== 0
+            ? (dayTotalOvertime > 0 ? `+${dayTotalOvertime.toFixed(2)}` : dayTotalOvertime.toFixed(2))
+            : "";
           worksheetData.push([
             "", "", "", "", "", "Tagessumme:",
             dayTotalHours.toFixed(2),
-            includeOvertime && dayTotalOvertime > 0 ? dayTotalOvertime.toFixed(2) : "",
+            dayOvertimeText,
             "", "", "", "",
           ]);
         }
@@ -782,10 +804,13 @@ export default function HoursReport() {
 
     // Summenzeile - immer echte totalHours; includeOvertime steuert nur,
     // ob die Ueberstunden-Spalte (rechts daneben) befuellt wird.
+    const totalOvertimeText = includeOvertime
+      ? (totalOvertime > 0 ? `+${totalOvertime.toFixed(2)}` : totalOvertime.toFixed(2))
+      : "";
     worksheetData.push([
       "", "", "", "", "", "SUMME",
       totalHours.toFixed(2),
-      includeOvertime ? totalOvertime.toFixed(2) : "",
+      totalOvertimeText,
       "", "", "", "",
     ]);
 
@@ -1092,8 +1117,10 @@ export default function HoursReport() {
                       </div>
                       {!selectedIsExternal && (
                         <div>
-                          <p className="text-sm text-muted-foreground">Überstunden</p>
-                          <p className="text-2xl font-bold">{totalOvertime.toFixed(2)} h</p>
+                          <p className="text-sm text-muted-foreground">ZA-Saldo</p>
+                          <p className={`text-2xl font-bold ${totalOvertime < 0 ? "text-red-600" : totalOvertime > 0 ? "text-orange-600" : ""}`}>
+                            {totalOvertime > 0 ? "+" : ""}{totalOvertime.toFixed(2)} h
+                          </p>
                         </div>
                       )}
                       <div>
@@ -1172,7 +1199,9 @@ export default function HoursReport() {
                             return dayEntries.map((entry, entryIndex) => {
                               const lunchBreak = calculateLunchBreak(entry);
                               const isOverlapping = overlappingIds.has(entry.id);
-                              const overtime = isOverlapping ? 0 : calculateOvertime(day.date, entry.stunden);
+                              const overtime = isOverlapping || isAbsenceTaetigkeit(entry.taetigkeit)
+                                ? 0
+                                : calculateOvertime(day.date, entry.stunden);
                               const project = projects[entry.project_id];
                               const ortIcon = entry.location_type === "baustelle" ? "🏗️" : entry.location_type === "werkstatt" ? "🏭" : "";
                               const ortText = entry.location_type === "baustelle" ? "Baustelle" : entry.location_type === "werkstatt" ? "Lager" : "";
@@ -1271,6 +1300,11 @@ export default function HoursReport() {
                                         +{overtime.toFixed(2)} h
                                       </span>
                                     )}
+                                    {overtime < 0 && (
+                                      <span className="text-red-600 font-medium">
+                                        {overtime.toFixed(2)} h
+                                      </span>
+                                    )}
                                   </TableCell>
                                   <TableCell className="text-right text-xs">
                                     {entry.kilometer && entry.kilometer > 0 ? `${entry.kilometer}` : ""}
@@ -1333,8 +1367,8 @@ export default function HoursReport() {
                           <TableCell className="text-right font-bold">
                             {totalHours.toFixed(2)} h
                           </TableCell>
-                          <TableCell className="text-right font-bold text-orange-600">
-                            {totalOvertime.toFixed(2)} h
+                          <TableCell className={`text-right font-bold ${totalOvertime < 0 ? "text-red-600" : "text-orange-600"}`}>
+                            {totalOvertime > 0 ? "+" : ""}{totalOvertime.toFixed(2)} h
                           </TableCell>
                           <TableCell className="text-right font-bold text-xs">
                             {totalKilometer > 0 ? `${totalKilometer.toFixed(0)} km` : ""}

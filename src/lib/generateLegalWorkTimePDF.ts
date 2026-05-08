@@ -130,10 +130,14 @@ export async function generateLegalWorkTimePDF(params: LegalWorkTimePDFParams) {
     doc.text(row.arbeitszeit > 0 ? `${row.arbeitszeit.toFixed(2)} h` : "–", colX[5], y);
 
     if (includeZA) {
-      // ZA-Stunden in orange wenn vorhanden
+      // ZA-Saldo in orange wenn positiv, rot wenn negativ
       const za = row.ueberstunden || 0;
       if (za > 0) {
         doc.setTextColor(234, 88, 12); // orange-600
+        doc.text(`+${za.toFixed(2)} h`, colX[6], y);
+        doc.setTextColor(0, 0, 0);
+      } else if (za < 0) {
+        doc.setTextColor(220, 38, 38); // red-600
         doc.text(`${za.toFixed(2)} h`, colX[6], y);
         doc.setTextColor(0, 0, 0);
       } else {
@@ -179,9 +183,14 @@ export async function generateLegalWorkTimePDF(params: LegalWorkTimePDFParams) {
   doc.text(`Gesamtarbeitszeit: ${totalHours.toFixed(2)} Stunden`, margin, y);
   y += 5;
 
-  if (includeZA && totalOvertime > 0) {
-    doc.setTextColor(234, 88, 12);
-    doc.text(`Davon ZA-Stunden: ${totalOvertime.toFixed(2)} Stunden`, margin, y);
+  if (includeZA && totalOvertime !== 0) {
+    if (totalOvertime > 0) {
+      doc.setTextColor(234, 88, 12);
+      doc.text(`ZA-Saldo: +${totalOvertime.toFixed(2)} Stunden (gutgeschrieben)`, margin, y);
+    } else {
+      doc.setTextColor(220, 38, 38);
+      doc.text(`ZA-Saldo: ${totalOvertime.toFixed(2)} Stunden (vom Konto abgezogen)`, margin, y);
+    }
     doc.setTextColor(0, 0, 0);
     y += 5;
   }
