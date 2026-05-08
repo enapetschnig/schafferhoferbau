@@ -8,6 +8,8 @@ import { ImageEditor } from "@/components/ImageEditor";
 import { supabase } from "@/integrations/supabase/client";
 import { sanitizeStorageFileName } from "@/lib/storageFileName";
 import { formatChatText } from "@/lib/formatChatText";
+import { ZoomableImage } from "@/components/ZoomableImage";
+import { PdfPreview } from "@/components/PdfPreview";
 import { useToast } from "@/hooks/use-toast";
 import { normalizeImageOrientation } from "@/lib/imageOrientation";
 
@@ -762,13 +764,9 @@ export function ProjectChat({ projectId, projectName, isAdmin }: { projectId: st
                 >
                   {previewImage && (
                     isPdfPreview ? (
-                      <iframe
-                        src={previewImage}
-                        title="PDF-Vorschau"
-                        className="w-full h-full bg-white rounded-lg"
-                      />
+                      <PdfPreview pdfUrl={previewImage} className="w-full h-full overflow-auto bg-white rounded-lg" />
                     ) : (
-                      <img src={previewImage} alt="Vorschau" className="max-w-full max-h-full object-contain rounded-lg" />
+                      <ZoomableImage src={previewImage} alt="Vorschau" />
                     )
                   )}
                 </div>

@@ -10,7 +10,7 @@ import { Download, Calendar, Briefcase, MapPin, Wrench, Users, Car } from "lucid
 import * as XLSX from "xlsx-js-style";
 import { format, parseISO } from "date-fns";
 import { de } from "date-fns/locale";
-import { calculateZASaldo, type WeekSchedule, type Schwellenwert } from "@/lib/workingHours";
+import { calculateOvertime, type WeekSchedule, type Schwellenwert } from "@/lib/workingHours";
 
 interface DetailedProjectEntry {
   id: string;
@@ -191,8 +191,9 @@ export default function ProjectHoursReport() {
         const schedule = employeeSchedules[entry.user_id] || null;
         const schwellenwert = employeeSchwellenwerte[entry.user_id] || null;
         const isAbsence = ["Urlaub", "Krankenstand", "Feiertag", "Zeitausgleich"].includes(entry.taetigkeit || "");
-        // ZA-Saldo (kann negativ); externe Mitarbeiter haben kein ZA-Konto
-        const ot = isExt || isAbsence ? 0 : calculateZASaldo(entry.stunden, new Date(entry.datum), schedule, schwellenwert);
+        // Pro Projekt nur die echten Ueberstunden (>= 0). Saldo (negativ bei
+        // Unterzeit) gehoert ins Mitarbeiter-Konto, nicht ins Projekt-Reporting.
+        const ot = isExt || isAbsence ? 0 : calculateOvertime(entry.stunden, new Date(entry.datum), schedule, schwellenwert);
         const km = entry.kilometer || 0;
 
         total += entry.stunden;
@@ -578,12 +579,8 @@ export default function ProjectHoursReport() {
                       </TableCell>
                       <TableCell className="text-right font-bold">{emp.totalHours.toFixed(2)}</TableCell>
                       <TableCell className="text-right">{emp.isExternal ? "–" : emp.normalHours.toFixed(2)}</TableCell>
-                      <TableCell className={`text-right ${emp.overtime < 0 ? "text-red-600" : "text-orange-600"}`}>
-                        {emp.isExternal
-                          ? "–"
-                          : emp.overtime !== 0
-                            ? (emp.overtime > 0 ? `+${emp.overtime.toFixed(2)}` : emp.overtime.toFixed(2))
-                            : "–"}
+                      <TableCell className="text-right text-orange-600">
+                        {emp.isExternal ? "–" : (emp.overtime > 0 ? emp.overtime.toFixed(2) : "–")}
                       </TableCell>
                       <TableCell className="text-right">{emp.km > 0 ? emp.km.toFixed(0) : "–"}</TableCell>
                     </TableRow>

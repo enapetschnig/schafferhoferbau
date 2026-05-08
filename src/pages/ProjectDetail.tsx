@@ -16,6 +16,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { PageHeader } from "@/components/PageHeader";
 import { FileViewer } from "@/components/FileViewer";
 import { Nachkalkulation } from "@/components/Nachkalkulation";
+import { ZoomableImage } from "@/components/ZoomableImage";
 import { normalizeImageOrientation } from "@/lib/imageOrientation";
 import { sanitizeStorageFileName } from "@/lib/storageFileName";
 
@@ -1247,7 +1248,7 @@ const ProjectDetail = () => {
                     (e.currentTarget as any)._touchStart = null;
                   }}
                 >
-                  {lightboxImage && <img src={lightboxImage} alt="Vorschau" className="max-w-full max-h-full object-contain rounded-lg pointer-events-none" draggable={false} />}
+                  {lightboxImage && <ZoomableImage src={lightboxImage} alt="Vorschau" />}
                 </div>
                 {imageFiles.length > 1 && (
                   <div className="flex justify-center gap-4 pb-4">

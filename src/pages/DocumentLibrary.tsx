@@ -14,6 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { sanitizeStorageFileName } from "@/lib/storageFileName";
+import { ZoomableImage } from "@/components/ZoomableImage";
 
 type DocFile = { name: string; id: string; created_at: string };
 type Category = { id: string; key: string; label: string; sort_order: number };
@@ -586,14 +587,7 @@ export default function DocumentLibrary() {
                     (e.currentTarget as any)._touchStart = null;
                   }}
                 >
-                  {lightboxImage && (
-                    <img
-                      src={lightboxImage}
-                      alt="Vorschau"
-                      className="max-w-full max-h-full object-contain rounded-lg pointer-events-none"
-                      draggable={false}
-                    />
-                  )}
+                  {lightboxImage && <ZoomableImage src={lightboxImage} alt="Vorschau" />}
                 </div>
                 {imgs.length > 1 && (
                   <div className="flex justify-center gap-4 pb-4">
