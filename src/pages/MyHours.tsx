@@ -461,13 +461,13 @@ const MyHours = () => {
                   <div>
                     <span className="text-muted-foreground">Lohnstunden: </span>
                     <span className="font-bold">
-                      {entries.reduce((s, e) => s + (e.lohnstunden || e.stunden || 0), 0).toFixed(2)} Std.
+                      {entries.reduce((s, e) => s + (e.lohnstunden ?? e.stunden ?? 0), 0).toFixed(2)} Std.
                     </span>
                   </div>
                   <div>
                     <span className="text-muted-foreground">ZA-Stunden: </span>
                     <span className="font-bold">
-                      {entries.reduce((s, e) => s + (e.zeitausgleich_stunden || 0), 0).toFixed(2)} Std.
+                      {entries.reduce((s, e) => s + (e.zeitausgleich_stunden ?? 0), 0).toFixed(2)} Std.
                     </span>
                   </div>
                   <div>
