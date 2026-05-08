@@ -208,6 +208,22 @@ export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeR
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  // Live-Sync: bei Aenderung am ausgewaehlten Mitarbeiter (Schwellenwert,
+  // Regelarbeitszeit) automatisch neu laden, damit die Saldo-Berechnungen
+  // sofort die neuen Einstellungen widerspiegeln.
+  useEffect(() => {
+    if (!selectedUserId) return;
+    const channel = supabase
+      .channel(`legal-work-time-watch-${selectedUserId}`)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "employees", filter: `user_id=eq.${selectedUserId}` },
+        () => { fetchData(); }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [selectedUserId, fetchData]);
+
   const totalHours = rows.reduce((sum, r) => sum + r.arbeitszeit, 0);
   const totalOvertime = rows.reduce((sum, r) => sum + r.ueberstunden, 0);
   const totalPause = rows.reduce((sum, r) => sum + r.pauseMinutes, 0);

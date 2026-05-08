@@ -153,6 +153,25 @@ export default function HoursReport() {
     }
   }, [month, year, selectedUserId]);
 
+  // Live-Sync: bei Aenderung am ausgewaehlten Mitarbeiter (z.B. Schwellenwert
+  // oder Regelarbeitszeit-Update via Edit-Modal in einem anderen Tab) automatisch
+  // neu laden. So sind die Saldo-Berechnungen immer aktuell.
+  useEffect(() => {
+    if (!selectedUserId) return;
+    const channel = supabase
+      .channel(`employees-watch-${selectedUserId}`)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "employees", filter: `user_id=eq.${selectedUserId}` },
+        () => {
+          fetchEmployeeSchedule(selectedUserId);
+          fetchTimeEntries();
+        }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [selectedUserId]);
+
   const [selectedIsExternal, setSelectedIsExternal] = useState(false);
 
   const fetchEmployeeSchedule = async (userId: string) => {

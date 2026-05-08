@@ -165,6 +165,9 @@ export function BatchEmployeeSettings({ employees, onSaved }: Props) {
     }
     toast({ title: `${selected.size} Mitarbeiter aktualisiert` });
     setOpen(false);
+    // Auswahl zuruecksetzen, damit beim naechsten Oeffnen niemand
+    // versehentlich nochmal die gleichen Werte appliziert bekommt.
+    setSelected(new Set());
     onSaved?.();
   };
 
