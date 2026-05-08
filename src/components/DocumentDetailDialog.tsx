@@ -33,6 +33,8 @@ export type IncomingDocument = {
   zusatz_seiten_urls?: string[] | null;
   waren_fotos_urls?: string[] | null;
   ist_retour?: boolean | null;
+  ziel_projekt_id?: string | null;
+  ziel_projekt_name?: string | null;
   created_at: string;
   project_name?: string;
   employee_name?: string;
@@ -131,10 +133,20 @@ export function DocumentDetailDialog({ document, open, onOpenChange, isAdmin, on
             <DialogTitle className="flex items-center gap-2 flex-wrap">
               <Badge className={typInfo.color}>{typInfo.label}</Badge>
               <Badge className={statusInfo.color}>{statusInfo.label}</Badge>
+              {document.ist_retour && (
+                <Badge className="bg-orange-100 text-orange-800">Retour</Badge>
+              )}
               {document.dokument_nummer && (
                 <span className="text-sm font-mono text-muted-foreground">#{document.dokument_nummer}</span>
               )}
             </DialogTitle>
+            {document.ist_retour && (
+              <DialogDescription className="text-sm">
+                {document.ziel_projekt_name
+                  ? <>Umbuchung von <strong>{document.project_name || "Quelle"}</strong> auf <strong>{document.ziel_projekt_name}</strong></>
+                  : <>Retoure auf Lager (von {document.project_name || "Quelle"})</>}
+              </DialogDescription>
+            )}
           </DialogHeader>
 
           <div className="space-y-4">

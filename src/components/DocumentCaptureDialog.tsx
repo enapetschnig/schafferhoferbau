@@ -71,6 +71,10 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
   const [signatureName, setSignatureName] = useState("");
   const [saving, setSaving] = useState(false);
   const [istRetour, setIstRetour] = useState(false);
+  // Bei Retourlieferschein: Wo geht die Ware hin?
+  // "lager" = zurueck ins Lager (kein Ziel-Projekt). "baustelle" = auf andere Baustelle (Select sichtbar).
+  const [retourZiel, setRetourZiel] = useState<"lager" | "baustelle">("lager");
+  const [zielProjektId, setZielProjektId] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
 
   const [step, setStep] = useState<"photo" | "review" | "sign">("photo");
@@ -93,15 +97,19 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
       (async () => {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
-        const { data } = await supabase
-          .from("user_roles")
-          .select("role")
-          .eq("user_id", user.id)
-          .maybeSingle();
-        const admin = data?.role === "administrator";
+        const [{ data: roleData }, { data: empData }] = await Promise.all([
+          supabase.from("user_roles").select("role").eq("user_id", user.id).maybeSingle(),
+          supabase.from("employees").select("vorname, nachname").eq("user_id", user.id).maybeSingle(),
+        ]);
+        const admin = roleData?.role === "administrator";
         setIsAdmin(admin);
         // Non-Admin darf keine Rechnung erfassen - auf Lieferschein zwingen
         if (!admin && docType === "rechnung") setDocType("lieferschein");
+        // Mitarbeiter-Name fuer Unterschrift vorbefuellen (uebersteuerbar)
+        if (empData) {
+          const name = `${empData.vorname || ""} ${empData.nachname || ""}`.trim();
+          if (name) setSignatureName((prev) => prev || name);
+        }
       })();
     }
   }, [open, fetchProjects, defaultProjectId, defaultDocType, skipPhoto]);
@@ -126,6 +134,8 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
     setExtracting(false);
     setSaving(false);
     setIstRetour(false);
+    setRetourZiel("lager");
+    setZielProjektId("");
   };
 
   const handleFileSelected = (file: File) => {
@@ -251,6 +261,10 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
   const handleUploadAndExtract = async () => {
     if (!imageFile || !projectId) {
       toast({ variant: "destructive", title: "Fehler", description: "Bitte Foto und Projekt auswählen" });
+      return;
+    }
+    if (istRetour && retourZiel === "baustelle" && !zielProjektId) {
+      toast({ variant: "destructive", title: "Ziel-Baustelle fehlt", description: "Bitte die Baustelle auswählen, auf die die Ware umgebucht wird." });
       return;
     }
 
@@ -428,6 +442,7 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
       zusatz_seiten_urls: zusatzUrls.length > 0 ? zusatzUrls : null,
       waren_fotos_urls: warenUrls.length > 0 ? warenUrls : null,
       ist_retour: istRetour,
+      ziel_projekt_id: istRetour && retourZiel === "baustelle" && zielProjektId ? zielProjektId : null,
       // Retour bleibt "offen", normale auf "offen" (Default)
       status: "offen",
     });
@@ -525,7 +540,11 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
                       <Checkbox
                         id="retour-check"
                         checked={istRetour}
-                        onCheckedChange={(checked) => setIstRetour(!!checked)}
+                        onCheckedChange={(checked) => {
+                          const v = !!checked;
+                          setIstRetour(v);
+                          if (!v) { setRetourZiel("lager"); setZielProjektId(""); }
+                        }}
                       />
                       <label htmlFor="retour-check" className="text-sm text-muted-foreground cursor-pointer select-none">
                         Retourlieferschein (Ware geht zurück ins Lager oder auf andere Baustelle)
@@ -537,7 +556,7 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
 
               {/* Project */}
               <div className="space-y-2">
-                <Label>Projekt / Baustelle *</Label>
+                <Label>{istRetour ? "Quell-Baustelle (von wo wird abgebucht) *" : "Projekt / Baustelle *"}</Label>
                 <Select value={projectId} onValueChange={setProjectId}>
                   <SelectTrigger><SelectValue placeholder="Projekt auswählen" /></SelectTrigger>
                   <SelectContent>
@@ -547,6 +566,52 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
                   </SelectContent>
                 </Select>
               </div>
+
+              {/* Zielort bei Retour */}
+              {istRetour && (
+                <div className="space-y-2 p-3 rounded-lg border bg-muted/30">
+                  <Label className="text-sm">Wohin geht die Ware?</Label>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => { setRetourZiel("lager"); setZielProjektId(""); }}
+                      className={`flex-1 rounded-md border-2 px-3 py-2 text-sm transition-all ${
+                        retourZiel === "lager"
+                          ? "border-primary bg-primary/10 font-semibold text-primary"
+                          : "border-muted-foreground/30 text-muted-foreground hover:border-primary/50"
+                      }`}
+                    >
+                      Zurück ins Lager
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRetourZiel("baustelle")}
+                      className={`flex-1 rounded-md border-2 px-3 py-2 text-sm transition-all ${
+                        retourZiel === "baustelle"
+                          ? "border-primary bg-primary/10 font-semibold text-primary"
+                          : "border-muted-foreground/30 text-muted-foreground hover:border-primary/50"
+                      }`}
+                    >
+                      Auf andere Baustelle
+                    </button>
+                  </div>
+                  {retourZiel === "baustelle" && (
+                    <div>
+                      <Label className="text-xs text-muted-foreground">Ziel-Baustelle (wird hinzugebucht) *</Label>
+                      <Select value={zielProjektId} onValueChange={setZielProjektId}>
+                        <SelectTrigger><SelectValue placeholder="Ziel-Baustelle auswählen" /></SelectTrigger>
+                        <SelectContent>
+                          {projects
+                            .filter((p) => p.id !== projectId)
+                            .map((p) => (
+                              <SelectItem key={p.id} value={p.id}>{p.name}{p.plz ? ` (${p.plz})` : ""}</SelectItem>
+                            ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Photo */}
               <div className="space-y-2">

@@ -222,7 +222,7 @@ export default function IncomingInvoices() {
     // Fetch invoices (typ = 'rechnung')
     const { data: invData, error: invError } = await supabase
       .from("incoming_documents")
-      .select("*, projects(name)")
+      .select("*, projects!incoming_documents_project_id_fkey(name)")
       .eq("typ", "rechnung")
       .gte("created_at", `${startDate}T00:00:00`)
       .lte("created_at", `${endDate}T23:59:59`)
@@ -231,7 +231,7 @@ export default function IncomingInvoices() {
     // Fetch lieferscheine for matching
     const { data: lsData } = await supabase
       .from("incoming_documents")
-      .select("*, projects(name)")
+      .select("*, projects!incoming_documents_project_id_fkey(name)")
       .in("typ", ["lieferschein", "lagerlieferschein"])
       .gte("created_at", `${startDate}T00:00:00`)
       .lte("created_at", `${endDate}T23:59:59`);

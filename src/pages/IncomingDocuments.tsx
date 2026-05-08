@@ -93,7 +93,7 @@ export default function IncomingDocuments() {
 
     let query = supabase
       .from("incoming_documents")
-      .select("*, projects(name)")
+      .select("*, projects!incoming_documents_project_id_fkey(name), ziel_projekt:projects!incoming_documents_ziel_projekt_id_fkey(name)")
       .gte("created_at", `${startDate}T00:00:00`)
       .lte("created_at", `${endDate}T23:59:59`)
       .order("created_at", { ascending: false });
@@ -123,6 +123,7 @@ export default function IncomingDocuments() {
         data.map((d: any) => ({
           ...d,
           project_name: d.projects?.name || "–",
+          ziel_projekt_name: d.ziel_projekt?.name || null,
           employee_name: nameMap[d.user_id] || "–",
         }))
       );
