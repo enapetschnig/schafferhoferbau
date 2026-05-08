@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Users, Save, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { DEFAULT_SCHEDULE, LEHRLING_SCHEDULE, type WeekSchedule, type DaySchedule, type Schwellenwert } from "@/lib/workingHours";
+import { DEFAULT_SCHEDULE, LEHRLING_SCHEDULE, DEFAULT_SCHWELLENWERT, type WeekSchedule, type DaySchedule, type Schwellenwert } from "@/lib/workingHours";
 
 type EmployeeLite = {
   id: string;
@@ -35,9 +35,7 @@ const DAY_LABELS: Record<DayKey, string> = {
   mo: "Mo", di: "Di", mi: "Mi", do: "Do", fr: "Fr", sa: "Sa", so: "So",
 };
 
-const DEFAULT_SCHWELLENWERT: Record<DayKey, number> = {
-  mo: 10, di: 10, mi: 9.5, do: 9.5, fr: 0, sa: 0, so: 0,
-};
+// DEFAULT_SCHWELLENWERT wird zentral aus workingHours.ts importiert
 
 interface Props {
   employees: EmployeeLite[];

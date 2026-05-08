@@ -9,6 +9,7 @@ interface DayRow {
   ende: string | null;
   pauseMinutes: number;
   arbeitszeit: number;
+  ueberstunden?: number; // ZA-Stunden des Tages
   anmerkung: string | null;
   schlechtwetterStunden: number;
 }
@@ -22,6 +23,9 @@ interface LegalWorkTimePDFParams {
   totalPause: number;
   workingDays: number;
   totalBadWeatherHours?: number;
+  totalOvertime?: number;
+  /** Wenn true: zeigt eine zusaetzliche Spalte 'ZA-Std' und Summe unten. */
+  includeZA?: boolean;
 }
 
 const formatPause = (minutes: number) => {
@@ -40,7 +44,13 @@ const ANMERKUNG_LABELS: Record<string, string> = {
 };
 
 export async function generateLegalWorkTimePDF(params: LegalWorkTimePDFParams) {
-  const { employeeName, month, year, rows, totalHours, totalPause, workingDays, totalBadWeatherHours = 0 } = params;
+  const {
+    employeeName, month, year, rows,
+    totalHours, totalPause, workingDays,
+    totalBadWeatherHours = 0,
+    totalOvertime = 0,
+    includeZA = false,
+  } = params;
 
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const pageWidth = 210;
@@ -70,9 +80,13 @@ export async function generateLegalWorkTimePDF(params: LegalWorkTimePDFParams) {
   doc.text(`Zeitraum: ${month} ${year}`, margin, y);
   y += 10;
 
-  // Table header — with Anmerkung column
-  const colX = [margin, margin + 22, margin + 44, margin + 64, margin + 82, margin + 104, margin + 130];
-  const colLabels = ["Datum", "Wochentag", "Beginn", "Ende", "Pause", "Arbeitszeit", "Anmerkung"];
+  // Table header — mit/ohne ZA-Spalte
+  const colX = includeZA
+    ? [margin, margin + 20, margin + 40, margin + 58, margin + 75, margin + 95, margin + 117, margin + 140]
+    : [margin, margin + 22, margin + 44, margin + 64, margin + 82, margin + 104, margin + 130];
+  const colLabels = includeZA
+    ? ["Datum", "Tag", "Beginn", "Ende", "Pause", "Arbeitszeit", "ZA-Std", "Anmerkung"]
+    : ["Datum", "Wochentag", "Beginn", "Ende", "Pause", "Arbeitszeit", "Anmerkung"];
 
   doc.setFontSize(9);
   doc.setFont("helvetica", "bold");
@@ -109,20 +123,33 @@ export async function generateLegalWorkTimePDF(params: LegalWorkTimePDFParams) {
     }
 
     doc.text(format(date, "dd.MM.yyyy"), colX[0], y);
-    doc.text(format(date, "EEEE", { locale: de }), colX[1], y);
+    doc.text(format(date, includeZA ? "EEE" : "EEEE", { locale: de }), colX[1], y);
     doc.text(row.beginn || "–", colX[2], y);
     doc.text(row.ende || "–", colX[3], y);
     doc.text(row.pauseMinutes > 0 ? formatPause(row.pauseMinutes) : "–", colX[4], y);
     doc.text(row.arbeitszeit > 0 ? `${row.arbeitszeit.toFixed(2)} h` : "–", colX[5], y);
 
+    if (includeZA) {
+      // ZA-Stunden in orange wenn vorhanden
+      const za = row.ueberstunden || 0;
+      if (za > 0) {
+        doc.setTextColor(234, 88, 12); // orange-600
+        doc.text(`${za.toFixed(2)} h`, colX[6], y);
+        doc.setTextColor(0, 0, 0);
+      } else {
+        doc.text("–", colX[6], y);
+      }
+    }
+
     // Anmerkung
+    const anmerkungColIdx = includeZA ? 7 : 6;
     if (row.anmerkung) {
       if (row.anmerkung === "SW") {
         doc.setTextColor(37, 99, 235); // blue
-        doc.text(`SW (${row.schlechtwetterStunden.toFixed(1)}h)`, colX[6], y);
+        doc.text(`SW (${row.schlechtwetterStunden.toFixed(1)}h)`, colX[anmerkungColIdx], y);
       } else {
         doc.setTextColor(100, 100, 100);
-        doc.text(row.anmerkung, colX[6], y);
+        doc.text(row.anmerkung, colX[anmerkungColIdx], y);
       }
     }
 
@@ -151,6 +178,13 @@ export async function generateLegalWorkTimePDF(params: LegalWorkTimePDFParams) {
   doc.setFont("helvetica", "bold");
   doc.text(`Gesamtarbeitszeit: ${totalHours.toFixed(2)} Stunden`, margin, y);
   y += 5;
+
+  if (includeZA && totalOvertime > 0) {
+    doc.setTextColor(234, 88, 12);
+    doc.text(`Davon ZA-Stunden: ${totalOvertime.toFixed(2)} Stunden`, margin, y);
+    doc.setTextColor(0, 0, 0);
+    y += 5;
+  }
 
   if (totalBadWeatherHours > 0) {
     doc.setTextColor(37, 99, 235);
@@ -187,5 +221,6 @@ export async function generateLegalWorkTimePDF(params: LegalWorkTimePDFParams) {
     287
   );
 
-  doc.save(`Arbeitszeitaufzeichnung_${employeeName.replace(/\s/g, "_")}_${month}_${year}.pdf`);
+  const suffix = includeZA ? "_mit_ZA" : "_ohne_ZA";
+  doc.save(`Arbeitszeitaufzeichnung_${employeeName.replace(/\s/g, "_")}_${month}_${year}${suffix}.pdf`);
 }

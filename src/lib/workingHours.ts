@@ -94,6 +94,12 @@ export const LEHRLING_SCHEDULE: WeekSchedule = {
   so: { start: null, end: null, pause: 0, hours: 0 },
 };
 
+// Standard-Schwellenwerte (= Lohnstunden-Obergrenze pro Tag, alles drueber
+// laeuft ins Zeitausgleichs-Konto). Mo/Di laenger weil Fr frei.
+export const DEFAULT_SCHWELLENWERT: Schwellenwert = {
+  mo: 10, di: 10, mi: 9.5, do: 9.5, fr: 0, sa: 0, so: 0,
+};
+
 const DAY_KEYS: Record<number, keyof WeekSchedule> = {
   0: "so",
   1: "mo",
@@ -244,11 +250,40 @@ export function isNonWorkingDay(date: Date, schedule?: WeekSchedule | null): boo
 }
 
 /**
- * Berechnet Überstunden für einen Zeitblock
+ * Berechnet Überstunden (= Stunden über dem Schwellenwert) für einen Tag.
+ * Wenn ein expliziter Schwellenwert pro Mitarbeiter gesetzt ist, wird dieser genutzt.
+ * Sonst Fallback auf die Regelarbeitszeit-Stunden des Tages (= alte Logik).
  */
-export function calculateOvertime(actualHours: number, date: Date, schedule?: WeekSchedule | null): number {
-  const normalHours = getNormalWorkingHours(date, schedule);
-  return Math.max(0, actualHours - normalHours);
+export function calculateOvertime(
+  actualHours: number,
+  date: Date,
+  schedule?: WeekSchedule | null,
+  schwellenwert?: Schwellenwert | null
+): number {
+  const threshold = getSchwellenwert(date, schwellenwert, schedule);
+  return Math.max(0, actualHours - threshold);
+}
+
+/**
+ * Liefert {lohnstunden, zeitausgleich} fuer einen einzelnen time_entry.
+ * - Wenn die DB-Spalten lohnstunden/zeitausgleich_stunden gesetzt sind: direkt nutzen.
+ * - Sonst (alte Eintraege): zur Laufzeit per splitHours berechnen.
+ * Damit haben alte Eintraege keine inkonsistente Anzeige und neue Eintraege
+ * nutzen die Single Source of Truth aus der DB.
+ */
+export function getEntrySplit(
+  entry: { stunden: number; lohnstunden?: number | null; zeitausgleich_stunden?: number | null; datum: string },
+  schedule?: WeekSchedule | null,
+  schwellenwert?: Schwellenwert | null
+): HoursSplit {
+  if (entry.lohnstunden != null && entry.zeitausgleich_stunden != null) {
+    return {
+      lohnstunden: entry.lohnstunden,
+      zeitausgleich: entry.zeitausgleich_stunden,
+    };
+  }
+  const date = new Date(entry.datum);
+  return splitHours(entry.stunden || 0, date, schedule, schwellenwert);
 }
 
 /**

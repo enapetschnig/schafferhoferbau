@@ -19,7 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Plus, User, FileText, Clock, Mail, Phone, MapPin, FileSpreadsheet, Shirt } from "lucide-react";
 import { format } from "date-fns";
 import EmployeeDocumentsManager from "@/components/EmployeeDocumentsManager";
-import { DEFAULT_SCHEDULE, LEHRLING_SCHEDULE, type WeekSchedule } from "@/lib/workingHours";
+import { DEFAULT_SCHEDULE, LEHRLING_SCHEDULE, DEFAULT_SCHWELLENWERT, type WeekSchedule, type Schwellenwert } from "@/lib/workingHours";
 
 interface Employee {
   id: string;
@@ -47,6 +47,7 @@ interface Employee {
   kategorie: string | null;
   regelarbeitszeit: any | null;
   wochen_soll_stunden: number | null;
+  schwellenwert: any | null;
   is_external: boolean | null;
 }
 
@@ -159,6 +160,7 @@ export default function Employees() {
           is_external: isExtern,
           regelarbeitszeit: isExtern ? null : (newEmployee.kategorie === "lehrling" ? LEHRLING_SCHEDULE : DEFAULT_SCHEDULE),
           wochen_soll_stunden: isExtern ? null : 39,
+          schwellenwert: isExtern ? null : (DEFAULT_SCHWELLENWERT as any),
         })
         .select()
         .single();
@@ -279,6 +281,26 @@ export default function Employees() {
                     Seit: {format(new Date(emp.eintritt_datum), "dd.MM.yyyy")}
                   </div>
                 )}
+                {emp.kategorie !== "extern" && (() => {
+                  const sched = emp.regelarbeitszeit as WeekSchedule | null;
+                  const sw = emp.schwellenwert as Schwellenwert | null;
+                  const wd: Array<keyof WeekSchedule> = ["mo", "di", "mi", "do", "fr"];
+                  const sollMoFr = sched
+                    ? wd.map((k) => (sched[k] as any)?.hours ?? 0).filter((h: number) => h > 0)
+                    : [];
+                  const sollText = sollMoFr.length > 0
+                    ? (sollMoFr.every((h: number) => h === sollMoFr[0]) ? `${sollMoFr[0]}h` : `${Math.min(...sollMoFr)}–${Math.max(...sollMoFr)}h`)
+                    : "—";
+                  const swMoFr = sw ? wd.map((k) => sw[k as keyof Schwellenwert] as number).filter((h) => h > 0) : [];
+                  const swText = swMoFr.length > 0
+                    ? (swMoFr.every((h) => h === swMoFr[0]) ? `${swMoFr[0]}h` : `${Math.min(...swMoFr)}–${Math.max(...swMoFr)}h`)
+                    : sw ? "0h" : "Standard";
+                  return (
+                    <div className="text-xs text-muted-foreground mt-1">
+                      Soll Mo–Fr: <strong>{sollText}</strong> · Schwellenwert: <strong>{swText}</strong>
+                    </div>
+                  );
+                })()}
               </div>
             </CardContent>
           </Card>
@@ -683,6 +705,109 @@ export default function Employees() {
                           Pro Tag von oben nach unten: Beginn / Ende / Stunden / Pause-Beginn / Pause-Ende / Pause-Minuten. Pause-Minuten werden automatisch berechnet, wenn Start und Ende gesetzt sind.
                         </p>
                       </div>
+                    );
+                  })()}
+
+                  {/* Schwellenwerte (Lohnstunden-Obergrenze pro Tag) */}
+                  {formData.kategorie !== "extern" && (() => {
+                    const sw = (formData.schwellenwert as Schwellenwert) || DEFAULT_SCHWELLENWERT;
+                    const isBiweekly = sw.zyklus === "biweekly";
+                    const ankerDefault = (() => {
+                      const d = new Date();
+                      const day = d.getDay();
+                      const diff = (day + 6) % 7;
+                      d.setDate(d.getDate() - diff);
+                      return d.toISOString().split("T")[0];
+                    })();
+                    const updateSwDay = (variant: "A" | "B", key: typeof DAY_KEYS[number], val: number) => {
+                      const next: any = { ...sw };
+                      if (variant === "A") {
+                        next[key] = val;
+                      } else {
+                        next.woche_b = { ...(next.woche_b || { mo: 0, di: 0, mi: 0, do: 0, fr: 0, sa: 0, so: 0 }), [key]: val };
+                      }
+                      setFormData({ ...formData, schwellenwert: next });
+                    };
+                    const renderSwGrid = (variant: "A" | "B") => {
+                      const weekData: any = variant === "A" ? sw : (sw.woche_b as any) || {};
+                      return (
+                        <div className="grid grid-cols-7 gap-2">
+                          {DAY_KEYS.map((key, idx) => (
+                            <div key={key} className="space-y-1 text-center">
+                              <Label className="text-xs font-bold">{DAY_LABELS[idx]}</Label>
+                              <Input
+                                type="number"
+                                min="0"
+                                max="24"
+                                step="0.5"
+                                value={weekData[key] ?? 0}
+                                onChange={(e) => updateSwDay(variant, key, parseFloat(e.target.value) || 0)}
+                                className="h-8 text-xs px-1 text-center"
+                                placeholder="h"
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    };
+                    return (
+                      <>
+                        <Separator />
+                        <div>
+                          <h3 className="text-lg font-semibold mb-3">Schwellenwerte (Lohn vs. Zeitausgleich)</h3>
+                          <p className="text-xs text-muted-foreground mb-3">
+                            Stunden bis zum Schwellenwert pro Tag werden als <strong>Lohnstunden</strong> verrechnet, alles darüber geht ins <strong>Zeitausgleichs-Konto</strong>.
+                          </p>
+
+                          <div className="flex items-center gap-2 mb-3">
+                            <input
+                              type="checkbox"
+                              id="sw-biweekly"
+                              checked={isBiweekly}
+                              onChange={(e) => {
+                                const next: any = { ...sw };
+                                if (e.target.checked) {
+                                  next.zyklus = "biweekly";
+                                  next.woche_b = next.woche_b || { mo: 0, di: 0, mi: 0, do: 0, fr: 0, sa: 0, so: 0 };
+                                  next.zyklus_anker = next.zyklus_anker || ankerDefault;
+                                } else {
+                                  next.zyklus = "weekly";
+                                }
+                                setFormData({ ...formData, schwellenwert: next });
+                              }}
+                              className="h-4 w-4"
+                            />
+                            <Label htmlFor="sw-biweekly" className="text-sm cursor-pointer">
+                              14-tägige Durchrechnung (Woche A / Woche B)
+                            </Label>
+                          </div>
+
+                          {isBiweekly && (
+                            <div className="mb-3">
+                              <Label className="text-xs">Anker-Datum (Montag der ersten Woche A)</Label>
+                              <Input
+                                type="date"
+                                value={(sw as any).zyklus_anker || ankerDefault}
+                                onChange={(e) => setFormData({ ...formData, schwellenwert: { ...sw, zyklus_anker: e.target.value } as any })}
+                                className="mt-1 max-w-xs"
+                              />
+                            </div>
+                          )}
+
+                          {isBiweekly ? (
+                            <Tabs defaultValue="A">
+                              <TabsList>
+                                <TabsTrigger value="A">Woche A (kurz)</TabsTrigger>
+                                <TabsTrigger value="B">Woche B (lang)</TabsTrigger>
+                              </TabsList>
+                              <TabsContent value="A" className="pt-3">{renderSwGrid("A")}</TabsContent>
+                              <TabsContent value="B" className="pt-3">{renderSwGrid("B")}</TabsContent>
+                            </Tabs>
+                          ) : (
+                            renderSwGrid("A")
+                          )}
+                        </div>
+                      </>
                     );
                   })()}
 

@@ -14,7 +14,7 @@ import { format, getDaysInMonth, parseISO } from "date-fns";
 import { de } from "date-fns/locale";
 import * as XLSX from "xlsx-js-style";
 import { generateLegalWorkTimePDF } from "@/lib/generateLegalWorkTimePDF";
-import { getNormalWorkingHours, type WeekSchedule } from "@/lib/workingHours";
+import { calculateOvertime, type WeekSchedule, type Schwellenwert } from "@/lib/workingHours";
 
 type Profile = { id: string; vorname: string; nachname: string };
 
@@ -56,6 +56,7 @@ export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeR
   const [rows, setRows] = useState<DayRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [employeeSchedule, setEmployeeSchedule] = useState<WeekSchedule | null>(null);
+  const [employeeSchwellenwert, setEmployeeSchwellenwert] = useState<Schwellenwert | null>(null);
 
   // Fetch employees (exclude external)
   useEffect(() => {
@@ -110,13 +111,15 @@ export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeR
         .lte("datum", endDate),
       supabase
         .from("employees")
-        .select("regelarbeitszeit")
+        .select("regelarbeitszeit, schwellenwert")
         .eq("user_id", selectedUserId)
         .maybeSingle(),
     ]);
 
     const schedule = empData?.regelarbeitszeit ? (empData.regelarbeitszeit as unknown as WeekSchedule) : null;
+    const schwellenwert = empData?.schwellenwert ? (empData.schwellenwert as unknown as Schwellenwert) : null;
     setEmployeeSchedule(schedule);
+    setEmployeeSchwellenwert(schwellenwert);
 
     // Group time entries by datum
     const grouped: Record<string, {
@@ -170,16 +173,16 @@ export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeR
         const beginn = g.starts.length > 0 ? g.starts.sort()[0]?.slice(0, 5) : null;
         const ende = g.ends.length > 0 ? g.ends.sort().reverse()[0]?.slice(0, 5) : null;
         const arbeitszeit = Math.round(g.stunden * 100) / 100;
-        // Ueberstunden = (geleistet - Regelarbeitszeit), nur fuer reine Arbeitszeit
-        // (Urlaub/Krank/etc. werden nicht als Ueberstunden gewertet)
+        // ZA-Stunden = (geleistet - Schwellenwert), nur fuer reine Arbeitszeit
+        // (Urlaub/Krank/etc. werden nicht als ZA gewertet).
+        // calculateOvertime nutzt den expliziten Schwellenwert oder faellt
+        // auf Regelarbeitszeit zurueck wenn nicht gesetzt - konsistent mit
+        // dem, was beim Speichern (TimeTracking) berechnet wurde.
         let ueberstunden = 0;
         const isPureWorkDay = !["Urlaub", "Krankenstand", "Feiertag", "Zeitausgleich"]
           .some((t) => g.taetigkeit.includes(t));
-        if (isPureWorkDay && schedule) {
-          const regelStd = getNormalWorkingHours(dayDate, schedule);
-          if (regelStd > 0 && arbeitszeit > regelStd) {
-            ueberstunden = Math.round((arbeitszeit - regelStd) * 100) / 100;
-          }
+        if (isPureWorkDay) {
+          ueberstunden = calculateOvertime(arbeitszeit, dayDate, schedule, schwellenwert);
         }
         dayRows.push({
           datum, beginn, ende,
@@ -295,7 +298,7 @@ export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeR
     XLSX.writeFile(wb, `Arbeitszeitaufzeichnung_${employeeName.replace(/\s/g, "_")}_${monthNames[month - 1]}_${year}${suffix}.xlsx`);
   };
 
-  const handleExportPDF = async () => {
+  const handleExportPDF = async (includeZA: boolean = false) => {
     if (!selectedUserId || rows.length === 0) return;
     await generateLegalWorkTimePDF({
       employeeName,
@@ -306,6 +309,8 @@ export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeR
       totalPause,
       workingDays,
       totalBadWeatherHours,
+      totalOvertime,
+      includeZA,
     });
   };
 
@@ -428,9 +433,21 @@ export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeR
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-            <Button variant="outline" size="sm" onClick={handleExportPDF}>
-              <Download className="w-4 h-4 mr-1" /> PDF
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <Download className="w-4 h-4 mr-1" /> PDF <ChevronDown className="w-4 h-4 ml-1" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuItem onClick={() => handleExportPDF(true)}>
+                  Mit ZA
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleExportPDF(false)}>
+                  Ohne ZA
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
 
           {/* Table */}

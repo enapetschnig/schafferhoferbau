@@ -10,7 +10,7 @@ import { Download, Calendar, Briefcase, MapPin, Wrench, Users, Car } from "lucid
 import * as XLSX from "xlsx-js-style";
 import { format, parseISO } from "date-fns";
 import { de } from "date-fns/locale";
-import { calculateOvertime, type WeekSchedule } from "@/lib/workingHours";
+import { calculateOvertime, type WeekSchedule, type Schwellenwert } from "@/lib/workingHours";
 
 interface DetailedProjectEntry {
   id: string;
@@ -59,6 +59,7 @@ export default function ProjectHoursReport() {
   const [profiles, setProfiles] = useState<Record<string, { vorname: string; nachname: string }>>({});
   const [externalUserIds, setExternalUserIds] = useState<Set<string>>(new Set());
   const [employeeSchedules, setEmployeeSchedules] = useState<Record<string, WeekSchedule | null>>({});
+  const [employeeSchwellenwerte, setEmployeeSchwellenwerte] = useState<Record<string, Schwellenwert | null>>({});
   const [startDate, setStartDate] = useState<string>(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
@@ -86,22 +87,25 @@ export default function ProjectHoursReport() {
   const fetchEmployeeData = async () => {
     const { data } = await supabase
       .from("employees")
-      .select("user_id, is_external, kategorie, regelarbeitszeit")
+      .select("user_id, is_external, kategorie, regelarbeitszeit, schwellenwert")
       .not("user_id", "is", null);
 
     if (data) {
       const extIds = new Set<string>();
       const schedules: Record<string, WeekSchedule | null> = {};
-      data.forEach((emp) => {
+      const schwellenwerte: Record<string, Schwellenwert | null> = {};
+      data.forEach((emp: any) => {
         if (emp.user_id) {
           if (emp.is_external === true || emp.kategorie === "extern") {
             extIds.add(emp.user_id);
           }
           schedules[emp.user_id] = emp.regelarbeitszeit || null;
+          schwellenwerte[emp.user_id] = emp.schwellenwert || null;
         }
       });
       setExternalUserIds(extIds);
       setEmployeeSchedules(schedules);
+      setEmployeeSchwellenwerte(schwellenwerte);
     }
   };
 
@@ -185,7 +189,8 @@ export default function ProjectHoursReport() {
 
         const isExt = externalUserIds.has(entry.user_id);
         const schedule = employeeSchedules[entry.user_id] || null;
-        const ot = isExt ? 0 : calculateOvertime(entry.stunden, new Date(entry.datum), schedule);
+        const schwellenwert = employeeSchwellenwerte[entry.user_id] || null;
+        const ot = isExt ? 0 : calculateOvertime(entry.stunden, new Date(entry.datum), schedule, schwellenwert);
         const km = entry.kilometer || 0;
 
         total += entry.stunden;

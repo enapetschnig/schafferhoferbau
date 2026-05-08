@@ -22,7 +22,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { getNormalWorkingHours, type WeekSchedule, DEFAULT_SCHEDULE } from "@/lib/workingHours";
+import { getNormalWorkingHours, type WeekSchedule, DEFAULT_SCHEDULE, type Schwellenwert, calculateOvertime as calculateOvertimeShared, getEntrySplit } from "@/lib/workingHours";
+import { generateHoursReportPDF } from "@/lib/generateHoursReportPDF";
 
 interface TimeEntry {
   id: string;
@@ -45,6 +46,8 @@ interface TimeEntry {
   diaeten_typ?: string | null;
   diaeten_betrag?: number | null;
   diaeten_anfahrt?: boolean | null;
+  lohnstunden?: number | null;
+  zeitausgleich_stunden?: number | null;
 }
 
 interface Profile {
@@ -114,6 +117,7 @@ export default function HoursReport() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
   const [employeeSchedule, setEmployeeSchedule] = useState<WeekSchedule | null>(null);
+  const [employeeSchwellenwert, setEmployeeSchwellenwert] = useState<Schwellenwert | null>(null);
   const [reportExtras, setReportExtras] = useState<ReportExtra[]>([]);
   const [newExtraName, setNewExtraName] = useState("");
   const [newExtraBetrag, setNewExtraBetrag] = useState("");
@@ -154,7 +158,7 @@ export default function HoursReport() {
   const fetchEmployeeSchedule = async (userId: string) => {
     const { data } = await supabase
       .from("employees")
-      .select("regelarbeitszeit, is_external")
+      .select("regelarbeitszeit, schwellenwert, is_external")
       .eq("user_id", userId)
       .single();
     if (data?.regelarbeitszeit) {
@@ -162,6 +166,9 @@ export default function HoursReport() {
     } else {
       setEmployeeSchedule(null);
     }
+    setEmployeeSchwellenwert(
+      data?.schwellenwert ? (data.schwellenwert as unknown as Schwellenwert) : null
+    );
     setSelectedIsExternal(data?.is_external === true);
   };
 
@@ -365,9 +372,10 @@ export default function HoursReport() {
     return days;
   };
 
+  // Nutzt die zentrale calculateOvertime mit dem expliziten Schwellenwert -
+  // konsistent mit dem, was beim Speichern (TimeTracking) berechnet wurde.
   const calculateOvertime = (date: Date, totalHours: number): number => {
-    const normalHours = getNormalWorkingHours(date, employeeSchedule);
-    return Math.max(0, totalHours - normalHours);
+    return calculateOvertimeShared(totalHours, date, employeeSchedule, employeeSchwellenwert);
   };
 
   const toMin = (t: string) => {
@@ -457,6 +465,89 @@ export default function HoursReport() {
       },
       alignment: { vertical: "center", horizontal: centered ? "center" : "left" },
     };
+  };
+
+  // PDF-Export der Stundenauswertung. Aggregiert pro Tag (mehrere Eintraege werden zusammengefasst).
+  const exportToPDF = async (includeZA: boolean) => {
+    if (!selectedUserId) {
+      toast({ title: "Kein Mitarbeiter ausgewaehlt", variant: "destructive" });
+      return;
+    }
+    const employeeName = profiles[selectedUserId]
+      ? `${profiles[selectedUserId].vorname} ${profiles[selectedUserId].nachname}`
+      : "Mitarbeiter";
+    const monthNamesLocal = ["Jaenner", "Februar", "Maerz", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
+
+    // Pro Tag aggregieren - alle uniqueEntriesByDay sind schon dedupliziert
+    const dayMap: Record<string, {
+      datum: string; entries: TimeEntry[];
+    }> = {};
+    for (const entry of uniqueEntriesByDay) {
+      if (!dayMap[entry.datum]) dayMap[entry.datum] = { datum: entry.datum, entries: [] };
+      dayMap[entry.datum].entries.push(entry);
+    }
+
+    const rows = Object.values(dayMap)
+      .sort((a, b) => a.datum.localeCompare(b.datum))
+      .map((d) => {
+        const totalStd = d.entries.reduce((s, e) => s + e.stunden, 0);
+        // ZA-Stunden: aus DB summieren, fallback auf Live-Berechnung
+        const totalZAFromDB = d.entries.reduce((s, e) => s + (e.zeitausgleich_stunden ?? 0), 0);
+        const totalLohnFromDB = d.entries.reduce((s, e) => s + (e.lohnstunden ?? 0), 0);
+        const hasDBValues = d.entries.some((e) => e.lohnstunden != null || e.zeitausgleich_stunden != null);
+        const dayDate = parseISO(d.datum);
+        const za = hasDBValues
+          ? totalZAFromDB
+          : calculateOvertime(dayDate, totalStd);
+        const lohn = hasDBValues
+          ? totalLohnFromDB
+          : Math.max(0, totalStd - za);
+
+        // Beginn/Ende: Min Start / Max End
+        const starts = d.entries.map((e) => e.start_time).filter(Boolean).sort();
+        const ends = d.entries.map((e) => e.end_time).filter(Boolean).sort();
+        const beginn = starts.length > 0 ? starts[0].slice(0, 5) : null;
+        const ende = ends.length > 0 ? ends[ends.length - 1].slice(0, 5) : null;
+        const pauseMin = d.entries.reduce((s, e) => s + (e.pause_minutes || 0), 0);
+        const km = d.entries.reduce((s, e) => s + (e.kilometer || 0), 0);
+        const diaetenE = d.entries.find((e) => e.diaeten_typ && e.diaeten_typ !== "keine");
+        const diaetenLabel = diaetenE
+          ? (diaetenE.diaeten_typ === "klein" ? "Klein"
+              : diaetenE.diaeten_typ === "gross" ? "Groß"
+              : diaetenE.diaeten_typ === "anfahrt" ? "Anfahrt"
+              : "")
+          : "";
+        // Projekt: erstes Projekt (oder mehrere kommasepariert)
+        const projektNames = Array.from(new Set(
+          d.entries.map((e) => projects[e.project_id || ""]?.name || "").filter(Boolean)
+        ));
+        const projekt = projektNames.length > 0 ? projektNames.join(", ") : "—";
+        const taetigkeit = Array.from(new Set(d.entries.map((e) => e.taetigkeit || "").filter(Boolean))).join(", ");
+
+        return {
+          datum: d.datum, beginn, ende,
+          pauseMinutes: pauseMin,
+          stunden: totalStd,
+          lohnstunden: lohn,
+          zaStunden: za,
+          kilometer: km,
+          diaetenLabel,
+          projekt,
+          taetigkeit,
+        };
+      });
+
+    await generateHoursReportPDF({
+      employeeName,
+      month: monthNamesLocal[month - 1],
+      year,
+      rows,
+      totalStunden: totalHours,
+      totalZA: totalOvertime,
+      totalKilometer,
+      totalDiaetenTage: totalDiaeten,
+      includeZA,
+    });
   };
 
   const exportToExcel = (includeOvertime: boolean = true) => {
@@ -916,10 +1007,16 @@ export default function HoursReport() {
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
                     <DropdownMenuItem onClick={() => exportToExcel(true)}>
-                      Mit Überstunden
+                      Excel mit ZA-Stunden
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => exportToExcel(false)}>
-                      Ohne Überstunden
+                      Excel ohne ZA-Stunden
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => exportToPDF(true)}>
+                      PDF mit ZA-Stunden
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => exportToPDF(false)}>
+                      PDF ohne ZA-Stunden
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
