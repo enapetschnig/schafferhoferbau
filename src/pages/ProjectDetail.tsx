@@ -61,6 +61,7 @@ const titleMap: Record<DocumentType, string> = {
 const tabConfig: Record<DocumentType, { key: string; label: string; subType?: string }[]> = {
   plans: [
     { key: "plaene", label: "Aktuelle Pläne", subType: "plan" },
+    { key: "bescheide", label: "Bescheide", subType: "bescheid" },
     { key: "protokolle", label: "Besprechungsprotokolle", subType: "besprechungsprotokoll" },
     { key: "auftraege", label: "Aufträge", subType: "auftrag" },
     { key: "archiv", label: "Archiv" },
@@ -726,6 +727,44 @@ const ProjectDetail = () => {
     });
   };
 
+  // Live-Anzahl pro Tab: zaehlt Files + Text-only-Docs die in den jeweiligen Tab fallen.
+  // Aktualisiert sich automatisch, wenn Dateien hochgeladen, archiviert oder geloescht werden.
+  const getTabCount = (tab: { key: string; subType?: string }): number => {
+    const isArchiv = tab.key === "archiv";
+    let count = 0;
+    for (const file of files) {
+      const rec = docRecords.find((d) => d.name === file.name || d.file_url === `${projectId}/${file.name}`);
+      const archived = rec?.archived === true;
+      if (isArchiv) {
+        if (archived) count++;
+      } else if (!archived) {
+        if (tab.subType === "plan") {
+          if (!rec?.sub_type || rec.sub_type === "plan") count++;
+        } else if (tab.subType) {
+          if (rec?.sub_type === tab.subType) count++;
+        } else {
+          count++;
+        }
+      }
+    }
+    if (type === "plans") {
+      for (const d of docRecords) {
+        if (!d.text_content || d.file_url) continue;
+        const archived = d.archived === true;
+        if (isArchiv) {
+          if (archived) count++;
+        } else if (!archived) {
+          if (tab.subType === "plan") {
+            if (!d.sub_type || d.sub_type === "plan") count++;
+          } else if (tab.subType && d.sub_type === tab.subType) {
+            count++;
+          }
+        }
+      }
+    }
+    return count;
+  };
+
   if (!type) return <div>Ungültiger Dokumenttyp</div>;
   if (loading) return <div className="min-h-screen flex items-center justify-center"><p>Lädt...</p></div>;
 
@@ -767,11 +806,17 @@ const ProjectDetail = () => {
             {/* Tabs */}
             <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v); setSelectedFiles(new Set()); }}>
               <TabsList className="flex flex-wrap h-auto gap-1 mb-4">
-                {tabs.map((tab) => (
-                  <TabsTrigger key={tab.key} value={tab.key} className="text-xs sm:text-sm">
-                    {tab.label}
-                  </TabsTrigger>
-                ))}
+                {tabs.map((tab) => {
+                  const count = getTabCount(tab);
+                  return (
+                    <TabsTrigger key={tab.key} value={tab.key} className="group text-xs sm:text-sm">
+                      {tab.label}
+                      <span className="ml-1.5 inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full bg-muted text-muted-foreground group-data-[state=active]:bg-primary/15 group-data-[state=active]:text-primary text-[10px] font-semibold">
+                        {count}
+                      </span>
+                    </TabsTrigger>
+                  );
+                })}
               </TabsList>
 
               {tabs.map((tab) => (
@@ -782,6 +827,7 @@ const ProjectDetail = () => {
                       {[
                         { key: "all", label: "Alle" },
                         { key: "plan", label: "Aktuelle Pläne" },
+                        { key: "bescheid", label: "Bescheide" },
                         { key: "besprechungsprotokoll", label: "Protokolle" },
                         { key: "auftrag", label: "Aufträge" },
                       ].map((sub) => (
