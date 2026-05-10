@@ -245,13 +245,17 @@ export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeR
 
     setRows(dayRows);
     setLoading(false);
+    return dayRows;
   }, [selectedUserId, month, year]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
   // Live-Sync: bei Aenderung am ausgewaehlten Mitarbeiter (Schwellenwert,
-  // Regelarbeitszeit) automatisch neu laden, damit die Saldo-Berechnungen
-  // sofort die neuen Einstellungen widerspiegeln.
+  // Regelarbeitszeit), neuen/geloeschten/aktualisierten Zeiteintraegen oder
+  // Schlechtwetter-Records automatisch neu laden. So spiegelt die
+  // Auswertung (und damit auch der PDF-Export) immer den aktuellen
+  // DB-Stand wider — auch wenn ein Mitarbeiter parallel am Handy
+  // eine Zeit erfasst.
   useEffect(() => {
     if (!selectedUserId) return;
     const channel = supabase
@@ -259,7 +263,17 @@ export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeR
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "employees", filter: `user_id=eq.${selectedUserId}` },
-        () => { fetchData(); }
+        () => { fetchData(); },
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "time_entries", filter: `user_id=eq.${selectedUserId}` },
+        () => { fetchData(); },
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "bad_weather_records", filter: `user_id=eq.${selectedUserId}` },
+        () => { fetchData(); },
       )
       .subscribe();
     return () => { supabase.removeChannel(channel); };
@@ -377,22 +391,44 @@ export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeR
   const [showSignDialog, setShowSignDialog] = useState(false);
 
   const handleExportPDF = async (sigEmployee: string | null, sigEmployer: string | null) => {
-    if (!selectedUserId || rows.length === 0) return;
+    if (!selectedUserId) return;
+    // Sicherheitsnetz: vor PDF-Erstellung garantiert frische Daten aus der DB
+    // ziehen. fetchData gibt die berechneten Zeilen direkt zurueck (umgeht
+    // den React-Closure-Lag, dass setRows-Updates im selben Callback noch
+    // nicht im rows-State sichtbar sind).
+    const freshRows = (await fetchData()) ?? rows;
+    if (freshRows.length === 0) return;
+
+    // Summen direkt aus den frischen Zeilen berechnen — nicht aus dem
+    // moeglicherweise veralteten render-State.
+    const sum = (fn: (r: typeof freshRows[number]) => number) =>
+      Math.round(freshRows.reduce((s, r) => s + fn(r), 0) * 100) / 100;
+    const f_totalPause = freshRows.reduce((s, r) => s + r.pauseMinutes, 0);
+    const f_workingDays = freshRows.filter((r) => r.arbeitszeit > 0).length;
+    const f_totalSW = sum((r) => r.schlechtwetterStunden);
+    const f_totalLohn = sum((r) => r.lohnstunden);
+    const f_totalNormal = sum((r) => r.normalstunden);
+    const f_totalUeber = sum((r) => r.ueberstundenLohn);
+    const f_dietKlein = freshRows.filter((r) => r.diaetenTyp === "klein").length;
+    const f_dietGross = freshRows.filter((r) => r.diaetenTyp === "gross").length;
+    const f_dietAnfahrt = freshRows.filter((r) => r.diaetenTyp === "anfahrt").length;
+    const f_totalFeiertage = freshRows.filter((r) => r.anmerkung === "F").length;
+
     await generateLegalWorkTimePDF({
       employeeName,
       month: monthNames[month - 1],
       year,
-      rows,
-      totalPause,
-      workingDays,
-      totalBadWeatherHours,
-      totalLohnstunden,
-      totalNormalstunden,
-      totalUeberstundenLohn,
-      dietKlein,
-      dietGross,
-      dietAnfahrt,
-      totalFeiertage,
+      rows: freshRows,
+      totalPause: f_totalPause,
+      workingDays: f_workingDays,
+      totalBadWeatherHours: f_totalSW,
+      totalLohnstunden: f_totalLohn,
+      totalNormalstunden: f_totalNormal,
+      totalUeberstundenLohn: f_totalUeber,
+      dietKlein: f_dietKlein,
+      dietGross: f_dietGross,
+      dietAnfahrt: f_dietAnfahrt,
+      totalFeiertage: f_totalFeiertage,
       signatureEmployee: sigEmployee,
       signatureEmployer: sigEmployer,
     });
