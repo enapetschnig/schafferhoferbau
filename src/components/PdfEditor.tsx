@@ -5,11 +5,9 @@ import { Pencil, Eraser, Undo2, Redo2, Trash2, X, Save, Loader2, Copy } from "lu
 import { ReactSketchCanvas, type ReactSketchCanvasRef } from "react-sketch-canvas";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import "@/lib/pdfjsSetup";
 import * as pdfjsLib from "pdfjs-dist";
-import pdfjsWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { PDFDocument } from "pdf-lib";
-
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
 
 interface Props {
   open: boolean;

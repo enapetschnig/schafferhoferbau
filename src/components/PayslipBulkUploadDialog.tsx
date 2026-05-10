@@ -9,11 +9,9 @@ import { Progress } from "@/components/ui/progress";
 import { Upload, Check, AlertTriangle, ArrowRight, ArrowLeft, Loader2, FileText, Send, Calendar } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import "@/lib/pdfjsSetup";
 import { PDFDocument } from "pdf-lib";
 import * as pdfjsLib from "pdfjs-dist";
-
-// Set worker path for pdfjs
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
 
 type Employee = {
   user_id: string;

@@ -9,10 +9,8 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { SignaturePad } from "@/components/SignaturePad";
 import { Upload, Loader2, AlertTriangle, CheckCircle2, Trash2, FileText, Plus } from "lucide-react";
+import "@/lib/pdfjsSetup";
 import * as pdfjsLib from "pdfjs-dist";
-import pdfjsWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
 
 type DocType = "lieferschein" | "lagerlieferschein" | "rechnung";
 

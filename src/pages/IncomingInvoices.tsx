@@ -18,10 +18,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Download, Upload, Filter, FileText, Check, CheckCircle2, AlertTriangle, XCircle, Loader2, X, Plus, Sparkles } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import * as XLSX from "xlsx-js-style";
+import "@/lib/pdfjsSetup";
 import * as pdfjsLib from "pdfjs-dist";
-import pdfjsWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
 
 const prepareFileForAI = (file: File): Promise<{ base64: string; mimeType: string; pdfText?: string }> =>
   new Promise((resolve, reject) => {

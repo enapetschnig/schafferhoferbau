@@ -5,12 +5,10 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Upload, Play, Download, FileText, Loader2, CheckCircle2, AlertCircle, X } from "lucide-react";
 import * as XLSX from "xlsx-js-style";
+import "@/lib/pdfjsSetup";
 import * as pdfjsLib from "pdfjs-dist";
-import pdfjsWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
 
 type Status = "pending" | "processing" | "done" | "error";
 
