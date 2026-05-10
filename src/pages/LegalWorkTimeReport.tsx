@@ -14,7 +14,8 @@ import { format, getDaysInMonth, parseISO } from "date-fns";
 import { de } from "date-fns/locale";
 import * as XLSX from "xlsx-js-style";
 import { generateLegalWorkTimePDF } from "@/lib/generateLegalWorkTimePDF";
-import { calculateZASaldo, type WeekSchedule, type Schwellenwert } from "@/lib/workingHours";
+import { calculateZASaldo, getNormalWorkingHours, getSchwellenwert, type WeekSchedule, type Schwellenwert } from "@/lib/workingHours";
+import { SignAzgDialog } from "@/components/SignAzgDialog";
 
 type Profile = { id: string; vorname: string; nachname: string };
 
@@ -26,8 +27,15 @@ type DayRow = {
   ende: string | null;
   pauseMinutes: number;
   arbeitszeit: number;
+  /** Stunden bis zum Schwellenwert (= bezahlt: Normalarbeitszeit + Ueberstunden). */
+  lohnstunden: number;
+  /** Soll-Stunden fuer den Tag aus Regelarbeitszeit (= Normalarbeitszeit). */
+  normalstunden: number;
+  /** Bezahlte Ueberstunden = lohnstunden ueber normalstunden, aber unter Schwellenwert. */
+  ueberstundenLohn: number;
+  /** ZA-Saldo (kann negativ): nur Excel/intern, nicht im Lohnverrechnungs-PDF. */
   ueberstunden: number;
-  anmerkung: string | null; // SW = Schlechtwetter, U = Urlaub, K = Krank
+  anmerkung: string | null; // SW = Schlechtwetter, U = Urlaub, K = Krank, F = Feiertag
   schlechtwetterStunden: number;
   diaetenTyp: DiaetenTyp;
 };
@@ -121,20 +129,20 @@ export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeR
     setEmployeeSchedule(schedule);
     setEmployeeSchwellenwert(schwellenwert);
 
-    // Group time entries by datum. dbZA / dbZACount tracken den DB-Wert
-    // pro Tag — bevorzugt fuer die Anzeige, damit Schwellenwert-Aenderungen
-    // nur kuenftige Eintraege betreffen.
+    // Group time entries by datum. dbLohn/dbZA tracken die DB-Werte pro Tag —
+    // bevorzugt fuer die Anzeige, damit Schwellenwert-Aenderungen nur
+    // kuenftige Eintraege betreffen.
     const grouped: Record<string, {
       starts: string[]; ends: string[]; pause: number; stunden: number;
       taetigkeit: string[]; diaeten: string[];
-      dbZA: number; dbZACount: number; entryCount: number;
+      dbLohn: number; dbZA: number; dbCount: number; entryCount: number;
     }> = {};
     if (data) {
       for (const entry of data) {
         if (!grouped[entry.datum]) {
           grouped[entry.datum] = {
             starts: [], ends: [], pause: 0, stunden: 0, taetigkeit: [], diaeten: [],
-            dbZA: 0, dbZACount: 0, entryCount: 0,
+            dbLohn: 0, dbZA: 0, dbCount: 0, entryCount: 0,
           };
         }
         const g = grouped[entry.datum];
@@ -147,9 +155,10 @@ export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeR
           g.diaeten.push(entry.diaeten_typ);
         }
         g.entryCount++;
-        if (entry.zeitausgleich_stunden != null) {
+        if (entry.lohnstunden != null && entry.zeitausgleich_stunden != null) {
+          g.dbLohn += Number(entry.lohnstunden);
           g.dbZA += Number(entry.zeitausgleich_stunden);
-          g.dbZACount++;
+          g.dbCount++;
         }
       }
     }
@@ -185,22 +194,38 @@ export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeR
         const beginn = g.starts.length > 0 ? g.starts.sort()[0]?.slice(0, 5) : null;
         const ende = g.ends.length > 0 ? g.ends.sort().reverse()[0]?.slice(0, 5) : null;
         const arbeitszeit = Math.round(g.stunden * 100) / 100;
-        // ZA-Saldo: bevorzugt DB-Werte (beim Speichern mit dem damals
-        // geltenden Schwellenwert festgehalten). Damit wirken sich
-        // Schwellenwert-Aenderungen nur auf kuenftige Eintraege aus.
-        // Fallback Live-Berechnung wenn Eintraege ohne DB-Split (alte Daten).
-        let ueberstunden = 0;
         const isPureWorkDay = !["Urlaub", "Krankenstand", "Feiertag", "Zeitausgleich"]
           .some((t) => g.taetigkeit.includes(t));
-        if (isPureWorkDay) {
-          ueberstunden = g.dbZACount === g.entryCount && g.entryCount > 0
-            ? Math.round(g.dbZA * 100) / 100
-            : calculateZASaldo(arbeitszeit, dayDate, schedule, schwellenwert);
+
+        // Lohnstunden + ZA-Saldo: bevorzugt DB-Werte (mit damals geltendem
+        // Schwellenwert beim Speichern festgehalten). Fallback fuer alte
+        // Eintraege ohne DB-Split: Live-Berechnung.
+        const hasFullDBSplit = g.dbCount === g.entryCount && g.entryCount > 0;
+        let lohnstunden: number;
+        let ueberstunden: number; // ZA-Saldo (kann negativ)
+        if (hasFullDBSplit) {
+          lohnstunden = Math.round(g.dbLohn * 100) / 100;
+          ueberstunden = isPureWorkDay ? Math.round(g.dbZA * 100) / 100 : 0;
+        } else {
+          const threshold = getSchwellenwert(dayDate, schwellenwert, schedule);
+          lohnstunden = Math.min(arbeitszeit, threshold);
+          ueberstunden = isPureWorkDay
+            ? calculateZASaldo(arbeitszeit, dayDate, schedule, schwellenwert)
+            : 0;
         }
+        // Normalarbeitszeit (Soll) und bezahlte Ueberstunden (= lohnstunden
+        // ueber Soll). Bei Abwesenheit fuehren wir kein Soll: Soll bleibt 0,
+        // damit der Tag in der Lohnverrechnungs-Summary nicht doppelt zaehlt.
+        const normalstunden = isPureWorkDay ? getNormalWorkingHours(dayDate, schedule) : 0;
+        const ueberstundenLohn = Math.max(0, Math.round((lohnstunden - normalstunden) * 100) / 100);
+
         dayRows.push({
           datum, beginn, ende,
           pauseMinutes: g.pause,
           arbeitszeit,
+          lohnstunden: Math.round(lohnstunden * 100) / 100,
+          normalstunden: Math.round(normalstunden * 100) / 100,
+          ueberstundenLohn,
           ueberstunden,
           anmerkung,
           schlechtwetterStunden: swHours,
@@ -209,7 +234,8 @@ export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeR
       } else {
         dayRows.push({
           datum, beginn: null, ende: null,
-          pauseMinutes: 0, arbeitszeit: 0, ueberstunden: 0,
+          pauseMinutes: 0, arbeitszeit: 0,
+          lohnstunden: 0, normalstunden: 0, ueberstundenLohn: 0, ueberstunden: 0,
           anmerkung: swHours > 0 ? "SW" : null,
           schlechtwetterStunden: swHours,
           diaetenTyp: null,
@@ -245,6 +271,14 @@ export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeR
   const workingDays = rows.filter((r) => r.arbeitszeit > 0).length;
   const totalBadWeatherHours = rows.reduce((sum, r) => sum + r.schlechtwetterStunden, 0);
   const totalDiaeten = rows.filter((r) => r.diaetenTyp && r.diaetenTyp !== "keine").length;
+  // Lohnverrechnungs-Summen
+  const totalLohnstunden = Math.round(rows.reduce((s, r) => s + r.lohnstunden, 0) * 100) / 100;
+  const totalNormalstunden = Math.round(rows.reduce((s, r) => s + r.normalstunden, 0) * 100) / 100;
+  const totalUeberstundenLohn = Math.round(rows.reduce((s, r) => s + r.ueberstundenLohn, 0) * 100) / 100;
+  const dietKlein = rows.filter((r) => r.diaetenTyp === "klein").length;
+  const dietGross = rows.filter((r) => r.diaetenTyp === "gross").length;
+  const dietAnfahrt = rows.filter((r) => r.diaetenTyp === "anfahrt").length;
+  const totalFeiertage = rows.filter((r) => r.anmerkung === "F").length;
 
   const selectedEmployee = employees.find((e) => e.id === selectedUserId);
   const employeeName = selectedEmployee ? `${selectedEmployee.vorname} ${selectedEmployee.nachname}` : "";
@@ -340,20 +374,29 @@ export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeR
     XLSX.writeFile(wb, `Arbeitszeitaufzeichnung_${employeeName.replace(/\s/g, "_")}_${monthNames[month - 1]}_${year}${suffix}.xlsx`);
   };
 
-  const handleExportPDF = async (includeZA: boolean = false) => {
+  const [showSignDialog, setShowSignDialog] = useState(false);
+
+  const handleExportPDF = async (sigEmployee: string | null, sigEmployer: string | null) => {
     if (!selectedUserId || rows.length === 0) return;
     await generateLegalWorkTimePDF({
       employeeName,
       month: monthNames[month - 1],
       year,
       rows,
-      totalHours,
       totalPause,
       workingDays,
       totalBadWeatherHours,
-      totalOvertime,
-      includeZA,
+      totalLohnstunden,
+      totalNormalstunden,
+      totalUeberstundenLohn,
+      dietKlein,
+      dietGross,
+      dietAnfahrt,
+      totalFeiertage,
+      signatureEmployee: sigEmployee,
+      signatureEmployer: sigEmployer,
     });
+    setShowSignDialog(false);
   };
 
   const content = (
@@ -479,21 +522,9 @@ export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeR
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm">
-                  <Download className="w-4 h-4 mr-1" /> PDF <ChevronDown className="w-4 h-4 ml-1" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
-                <DropdownMenuItem onClick={() => handleExportPDF(true)}>
-                  Mit ZA
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleExportPDF(false)}>
-                  Ohne ZA
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <Button variant="outline" size="sm" onClick={() => setShowSignDialog(true)}>
+              <Download className="w-4 h-4 mr-1" /> PDF
+            </Button>
           </div>
 
           {/* Table */}
@@ -584,6 +615,15 @@ export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeR
           </Card>
         </>
       )}
+
+      <SignAzgDialog
+        open={showSignDialog}
+        onOpenChange={setShowSignDialog}
+        employeeName={employeeName}
+        month={monthNames[month - 1]}
+        year={year}
+        onGenerate={handleExportPDF}
+      />
     </>
   );
 
