@@ -373,19 +373,28 @@ const ProjectDetail = () => {
     fetchDocRecords();
   };
 
-  // Endgültig löschen (nur Admin, aus dem Archiv)
+  // Endgültig löschen (nur Admin, aus dem Archiv) — Einzeldatei mit Confirm.
   const handlePermanentDelete = async (file: StorageFile) => {
     if (!projectId || !type || !isAdmin) return;
     if (!confirm(`"${file.name}" endgültig löschen? Dies kann nicht rückgängig gemacht werden.`)) return;
+    await permanentDeleteFiles([file]);
+  };
+
+  // Core: loescht eine oder mehrere Dateien aus Storage + DB ohne Confirm.
+  // Wird vom Einzel-Confirm und vom Bulk-Confirm aufgerufen.
+  const permanentDeleteFiles = async (toDelete: StorageFile[]) => {
+    if (!projectId || !type || !isAdmin || toDelete.length === 0) return;
     const bucket = bucketMap[type];
-    const filePath = `${projectId}/${file.name}`;
-    const { error } = await supabase.storage.from(bucket).remove([filePath]);
-    if (!error) {
-      await supabase.from("documents").delete().eq("file_url", filePath);
-      toast({ title: "Endgültig gelöscht" });
-      fetchFiles();
-      fetchDocRecords();
+    const paths = toDelete.map((f) => `${projectId}/${f.name}`);
+    const { error } = await supabase.storage.from(bucket).remove(paths);
+    if (error) {
+      toast({ variant: "destructive", title: "Fehler beim Löschen", description: error.message });
+      return;
     }
+    await supabase.from("documents").delete().in("file_url", paths);
+    toast({ title: toDelete.length === 1 ? "Endgültig gelöscht" : `${toDelete.length} Dateien endgültig gelöscht` });
+    fetchFiles();
+    fetchDocRecords();
   };
 
   // Bearbeitetes Bild direkt in den Projekt-Chat posten
@@ -922,10 +931,10 @@ const ProjectDetail = () => {
                           {isAdmin && (
                             <Button size="sm" variant="destructive" onClick={async () => {
                               if (!confirm(`${selectedFiles.size} Datei(en) endgültig löschen? Dies kann nicht rückgängig gemacht werden.`)) return;
-                              for (const fn of Array.from(selectedFiles)) {
-                                const file = files.find(f => f.name === fn);
-                                if (file) await handlePermanentDelete(file);
-                              }
+                              const toDelete = Array.from(selectedFiles)
+                                .map((fn) => files.find((f) => f.name === fn))
+                                .filter((f): f is StorageFile => !!f);
+                              await permanentDeleteFiles(toDelete);
                               setSelectedFiles(new Set());
                             }}>
                               <Trash2 className="h-3.5 w-3.5 mr-1" /> Endgültig löschen
