@@ -8,6 +8,7 @@ import { ImageEditor } from "@/components/ImageEditor";
 import { supabase } from "@/integrations/supabase/client";
 import { sanitizeStorageFileName } from "@/lib/storageFileName";
 import { formatChatText } from "@/lib/formatChatText";
+import { handleChatInputKeyDown } from "@/lib/chatInputKeyHandler";
 import { ZoomableImage } from "@/components/ZoomableImage";
 import { PdfPreview } from "@/components/PdfPreview";
 import { useToast } from "@/hooks/use-toast";
@@ -677,18 +678,13 @@ export function ProjectChat({ projectId, projectName, isAdmin }: { projectId: st
             context="notiz"
             value={newMessage}
             onChange={setNewMessage}
-            placeholder="Nachricht schreiben... (Shift+Enter = neue Zeile)"
+            placeholder="Nachricht schreiben..."
             className="flex-1"
             disabled={sending}
             multiline
             rows={1}
             inputClassName="min-h-[40px] max-h-32 resize-none"
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                handleSend();
-              }
-            }}
+            onKeyDown={handleChatInputKeyDown(handleSend)}
             onPasteImage={handlePasteImage}
           />
           <Button
