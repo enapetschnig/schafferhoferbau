@@ -402,6 +402,17 @@ export default function HoursReport() {
     return calculateZASaldo(totalHours, date, employeeSchedule, employeeSchwellenwert);
   };
 
+  // ZA-Saldo eines Eintrags fuer die Anzeige.
+  // Bevorzugt den DB-Wert, der beim Speichern (mit dem damals geltenden
+  // Schwellenwert) festgehalten wurde — Schwellenwert-Aenderungen wirken
+  // dadurch nur auf KUENFTIGE Eintraege. Fallback auf Live-Berechnung nur
+  // fuer alte Eintraege ohne befuellten DB-Split.
+  const getEntryZASaldo = (entry: TimeEntry, date: Date): number => {
+    if (isAbsenceTaetigkeit(entry.taetigkeit)) return 0;
+    if (entry.zeitausgleich_stunden != null) return Number(entry.zeitausgleich_stunden);
+    return calculateOvertime(date, entry.stunden);
+  };
+
   const toMin = (t: string) => {
     const [h, m] = (t || "00:00").substring(0, 5).split(":").map(Number);
     return h * 60 + m;
@@ -473,9 +484,8 @@ export default function HoursReport() {
   // Saldo-Summe: positive ZA-Stunden minus negative (= unter Schwelle gearbeitete Stunden).
   // Abwesenheits-Tage tragen nichts zum Saldo bei.
   const totalOvertime = uniqueEntriesByDay.reduce((sum, entry) => {
-    if (isAbsenceTaetigkeit(entry.taetigkeit)) return sum;
     const entryDate = parseISO(entry.datum);
-    return sum + calculateOvertime(entryDate, entry.stunden);
+    return sum + getEntryZASaldo(entry, entryDate);
   }, 0);
   const totalKilometer = uniqueEntriesByDay.reduce((sum, entry) => sum + (entry.kilometer || 0), 0);
   const totalKmGeld = Math.round(totalKilometer * 0.42 * 100) / 100;
@@ -691,9 +701,13 @@ export default function HoursReport() {
               const endMin = toMin(entry.end_time);
               const pauseMins = entry.pause_minutes || 0;
               const calculatedHours = Math.max(0, (endMin - startMin - pauseMins) / 60);
-              const overtime = isAbsenceTaetigkeit(entry.taetigkeit)
-                ? 0
-                : calculateOvertime(dayDate, calculatedHours);
+              // ZA-Saldo: DB-Wert bevorzugen (siehe getEntryZASaldo) — fallback
+              // auf Live-Berechnung mit den frisch berechneten Stunden.
+              const overtime = entry.zeitausgleich_stunden != null
+                ? Number(entry.zeitausgleich_stunden)
+                : isAbsenceTaetigkeit(entry.taetigkeit)
+                  ? 0
+                  : calculateOvertime(dayDate, calculatedHours);
               // Saldo: positive Werte mit +Vorzeichen, negative mit -Vorzeichen, 0 leer
               const overtimeText = overtime !== 0 ? (overtime > 0 ? `+${overtime.toFixed(2)}` : overtime.toFixed(2)) : "";
 
@@ -795,7 +809,10 @@ export default function HoursReport() {
           }, 0);
           // Tagessumme: Saldo-Anzeige nur fuer reine Arbeitstage (kein Mix Urlaub+Arbeit)
           const dayHasAbsence = uniqueDayEntries.some((e) => isAbsenceTaetigkeit(e.taetigkeit));
-          const dayTotalOvertime = dayHasAbsence ? 0 : calculateOvertime(dayDate, dayTotalHours);
+          // Pro Eintrag DB-Wert bevorzugen (siehe getEntryZASaldo).
+          const dayTotalOvertime = dayHasAbsence
+            ? 0
+            : uniqueDayEntries.reduce((s, e) => s + getEntryZASaldo(e, dayDate), 0);
           const dayOvertimeText = includeOvertime && dayTotalOvertime !== 0
             ? (dayTotalOvertime > 0 ? `+${dayTotalOvertime.toFixed(2)}` : dayTotalOvertime.toFixed(2))
             : "";
@@ -1218,9 +1235,9 @@ export default function HoursReport() {
                             return dayEntries.map((entry, entryIndex) => {
                               const lunchBreak = calculateLunchBreak(entry);
                               const isOverlapping = overlappingIds.has(entry.id);
-                              const overtime = isOverlapping || isAbsenceTaetigkeit(entry.taetigkeit)
+                              const overtime = isOverlapping
                                 ? 0
-                                : calculateOvertime(day.date, entry.stunden);
+                                : getEntryZASaldo(entry, day.date);
                               const project = projects[entry.project_id];
                               const ortIcon = entry.location_type === "baustelle" ? "🏗️" : entry.location_type === "werkstatt" ? "🏭" : "";
                               const ortText = entry.location_type === "baustelle" ? "Baustelle" : entry.location_type === "werkstatt" ? "Lager" : "";

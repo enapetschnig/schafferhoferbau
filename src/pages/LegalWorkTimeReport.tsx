@@ -97,7 +97,7 @@ export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeR
     const [{ data }, { data: weatherData }, { data: empData }] = await Promise.all([
       supabase
         .from("time_entries")
-        .select("datum, start_time, end_time, pause_minutes, stunden, taetigkeit, diaeten_typ")
+        .select("datum, start_time, end_time, pause_minutes, stunden, lohnstunden, zeitausgleich_stunden, taetigkeit, diaeten_typ")
         .eq("user_id", selectedUserId)
         .gte("datum", startDate)
         .lte("datum", endDate)
@@ -121,23 +121,35 @@ export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeR
     setEmployeeSchedule(schedule);
     setEmployeeSchwellenwert(schwellenwert);
 
-    // Group time entries by datum
+    // Group time entries by datum. dbZA / dbZACount tracken den DB-Wert
+    // pro Tag — bevorzugt fuer die Anzeige, damit Schwellenwert-Aenderungen
+    // nur kuenftige Eintraege betreffen.
     const grouped: Record<string, {
       starts: string[]; ends: string[]; pause: number; stunden: number;
       taetigkeit: string[]; diaeten: string[];
+      dbZA: number; dbZACount: number; entryCount: number;
     }> = {};
     if (data) {
       for (const entry of data) {
         if (!grouped[entry.datum]) {
-          grouped[entry.datum] = { starts: [], ends: [], pause: 0, stunden: 0, taetigkeit: [], diaeten: [] };
+          grouped[entry.datum] = {
+            starts: [], ends: [], pause: 0, stunden: 0, taetigkeit: [], diaeten: [],
+            dbZA: 0, dbZACount: 0, entryCount: 0,
+          };
         }
-        if (entry.start_time) grouped[entry.datum].starts.push(entry.start_time);
-        if (entry.end_time) grouped[entry.datum].ends.push(entry.end_time);
-        grouped[entry.datum].pause += entry.pause_minutes || 0;
-        grouped[entry.datum].stunden += entry.stunden || 0;
-        if (entry.taetigkeit) grouped[entry.datum].taetigkeit.push(entry.taetigkeit);
+        const g = grouped[entry.datum];
+        if (entry.start_time) g.starts.push(entry.start_time);
+        if (entry.end_time) g.ends.push(entry.end_time);
+        g.pause += entry.pause_minutes || 0;
+        g.stunden += entry.stunden || 0;
+        if (entry.taetigkeit) g.taetigkeit.push(entry.taetigkeit);
         if (entry.diaeten_typ && entry.diaeten_typ !== "keine") {
-          grouped[entry.datum].diaeten.push(entry.diaeten_typ);
+          g.diaeten.push(entry.diaeten_typ);
+        }
+        g.entryCount++;
+        if (entry.zeitausgleich_stunden != null) {
+          g.dbZA += Number(entry.zeitausgleich_stunden);
+          g.dbZACount++;
         }
       }
     }
@@ -173,14 +185,17 @@ export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeR
         const beginn = g.starts.length > 0 ? g.starts.sort()[0]?.slice(0, 5) : null;
         const ende = g.ends.length > 0 ? g.ends.sort().reverse()[0]?.slice(0, 5) : null;
         const arbeitszeit = Math.round(g.stunden * 100) / 100;
-        // ZA-Saldo = (geleistet - Schwellenwert), KANN NEGATIV sein wenn
-        // unter Schwelle gearbeitet (Stunden werden vom ZA-Konto abgezogen).
-        // Nur fuer reine Arbeitstage gewertet (Urlaub/Krank/etc. = 0 Saldo).
+        // ZA-Saldo: bevorzugt DB-Werte (beim Speichern mit dem damals
+        // geltenden Schwellenwert festgehalten). Damit wirken sich
+        // Schwellenwert-Aenderungen nur auf kuenftige Eintraege aus.
+        // Fallback Live-Berechnung wenn Eintraege ohne DB-Split (alte Daten).
         let ueberstunden = 0;
         const isPureWorkDay = !["Urlaub", "Krankenstand", "Feiertag", "Zeitausgleich"]
           .some((t) => g.taetigkeit.includes(t));
         if (isPureWorkDay) {
-          ueberstunden = calculateZASaldo(arbeitszeit, dayDate, schedule, schwellenwert);
+          ueberstunden = g.dbZACount === g.entryCount && g.entryCount > 0
+            ? Math.round(g.dbZA * 100) / 100
+            : calculateZASaldo(arbeitszeit, dayDate, schedule, schwellenwert);
         }
         dayRows.push({
           datum, beginn, ende,
