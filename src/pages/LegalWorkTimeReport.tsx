@@ -304,15 +304,50 @@ export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeR
     return h > 0 ? `${h}h ${m}min` : `${m}min`;
   };
 
-  const handleExportExcel = (includeOvertime: boolean = false) => {
-    if (!selectedUserId || rows.length === 0) return;
+  // Excel-Diaeten-Labels mit Schwellen-Bezeichnungen fuer die Lohnverrechnung
+  // (UI-Tabelle nutzt weiter die Langform via DIAETEN_LABEL).
+  const DIAETEN_LABEL_EXCEL: Record<string, string> = {
+    klein: ">3h", gross: ">9h", anfahrt: ">100km",
+  };
+
+  // Endzeit-Kapping fuer "ohne Ueberstunden"-Variante: Beginn + Pause + Lohnstunden.
+  // Bei actual <= Schwellenwert ist lohnstunden = actual → faellt mit Original
+  // zusammen. Bei actual > Schwellenwert wird die Endzeit "zurueckgerechnet"
+  // auf den Zeitpunkt, an dem der Schwellenwert erreicht war.
+  const computeCappedEnde = (beginn: string | null, pauseMinutes: number, lohnstunden: number): string => {
+    if (!beginn || lohnstunden <= 0) return "";
+    const [h, m] = beginn.split(":").map(Number);
+    const totalMin = h * 60 + m + pauseMinutes + Math.round(lohnstunden * 60);
+    const eh = Math.floor(totalMin / 60) % 24;
+    const em = totalMin % 60;
+    return `${String(eh).padStart(2, "0")}:${String(em).padStart(2, "0")}`;
+  };
+
+  const handleExportExcel = async (includeOvertime: boolean = false) => {
+    if (!selectedUserId) return;
+    // Frische DB-Daten vor Export (analog zum PDF-Pfad).
+    const freshRows = (await fetchData()) ?? rows;
+    if (freshRows.length === 0) return;
+
+    // Lokal aus den frischen Zeilen neu berechnen — nicht aus dem
+    // moeglicherweise veralteten render-State.
+    const f_totalPause = freshRows.reduce((s, r) => s + r.pauseMinutes, 0);
+    const f_workingDays = freshRows.filter((r) => r.arbeitszeit > 0).length;
+    const f_totalSW = Math.round(freshRows.reduce((s, r) => s + r.schlechtwetterStunden, 0) * 100) / 100;
+    const f_dietKlein = freshRows.filter((r) => r.diaetenTyp === "klein").length;
+    const f_dietGross = freshRows.filter((r) => r.diaetenTyp === "gross").length;
+    const f_dietAnfahrt = freshRows.filter((r) => r.diaetenTyp === "anfahrt").length;
+    const f_totalFeiertage = freshRows.filter((r) => r.anmerkung === "F").length;
 
     // Header-Zeilen je nach Modus: mit oder ohne Ueberstunden-Spalte
     const headerCols = includeOvertime
       ? ["Datum", "Wochentag", "Arbeitsbeginn", "Arbeitsende", "Pause", "Arbeitszeit (h)", "Überstunden (h)", "Diäten", "Anmerkung"]
       : ["Datum", "Wochentag", "Arbeitsbeginn", "Arbeitsende", "Pause", "Arbeitszeit (h)", "Diäten", "Anmerkung"];
 
-    const wsData: string[][] = [
+    // Body-Zeilen mit echten Zahlen (kein toFixed) damit Excel summieren kann.
+    // Leere Zellen bleiben "" damit aoa_to_sheet sie ueberspringt.
+    type Cell = string | number;
+    const wsData: Cell[][] = [
       ["Arbeitszeitaufzeichnung"],
       [`Mitarbeiter: ${employeeName}`],
       [`Zeitraum: ${monthNames[month - 1]} ${year}`],
@@ -320,55 +355,101 @@ export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeR
       headerCols,
     ];
 
-    for (const row of rows) {
+    for (const row of freshRows) {
       const dayName = format(new Date(row.datum), "EEEE", { locale: de });
       const anmerkungText = row.anmerkung
         ? row.anmerkung === "SW" ? `SW (${row.schlechtwetterStunden.toFixed(1)}h)` : row.anmerkung
         : "";
-      const diaetenText = row.diaetenTyp && row.diaetenTyp !== "keine" ? DIAETEN_LABEL[row.diaetenTyp] : "";
-      const baseRow = [
-        format(new Date(row.datum), "dd.MM.yyyy"),
-        dayName,
-        row.beginn || "",
-        row.ende || "",
-        row.pauseMinutes > 0 ? formatPause(row.pauseMinutes) : "",
-        row.arbeitszeit > 0 ? row.arbeitszeit.toFixed(2) : "",
-      ];
+      const diaetenText = row.diaetenTyp && row.diaetenTyp !== "keine" ? DIAETEN_LABEL_EXCEL[row.diaetenTyp] : "";
+
       if (includeOvertime) {
+        // MIT Ueberstunden: actual Arbeitszeit + ZA-Saldo separat.
         wsData.push([
-          ...baseRow,
-          row.ueberstunden !== 0
-            ? (row.ueberstunden > 0 ? `+${row.ueberstunden.toFixed(2)}` : row.ueberstunden.toFixed(2))
-            : "",
+          format(new Date(row.datum), "dd.MM.yyyy"),
+          dayName,
+          row.beginn || "",
+          row.ende || "",
+          row.pauseMinutes > 0 ? formatPause(row.pauseMinutes) : "",
+          row.arbeitszeit > 0 ? row.arbeitszeit : "",
+          row.ueberstunden !== 0 ? row.ueberstunden : "",
           diaetenText,
           anmerkungText,
         ]);
       } else {
-        wsData.push([...baseRow, diaetenText, anmerkungText]);
+        // OHNE Ueberstunden: Endzeit auf Lohnstunden gekappt,
+        // Arbeitszeit = Lohnstunden (bis Schwellenwert).
+        const cappedEnde = computeCappedEnde(row.beginn, row.pauseMinutes, row.lohnstunden);
+        wsData.push([
+          format(new Date(row.datum), "dd.MM.yyyy"),
+          dayName,
+          row.beginn || "",
+          cappedEnde || row.ende || "",
+          row.pauseMinutes > 0 ? formatPause(row.pauseMinutes) : "",
+          row.lohnstunden > 0 ? row.lohnstunden : "",
+          diaetenText,
+          anmerkungText,
+        ]);
       }
     }
 
+    // Leerzeile vor der Summary
     wsData.push([]);
+
+    // Summary-Layout. Summen-Zeile wird unten als Formel ueberschrieben,
+    // damit Excel sie live nachrechnet wenn jemand Werte editiert.
+    const bodyStartRow = 6; // 1-basiert: erste Datenzeile (Header in Row 5)
+    const bodyEndRow = 5 + freshRows.length;
+    const summeRow = bodyEndRow + 2; // 1-basiert; aoa-Index = summeRow - 1
     if (includeOvertime) {
-      wsData.push([
-        "", "", "", "Summe:", formatPause(totalPause), totalHours.toFixed(2),
-        totalOvertime !== 0
-          ? (totalOvertime > 0 ? `+${totalOvertime.toFixed(2)}` : totalOvertime.toFixed(2))
-          : "",
-        "", "",
-      ]);
+      wsData.push(["", "", "", "Summe:", formatPause(f_totalPause), "", "", "", ""]);
+      wsData.push(["", "", "", "Normalarbeitszeit:", "", "", "", "", ""]);
     } else {
-      wsData.push(["", "", "", "Summe:", formatPause(totalPause), totalHours.toFixed(2), "", ""]);
+      wsData.push(["", "", "", "Summe:", formatPause(f_totalPause), "", "", ""]);
     }
-    wsData.push(["", "", "", "Arbeitstage:", "", workingDays.toString()]);
-    if (totalDiaeten > 0) {
-      wsData.push(["", "", "", "Diäten-Tage:", "", totalDiaeten.toString()]);
+    wsData.push(["", "", "", "Arbeitstage:", "", f_workingDays]);
+    wsData.push(["", "", "", "Diäten-Tage >3h:", "", f_dietKlein]);
+    wsData.push(["", "", "", "Diäten-Tage >9h:", "", f_dietGross]);
+    wsData.push(["", "", "", "Diäten-Tage >100km:", "", f_dietAnfahrt]);
+    if (f_totalSW > 0) {
+      wsData.push(["", "", "", "Schlechtwetterstunden:", "", f_totalSW]);
     }
-    if (totalBadWeatherHours > 0) {
-      wsData.push(["", "", "", "Schlechtwetter:", "", totalBadWeatherHours.toFixed(1)]);
-    }
+    wsData.push(["", "", "", "Feiertage:", "", f_totalFeiertage]);
 
     const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+    // Summen-Formeln setzen (statt vorberechneter Werte). Zusaetzlich `v` als
+    // gecachten Wert, damit Reader die Formeln nicht zwingend evaluieren
+    // muessen (Excel rechnet beim Bearbeiten trotzdem live nach).
+    const sumeRowSheet = summeRow; // 1-basiert in Excel-Notation
+    const fSum = includeOvertime
+      ? freshRows.reduce((s, r) => s + r.arbeitszeit, 0)
+      : freshRows.reduce((s, r) => s + r.lohnstunden, 0);
+    ws[XLSX.utils.encode_cell({ r: sumeRowSheet - 1, c: 5 })] = {
+      t: "n", f: `SUM(F${bodyStartRow}:F${bodyEndRow})`, v: Math.round(fSum * 100) / 100, z: "0.00",
+    };
+    if (includeOvertime) {
+      const gSum = freshRows.reduce((s, r) => s + r.ueberstunden, 0);
+      ws[XLSX.utils.encode_cell({ r: sumeRowSheet - 1, c: 6 })] = {
+        t: "n", f: `SUM(G${bodyStartRow}:G${bodyEndRow})`, v: Math.round(gSum * 100) / 100, z: "0.00",
+      };
+      // Normalarbeitszeit = Summe - ZA (eine Zeile unter Summe)
+      const normalRowSheet = sumeRowSheet + 1;
+      ws[XLSX.utils.encode_cell({ r: normalRowSheet - 1, c: 5 })] = {
+        t: "n", f: `F${sumeRowSheet}-G${sumeRowSheet}`, v: Math.round((fSum - gSum) * 100) / 100, z: "0.00",
+      };
+    }
+
+    // numFmt fuer alle Body-Number-Cells (Arbeitszeit + Ueberstunden) damit
+    // Werte mit deutschem Komma erscheinen.
+    const numericCols = includeOvertime ? [5, 6] : [5];
+    for (let r = bodyStartRow - 1; r < bodyEndRow; r++) {
+      for (const c of numericCols) {
+        const cell = ws[XLSX.utils.encode_cell({ r, c })];
+        if (cell && typeof cell.v === "number") {
+          cell.z = "0.00";
+        }
+      }
+    }
 
     // Column widths
     ws["!cols"] = includeOvertime
