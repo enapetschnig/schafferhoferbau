@@ -96,6 +96,53 @@ export default function ScheduleBoard() {
   // Resources manager dialog
   const [resourcesDialogOpen, setResourcesDialogOpen] = useState(false);
 
+  // Touch-Swipe-Navigation in der Wochenansicht: links wischen = naechste,
+  // rechts wischen = vorherige Woche. Damit kann man auf dem Handy schneller
+  // durch die Wochen blaettern, ohne die kleinen Pfeil-Buttons treffen zu
+  // muessen.
+  const touchStartX = useRef<number | null>(null);
+  const touchStartY = useRef<number | null>(null);
+  const touchStartGanttScroll = useRef<number | null>(null);
+  const ganttContainerRef = useRef<HTMLDivElement>(null);
+  const SWIPE_THRESHOLD_PX = 80;
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (mode !== "week") return;
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+    // Wenn der Touch im scrollbaren Gantt-Container startet, scrollLeft
+    // merken — beim Ende pruefen wir, ob horizontal gescrollt wurde
+    // (= war ein Scroll, kein Wisch).
+    if (ganttContainerRef.current?.contains(e.target as Node)) {
+      touchStartGanttScroll.current = ganttContainerRef.current.scrollLeft;
+    } else {
+      touchStartGanttScroll.current = null;
+    }
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    const startX = touchStartX.current;
+    const startY = touchStartY.current;
+    const startScroll = touchStartGanttScroll.current;
+    touchStartX.current = null;
+    touchStartY.current = null;
+    touchStartGanttScroll.current = null;
+    if (mode !== "week" || startX == null || startY == null) return;
+
+    const dx = e.changedTouches[0].clientX - startX;
+    const dy = e.changedTouches[0].clientY - startY;
+
+    // Mehr vertikal als horizontal → User scrollt die Seite, kein Wisch
+    if (Math.abs(dy) > Math.abs(dx)) return;
+    if (Math.abs(dx) < SWIPE_THRESHOLD_PX) return;
+    // Wenn im Gantt war und der Container hat horizontal gescrollt → Scroll, kein Wisch
+    if (startScroll != null && ganttContainerRef.current) {
+      if (Math.abs(ganttContainerRef.current.scrollLeft - startScroll) > 5) return;
+    }
+
+    setWeekStart((prev) => addDays(prev, dx < 0 ? 7 : -7));
+  };
+
   useEffect(() => {
     if (!permLoading && !isAdmin && !isVorarbeiter && !isExtern) {
       navigate("/");
@@ -373,7 +420,11 @@ export default function ScheduleBoard() {
         </div>
       </header>
 
-      <main className="container mx-auto px-3 sm:px-4 lg:px-6 py-4 sm:py-6">
+      <main
+        className="container mx-auto px-3 sm:px-4 lg:px-6 py-4 sm:py-6"
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+      >
         <ScheduleHeader
           weekStart={weekStart}
           onWeekChange={setWeekStart}
@@ -427,7 +478,7 @@ export default function ScheduleBoard() {
             )}
 
             {/* Gantt Grid */}
-            <div className="border rounded-lg overflow-x-auto">
+            <div ref={ganttContainerRef} className="border rounded-lg overflow-x-auto">
               <GanttTimeline days={weekDays} holidays={companyHolidays} />
               {!isExternView && (
                 <ProjectGanttSection
