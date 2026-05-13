@@ -58,6 +58,24 @@ const DIET_LABELS: Record<string, string> = {
   anfahrt: "A", // >100km Anfahrtsdiaet
 };
 
+// Endzeit fuer die Lohnverrechnungs-Sicht: Beginn + Pause + Lohnstunden.
+// Bei Tagen ueber dem Schwellenwert wird damit das Ende auf den Zeitpunkt
+// zurueckgerechnet, an dem der Schwellenwert erreicht war (z.B. 07:00–20:00
+// bei Schwelle 10h, Pause 30min → 17:30). Bei Tagen unter Schwellenwert ist
+// lohnstunden = actual, das berechnete Ende deckt sich mit dem Original.
+const computeCappedEnde = (
+  beginn: string | null,
+  pauseMinutes: number,
+  lohnstunden: number,
+): string => {
+  if (!beginn || lohnstunden <= 0) return "";
+  const [h, m] = beginn.split(":").map(Number);
+  const totalMin = h * 60 + m + pauseMinutes + Math.round(lohnstunden * 60);
+  const eh = Math.floor(totalMin / 60) % 24;
+  const em = totalMin % 60;
+  return `${String(eh).padStart(2, "0")}:${String(em).padStart(2, "0")}`;
+};
+
 const ANMERKUNG_LABELS: Record<string, string> = {
   SW: "Schlechtwetter",
   U: "Urlaub",
@@ -93,7 +111,7 @@ export async function generateLegalWorkTimePDF(params: LegalWorkTimePDFParams) {
   doc.setFontSize(10);
   doc.setFont("helvetica", "normal");
   doc.setTextColor(100, 100, 100);
-  doc.text(`gemäß § 26 AZG · für Lohnverrechnung (bis Schwellenwert)`, margin, y);
+  doc.text(`gemäß § 26 AZG`, margin, y);
   doc.setTextColor(0, 0, 0);
   y += 10;
 
@@ -144,7 +162,9 @@ export async function generateLegalWorkTimePDF(params: LegalWorkTimePDFParams) {
     doc.text(format(date, "dd.MM.yyyy"), colX[0], y);
     doc.text(format(date, "EEE", { locale: de }), colX[1], y);
     doc.text(row.beginn || "–", colX[2], y);
-    doc.text(row.ende || "–", colX[3], y);
+    // Endzeit auf Lohnstunden gekappt (analog Excel "ohne Ueberstunden")
+    const cappedEnde = computeCappedEnde(row.beginn, row.pauseMinutes, row.lohnstunden);
+    doc.text(cappedEnde || row.ende || "–", colX[3], y);
     doc.text(row.pauseMinutes > 0 ? formatPause(row.pauseMinutes) : "–", colX[4], y);
     // Arbeitszeit-Spalte: NUR Lohnstunden (= bis Schwellenwert).
     // Mehrstunden ueber Schwellenwert sind NICHT Teil der Lohnverrechnung.
