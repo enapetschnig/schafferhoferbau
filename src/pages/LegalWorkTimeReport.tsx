@@ -9,6 +9,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { PageHeader } from "@/components/PageHeader";
+import { useToast } from "@/hooks/use-toast";
 import { Download, ChevronDown } from "lucide-react";
 import { format, getDaysInMonth, parseISO } from "date-fns";
 import { de } from "date-fns/locale";
@@ -16,6 +17,14 @@ import * as XLSX from "xlsx-js-style";
 import { generateLegalWorkTimePDF } from "@/lib/generateLegalWorkTimePDF";
 import { calculateZASaldo, getNormalWorkingHours, getSchwellenwert, type WeekSchedule, type Schwellenwert } from "@/lib/workingHours";
 import { SignAzgDialog } from "@/components/SignAzgDialog";
+import {
+  fetchAzgSignature,
+  submitEmployeeSignature,
+  submitEmployerSignature,
+  requestEmployeeSignature,
+  type AzgSignatureRow,
+} from "@/lib/azgSignatures";
+import { CheckCircle2, Clock as ClockIcon } from "lucide-react";
 
 type Profile = { id: string; vorname: string; nachname: string };
 
@@ -57,6 +66,7 @@ interface LegalWorkTimeReportProps {
 
 export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeReportProps) {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [month, setMonth] = useState(new Date().getMonth() + 1);
   const [year, setYear] = useState(new Date().getFullYear());
   const [selectedUserId, setSelectedUserId] = useState("");
@@ -65,6 +75,29 @@ export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeR
   const [loading, setLoading] = useState(false);
   const [employeeSchedule, setEmployeeSchedule] = useState<WeekSchedule | null>(null);
   const [employeeSchwellenwert, setEmployeeSchwellenwert] = useState<Schwellenwert | null>(null);
+  const [sigRecord, setSigRecord] = useState<AzgSignatureRow | null>(null);
+
+  // Sig-Record fuer (selectedUserId, monat, jahr) live laden
+  const reloadSigRecord = useCallback(async () => {
+    if (!selectedUserId) { setSigRecord(null); return; }
+    const sig = await fetchAzgSignature(selectedUserId, month, year);
+    setSigRecord(sig);
+  }, [selectedUserId, month, year]);
+  useEffect(() => { reloadSigRecord(); }, [reloadSigRecord]);
+  // Realtime-Subscription fuer azg_signatures: wenn der Mitarbeiter in seiner
+  // App unterschreibt, sieht der Admin das hier sofort.
+  useEffect(() => {
+    if (!selectedUserId) return;
+    const ch = supabase
+      .channel(`azg-sig-watch-${selectedUserId}-${year}-${month}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "azg_signatures", filter: `user_id=eq.${selectedUserId}` },
+        () => { reloadSigRecord(); },
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [selectedUserId, month, year, reloadSigRecord]);
 
   // Fetch employees (exclude external)
   useEffect(() => {
@@ -473,33 +506,82 @@ export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeR
 
   const handleExportPDF = async (sigEmployee: string | null, sigEmployer: string | null) => {
     if (!selectedUserId) return;
-    // Sicherheitsnetz: vor PDF-Erstellung garantiert frische Daten aus der DB
-    // ziehen. fetchData gibt die berechneten Zeilen direkt zurueck (umgeht
-    // den React-Closure-Lag, dass setRows-Updates im selben Callback noch
-    // nicht im rows-State sichtbar sind).
-    const freshRows = (await fetchData()) ?? rows;
-    if (freshRows.length === 0) return;
 
-    // Summen direkt aus den frischen Zeilen berechnen — nicht aus dem
-    // moeglicherweise veralteten render-State.
-    const sum = (fn: (r: typeof freshRows[number]) => number) =>
-      Math.round(freshRows.reduce((s, r) => s + fn(r), 0) * 100) / 100;
-    const f_totalPause = freshRows.reduce((s, r) => s + r.pauseMinutes, 0);
-    const f_workingDays = freshRows.filter((r) => r.arbeitszeit > 0).length;
-    const f_totalSW = sum((r) => r.schlechtwetterStunden);
-    const f_totalLohn = sum((r) => r.lohnstunden);
-    const f_totalNormal = sum((r) => r.normalstunden);
-    const f_totalUeber = sum((r) => r.ueberstundenLohn);
-    const f_dietKlein = freshRows.filter((r) => r.diaetenTyp === "klein").length;
-    const f_dietGross = freshRows.filter((r) => r.diaetenTyp === "gross").length;
-    const f_dietAnfahrt = freshRows.filter((r) => r.diaetenTyp === "anfahrt").length;
-    const f_totalFeiertage = freshRows.filter((r) => r.anmerkung === "F").length;
+    // 1) Neue Unterschriften (im Dialog erfasst) ggf. in DB persistieren.
+    //    submitEmployee/Employer friert beim erstmaligen Schreiben den
+    //    Snapshot ein — danach gilt der DB-Snapshot als rechtsverbindlich.
+    try {
+      if (sigEmployee) {
+        await submitEmployeeSignature(selectedUserId, month, year, employeeName, sigEmployee);
+      }
+      if (sigEmployer) {
+        await submitEmployerSignature(selectedUserId, month, year, employeeName, sigEmployer);
+      }
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Speichern fehlgeschlagen", description: err.message });
+    }
+
+    // 2) DB-Snapshot (falls bereits eingefroren) hat Vorrang vor Live-Daten —
+    //    so zeigt das PDF immer den verbindlichen Stand zum Unterschriftsmoment.
+    const latestSig = await fetchAzgSignature(selectedUserId, month, year);
+    setSigRecord(latestSig);
+    const snapshot = latestSig?.snapshot ?? null;
+
+    let pdfRows: typeof rows;
+    let f_totalPause: number;
+    let f_workingDays: number;
+    let f_totalSW: number;
+    let f_totalLohn: number;
+    let f_totalNormal: number;
+    let f_totalUeber: number;
+    let f_dietKlein: number;
+    let f_dietGross: number;
+    let f_dietAnfahrt: number;
+    let f_totalFeiertage: number;
+
+    if (snapshot) {
+      pdfRows = snapshot.rows as any;
+      f_totalPause = snapshot.totalPause;
+      f_workingDays = snapshot.workingDays;
+      f_totalSW = snapshot.totalBadWeatherHours;
+      f_totalLohn = snapshot.totalLohnstunden;
+      f_totalNormal = snapshot.totalNormalstunden;
+      f_totalUeber = snapshot.totalUeberstundenLohn;
+      f_dietKlein = snapshot.dietKlein;
+      f_dietGross = snapshot.dietGross;
+      f_dietAnfahrt = snapshot.dietAnfahrt;
+      f_totalFeiertage = snapshot.totalFeiertage;
+    } else {
+      // Kein Snapshot → frische Live-Daten holen (analog frueher).
+      const freshRows = (await fetchData()) ?? rows;
+      if (freshRows.length === 0) return;
+      const sum = (fn: (r: typeof freshRows[number]) => number) =>
+        Math.round(freshRows.reduce((s, r) => s + fn(r), 0) * 100) / 100;
+      pdfRows = freshRows;
+      f_totalPause = freshRows.reduce((s, r) => s + r.pauseMinutes, 0);
+      f_workingDays = freshRows.filter((r) => r.arbeitszeit > 0).length;
+      f_totalSW = sum((r) => r.schlechtwetterStunden);
+      f_totalLohn = sum((r) => r.lohnstunden);
+      f_totalNormal = sum((r) => r.normalstunden);
+      f_totalUeber = sum((r) => r.ueberstundenLohn);
+      f_dietKlein = freshRows.filter((r) => r.diaetenTyp === "klein").length;
+      f_dietGross = freshRows.filter((r) => r.diaetenTyp === "gross").length;
+      f_dietAnfahrt = freshRows.filter((r) => r.diaetenTyp === "anfahrt").length;
+      f_totalFeiertage = freshRows.filter((r) => r.anmerkung === "F").length;
+    }
+
+    // 3) Unterschriften fuers PDF: DB hat Vorrang, sonst die im Dialog
+    //    erfassten — falls neither, leere Linie zum haendischen Eintragen.
+    const pdfSigEmployee = latestSig?.employee_signature ?? sigEmployee;
+    const pdfSigEmployer = latestSig?.employer_signature ?? sigEmployer;
+    const pdfSignedEmployeeAt = latestSig?.employee_signed_at ?? null;
+    const pdfSignedEmployerAt = latestSig?.employer_signed_at ?? null;
 
     await generateLegalWorkTimePDF({
       employeeName,
       month: monthNames[month - 1],
       year,
-      rows: freshRows,
+      rows: pdfRows as any,
       totalPause: f_totalPause,
       workingDays: f_workingDays,
       totalBadWeatherHours: f_totalSW,
@@ -510,10 +592,27 @@ export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeR
       dietGross: f_dietGross,
       dietAnfahrt: f_dietAnfahrt,
       totalFeiertage: f_totalFeiertage,
-      signatureEmployee: sigEmployee,
-      signatureEmployer: sigEmployer,
+      signatureEmployee: pdfSigEmployee,
+      signatureEmployer: pdfSigEmployer,
+      signedEmployeeAt: pdfSignedEmployeeAt,
+      signedEmployerAt: pdfSignedEmployerAt,
     });
     setShowSignDialog(false);
+    await reloadSigRecord();
+  };
+
+  const handleRequestEmployeeSignature = async () => {
+    if (!selectedUserId) return;
+    try {
+      await requestEmployeeSignature(selectedUserId, month, year);
+      toast({
+        title: "Anfrage gesendet",
+        description: `${employeeName} sieht die Anfrage auf dem Dashboard und kann unterschreiben.`,
+      });
+      await reloadSigRecord();
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Fehler", description: err.message });
+    }
   };
 
   const content = (
@@ -621,6 +720,40 @@ export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeR
               </Card>
             )}
           </div>
+
+          {/* Unterschrifts-Status */}
+          {sigRecord && (
+            <Card className="mb-4 border-orange-200 dark:border-orange-800 bg-orange-50/40 dark:bg-orange-950/10">
+              <CardContent className="p-3 flex flex-wrap items-center gap-3 text-sm">
+                <div className="flex items-center gap-1.5">
+                  {sigRecord.employee_signed_at ? (
+                    <CheckCircle2 className="w-4 h-4 text-green-600" />
+                  ) : (
+                    <ClockIcon className="w-4 h-4 text-orange-500" />
+                  )}
+                  <span>
+                    <span className="font-medium">Mitarbeiter:</span>{" "}
+                    {sigRecord.employee_signed_at
+                      ? `unterschrieben am ${format(parseISO(sigRecord.employee_signed_at), "dd.MM.yyyy 'um' HH:mm", { locale: de })}`
+                      : "noch offen"}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  {sigRecord.employer_signed_at ? (
+                    <CheckCircle2 className="w-4 h-4 text-green-600" />
+                  ) : (
+                    <ClockIcon className="w-4 h-4 text-orange-500" />
+                  )}
+                  <span>
+                    <span className="font-medium">Arbeitgeber:</span>{" "}
+                    {sigRecord.employer_signed_at
+                      ? `unterschrieben am ${format(parseISO(sigRecord.employer_signed_at), "dd.MM.yyyy 'um' HH:mm", { locale: de })}`
+                      : "noch offen"}
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Export Buttons */}
           <div className="flex gap-2 mb-4">
@@ -739,6 +872,9 @@ export default function LegalWorkTimeReport({ embedded = false }: LegalWorkTimeR
         employeeName={employeeName}
         month={monthNames[month - 1]}
         year={year}
+        existingEmployeeSignedAt={sigRecord?.employee_signed_at ?? null}
+        existingEmployerSignedAt={sigRecord?.employer_signed_at ?? null}
+        onRequestEmployeeSignature={sigRecord?.employee_signature ? undefined : handleRequestEmployeeSignature}
         onGenerate={handleExportPDF}
       />
     </>

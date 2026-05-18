@@ -32,6 +32,51 @@ export type Database = {
         }
         Relationships: []
       }
+      azg_signatures: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          employee_signature: string | null
+          employee_signed_at: string | null
+          employer_signature: string | null
+          employer_signed_at: string | null
+          employer_user_id: string | null
+          id: string
+          jahr: number
+          monat: number
+          snapshot: Json | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          employee_signature?: string | null
+          employee_signed_at?: string | null
+          employer_signature?: string | null
+          employer_signed_at?: string | null
+          employer_user_id?: string | null
+          id?: string
+          jahr: number
+          monat: number
+          snapshot?: Json | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          employee_signature?: string | null
+          employee_signed_at?: string | null
+          employer_signature?: string | null
+          employer_signed_at?: string | null
+          employer_user_id?: string | null
+          id?: string
+          jahr?: number
+          monat?: number
+          snapshot?: Json | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       bad_weather_records: {
         Row: {
           arbeitsstunden_vor_schlechtwetter: number | null

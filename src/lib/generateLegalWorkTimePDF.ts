@@ -43,6 +43,10 @@ interface LegalWorkTimePDFParams {
   signatureEmployee?: string | null;
   /** Optional: Unterschrift Arbeitgeber (data URL aus SignaturePad). */
   signatureEmployer?: string | null;
+  /** Optional: Zeitstempel der Mitarbeiter-Unterschrift (ISO). */
+  signedEmployeeAt?: string | null;
+  /** Optional: Zeitstempel der Arbeitgeber-Unterschrift (ISO). */
+  signedEmployerAt?: string | null;
 }
 
 const formatPause = (minutes: number) => {
@@ -93,6 +97,7 @@ export async function generateLegalWorkTimePDF(params: LegalWorkTimePDFParams) {
     dietKlein, dietGross, dietAnfahrt,
     totalFeiertage,
     signatureEmployee = null, signatureEmployer = null,
+    signedEmployeeAt = null, signedEmployerAt = null,
   } = params;
 
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
@@ -279,6 +284,12 @@ export async function generateLegalWorkTimePDF(params: LegalWorkTimePDFParams) {
   const sigHeight = 18;
   const sigY = y - sigHeight + 2;
 
+  // Hilfs-Funktion: Datum aus ISO-String oder leer (fuer haendisches Eintragen)
+  const formatSigDate = (iso: string | null): string => {
+    if (!iso) return "";
+    try { return format(new Date(iso), "dd.MM.yyyy"); } catch { return ""; }
+  };
+
   // Mitarbeiter
   if (signatureEmployee) {
     try {
@@ -290,8 +301,11 @@ export async function generateLegalWorkTimePDF(params: LegalWorkTimePDFParams) {
   doc.setLineWidth(0.3);
   doc.line(margin, y, margin + sigWidth, y);
   doc.setFontSize(8);
+  const dateLabelEmployee = formatSigDate(signedEmployeeAt);
   doc.text(
-    `Datum: ${format(new Date(), "dd.MM.yyyy")}  ·  Unterschrift Arbeitnehmer`,
+    dateLabelEmployee
+      ? `${dateLabelEmployee}  ·  Unterschrift Arbeitnehmer`
+      : `Datum, Unterschrift Arbeitnehmer`,
     margin,
     y + 4,
   );
@@ -306,8 +320,11 @@ export async function generateLegalWorkTimePDF(params: LegalWorkTimePDFParams) {
     }
   }
   doc.line(sigEmployerX, y, sigEmployerX + sigWidth, y);
+  const dateLabelEmployer = formatSigDate(signedEmployerAt);
   doc.text(
-    `Datum: ${format(new Date(), "dd.MM.yyyy")}  ·  Unterschrift Arbeitgeber`,
+    dateLabelEmployer
+      ? `${dateLabelEmployer}  ·  Unterschrift Arbeitgeber`
+      : `Datum, Unterschrift Arbeitgeber`,
     sigEmployerX,
     y + 4,
   );

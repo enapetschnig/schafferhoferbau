@@ -16,6 +16,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import ChangePasswordDialog from "@/components/ChangePasswordDialog";
+import { AzgPendingCard } from "@/components/AzgPendingCard";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -990,6 +991,13 @@ export default function Index() {
 
       {/* Main Content */}
       <main className="px-3 sm:px-4 lg:px-6 py-4 sm:py-6 lg:py-8 max-w-7xl mx-auto">
+
+        {/* Arbeitszeitaufzeichnung — offene Unterschriften (Mitarbeiter) */}
+        {!isExternal && user && (
+          <div className="mb-4">
+            <AzgPendingCard userId={user.id} employeeName={userName} />
+          </div>
+        )}
 
         {/* Fehlende Stunden — ganz oben, prominent */}
         {!isExternal && missingHoursDates.length > 0 && (
