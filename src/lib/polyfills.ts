@@ -38,3 +38,35 @@ if (typeof (Uint8Array as any).fromHex !== "function") {
 
 // Uint8Array.prototype.toBase64 / Uint8Array.fromBase64 — gleicher Proposal-Status,
 // derzeit nicht von pdfjs verwendet, daher hier nicht polyfilled.
+
+// Map/WeakMap.prototype.getOrInsert + getOrInsertComputed (TC39 "upsert"
+// Proposal, sehr neu — fehlt in aelteren Android-Chrome-Versionen).
+// pdfjs-dist nutzt getOrInsertComputed.
+// https://github.com/tc39/proposal-upsert
+function installUpsert(proto: any) {
+  if (typeof proto.getOrInsert !== "function") {
+    Object.defineProperty(proto, "getOrInsert", {
+      value: function getOrInsert(this: any, key: any, value: any) {
+        if (this.has(key)) return this.get(key);
+        this.set(key, value);
+        return value;
+      },
+      writable: true,
+      configurable: true,
+    });
+  }
+  if (typeof proto.getOrInsertComputed !== "function") {
+    Object.defineProperty(proto, "getOrInsertComputed", {
+      value: function getOrInsertComputed(this: any, key: any, callbackFn: (k: any) => any) {
+        if (this.has(key)) return this.get(key);
+        const value = callbackFn(key);
+        this.set(key, value);
+        return value;
+      },
+      writable: true,
+      configurable: true,
+    });
+  }
+}
+installUpsert(Map.prototype);
+installUpsert(WeakMap.prototype);
