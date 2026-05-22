@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Session, User } from "@supabase/supabase-js";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Clock, FolderKanban, Users, BarChart3, LogOut, FileText, Camera, ArrowRight, Info, User as UserIcon, UserPlus, Zap, Receipt, CloudRain, ClipboardList, Wrench, CalendarDays, BookOpen, Star, MapPin, Megaphone, MessageCircle, ChevronLeft, Package, ShieldCheck, ShieldAlert, Plus, X, Bell } from "lucide-react";
+import { Clock, FolderKanban, Users, BarChart3, LogOut, FileText, Camera, ArrowRight, Info, User as UserIcon, UserPlus, Zap, Receipt, CloudRain, ClipboardList, Wrench, CalendarDays, BookOpen, Star, MapPin, Megaphone, MessageCircle, ChevronLeft, Package, ShieldCheck, ShieldAlert, Plus, X, Bell, Calculator } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useOnboarding } from "@/contexts/OnboardingContext";
 import {
@@ -1682,6 +1682,28 @@ export default function Index() {
               </CardHeader>
               <CardContent>
                 <Button className="w-full" size="sm" variant="outline">Eingangsrechnungen öffnen</Button>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Buchhaltung — nur Admin */}
+          {isAdmin && menuVisible("buchhaltung") && (
+            <Card
+              className="cursor-pointer hover:shadow-lg transition-all hover:border-primary/50"
+              onClick={() => navigate("/buchhaltung")}
+            >
+              <CardHeader className="space-y-2 pb-3 relative">
+                <span className="absolute top-3 right-3 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground border">Admin</span>
+                <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <Calculator className="h-6 w-6 text-primary" />
+                </div>
+                <CardTitle className="text-lg sm:text-xl">Buchhaltung</CardTitle>
+                <CardDescription className="text-sm">
+                  Rechnungen scannen &amp; als Excel-Liste exportieren
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button className="w-full" size="sm" variant="outline">Buchhaltung öffnen</Button>
               </CardContent>
             </Card>
           )}

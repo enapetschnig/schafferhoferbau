@@ -1,7 +1,7 @@
 import { useNavigate, useLocation } from "react-router-dom";
 import {
   Clock, FolderKanban, FileText, Calendar, Building2, Truck,
-  Shield, FileCheck, BookOpen, Settings, BarChart3, Package, Wrench,
+  Shield, FileCheck, BookOpen, Settings, BarChart3, Package, Wrench, Calculator,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -25,6 +25,7 @@ const MENU_ITEMS: MenuItem[] = [
   { key: "gerateverwaltung", label: "Geräteverwaltung", icon: <Wrench className="h-4 w-4" />, path: "/equipment" },
   { key: "bestellungen", label: "Bestellungen", icon: <Package className="h-4 w-4" />, path: "/bestellungen" },
   { key: "eingangsrechnungen", label: "Eingangsrechnungen", icon: <FileText className="h-4 w-4" />, path: "/incoming-documents" },
+  { key: "buchhaltung", label: "Buchhaltung", icon: <Calculator className="h-4 w-4" />, path: "/buchhaltung", adminOnly: true },
   { key: "lagerverwaltung", label: "Lagerverwaltung", icon: <Package className="h-4 w-4" />, path: "/warehouse" },
   { key: "arbeitsschutz", label: "Sicherheit", icon: <Shield className="h-4 w-4" />, path: "/safety" },
   { key: "admin_bereich", label: "Administration", icon: <Settings className="h-4 w-4" />, path: "/admin", adminOnly: true },

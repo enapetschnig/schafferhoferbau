@@ -12,6 +12,31 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.1"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       app_settings: {
@@ -277,6 +302,98 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      buchhaltung_positionen: {
+        Row: {
+          artikelbezeichnung: string | null
+          aufschlag: number
+          baustelle: string | null
+          created_at: string
+          einheit: string | null
+          ek_preis: number | null
+          id: string
+          menge: number | null
+          rechnung_id: string
+          sortierung: number
+        }
+        Insert: {
+          artikelbezeichnung?: string | null
+          aufschlag?: number
+          baustelle?: string | null
+          created_at?: string
+          einheit?: string | null
+          ek_preis?: number | null
+          id?: string
+          menge?: number | null
+          rechnung_id: string
+          sortierung?: number
+        }
+        Update: {
+          artikelbezeichnung?: string | null
+          aufschlag?: number
+          baustelle?: string | null
+          created_at?: string
+          einheit?: string | null
+          ek_preis?: number | null
+          id?: string
+          menge?: number | null
+          rechnung_id?: string
+          sortierung?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "buchhaltung_positionen_rechnung_id_fkey"
+            columns: ["rechnung_id"]
+            isOneToOne: false
+            referencedRelation: "buchhaltung_rechnungen"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      buchhaltung_rechnungen: {
+        Row: {
+          belegnummer: string | null
+          betrag_brutto: number | null
+          betrag_netto: number | null
+          created_at: string
+          created_by: string | null
+          datei_name: string | null
+          id: string
+          jahr: number
+          lieferant: string | null
+          lieferdatum: string | null
+          pdf_url: string | null
+          rechnungsdatum: string | null
+        }
+        Insert: {
+          belegnummer?: string | null
+          betrag_brutto?: number | null
+          betrag_netto?: number | null
+          created_at?: string
+          created_by?: string | null
+          datei_name?: string | null
+          id?: string
+          jahr: number
+          lieferant?: string | null
+          lieferdatum?: string | null
+          pdf_url?: string | null
+          rechnungsdatum?: string | null
+        }
+        Update: {
+          belegnummer?: string | null
+          betrag_brutto?: number | null
+          betrag_netto?: number | null
+          created_at?: string
+          created_by?: string | null
+          datei_name?: string | null
+          id?: string
+          jahr?: number
+          lieferant?: string | null
+          lieferdatum?: string | null
+          pdf_url?: string | null
+          rechnungsdatum?: string | null
+        }
+        Relationships: []
       }
       chat_channels: {
         Row: {
@@ -3757,10 +3874,12 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {
       app_role: ["administrator", "mitarbeiter"],
     },
   },
 } as const
-

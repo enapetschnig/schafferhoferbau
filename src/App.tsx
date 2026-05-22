@@ -37,6 +37,7 @@ import Bestellungen from "./pages/Bestellungen";
 import CloudData from "./pages/CloudData";
 import ScheduleBoard from "./pages/ScheduleBoard";
 import IncomingInvoices from "./pages/IncomingInvoices";
+import Buchhaltung from "./pages/Buchhaltung";
 import DocumentLibrary from "./pages/DocumentLibrary";
 import ProjectChatPage from "./pages/ProjectChatPage";
 import CompanyChatPage from "./pages/CompanyChatPage";
@@ -188,6 +189,7 @@ function AppContent() {
           <Route path="/cloud-data" element={<ProtectedRoute minRole="admin"><CloudData /></ProtectedRoute>} />
           <Route path="/schedule" element={<ProtectedRoute minRole="vorarbeiter"><ScheduleBoard /></ProtectedRoute>} />
           <Route path="/incoming-invoices" element={<ProtectedRoute minRole="admin"><IncomingInvoices /></ProtectedRoute>} />
+          <Route path="/buchhaltung" element={<ProtectedRoute minRole="admin"><Buchhaltung /></ProtectedRoute>} />
           <Route path="/incoming-documents" element={<ProtectedRoute minRole="facharbeiter"><IncomingDocuments /></ProtectedRoute>} />
           <Route path="/warehouse" element={<ProtectedRoute minRole="facharbeiter"><Warehouse /></ProtectedRoute>} />
           {/* Sonstige */}

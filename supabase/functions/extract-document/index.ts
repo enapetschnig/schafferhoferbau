@@ -26,11 +26,16 @@ Extrahiere folgende Felder:
 
 Lieferant
 Datum (Rechnungsdatum)
+Lieferdatum (Datum der Warenlieferung / Leistungserbringung)
 Belegnummer (Rechnungsnummer)
 Betrag Netto
 Betrag Brutto
 
 Falls mehrere Netto-Zwischensummen vorkommen, verwende die Netto-Gesamtsumme der Rechnung.
+
+Lieferdatum: Suche nach "Lieferdatum", "Leistungsdatum", "Liefertag", "Leistungszeitraum"
+oder einem Datum beim Lieferschein-Bezug. Wenn kein eigenes Lieferdatum auf der
+Rechnung steht, lass das Feld leer ("") — NICHT das Rechnungsdatum hineinkopieren.
 
 ------------------------------------
 
@@ -98,6 +103,7 @@ Die Ausgabe muss exakt der folgenden Struktur entsprechen (NUR JSON, kein Markdo
 {
   "Lieferant": "",
   "Datum": "",
+  "Lieferdatum": "",
   "Belegnummer": "",
   "Betrag Netto (€)": "",
   "Betrag Brutto (€)": "",
