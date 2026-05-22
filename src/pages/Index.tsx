@@ -18,6 +18,7 @@ import {
 import ChangePasswordDialog from "@/components/ChangePasswordDialog";
 import { AzgPendingCard } from "@/components/AzgPendingCard";
 import { DocumentCaptureDialog } from "@/components/DocumentCaptureDialog";
+import { QuickUploadDialog } from "@/components/QuickUploadDialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -82,7 +83,8 @@ export default function Index() {
   const [isActivated, setIsActivated] = useState<boolean | null>(null);
   const [missingHoursDates, setMissingHoursDates] = useState<string[]>([]);
   const [pendingBestellungen, setPendingBestellungen] = useState(0);
-  const [showCapture, setShowCapture] = useState(false);
+  // Erfass-Modus: choose = Auswahldialog, dann lieferschein oder foto
+  const [captureMode, setCaptureMode] = useState<"none" | "choose" | "lieferschein" | "foto">("none");
   const [kategorie, setKategorie] = useState<string | null>(null);
   const [favoriteProjects, setFavoriteProjects] = useState<{ id: string; name: string; adresse: string | null }[]>([]);
   const [pendingCount, setPendingCount] = useState(0);
@@ -1050,7 +1052,7 @@ export default function Index() {
         {/* Schnellzugriff: Lieferschein / Foto erfassen — taeglich mehrfach genutzt */}
         {menuVisible("lieferscheine") && (
           <button
-            onClick={() => setShowCapture(true)}
+            onClick={() => setCaptureMode("choose")}
             className="mb-4 w-full flex items-center gap-4 rounded-xl border-2 border-primary bg-primary/5 hover:bg-primary/10 active:bg-primary/15 p-4 sm:p-5 transition-colors text-left"
           >
             <div className="h-14 w-14 rounded-lg bg-primary flex items-center justify-center shrink-0">
@@ -1999,11 +2001,49 @@ export default function Index() {
         </DialogContent>
       </Dialog>
 
-      {/* Lieferschein / Foto erfassen — direkt vom Dashboard */}
+      {/* Erfassen: erst Auswahl Lieferschein vs. Foto */}
+      <Dialog open={captureMode === "choose"} onOpenChange={(o) => { if (!o) setCaptureMode("none"); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Was möchtest du erfassen?</DialogTitle>
+          </DialogHeader>
+          <div className="grid grid-cols-1 gap-3 pt-1">
+            <button
+              onClick={() => setCaptureMode("lieferschein")}
+              className="flex items-center gap-3 rounded-xl border-2 border-muted-foreground/20 hover:border-primary p-4 text-left transition-colors"
+            >
+              <div className="text-3xl">📄</div>
+              <div>
+                <p className="font-semibold">Lieferschein / Rechnung</p>
+                <p className="text-xs text-muted-foreground">Dokument abfotografieren &amp; analysieren</p>
+              </div>
+            </button>
+            <button
+              onClick={() => setCaptureMode("foto")}
+              className="flex items-center gap-3 rounded-xl border-2 border-muted-foreground/20 hover:border-primary p-4 text-left transition-colors"
+            >
+              <div className="text-3xl">📷</div>
+              <div>
+                <p className="font-semibold">Foto zur Baustelle</p>
+                <p className="text-xs text-muted-foreground">Foto aufnehmen — landet im Foto-Ordner des Projekts</p>
+              </div>
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Lieferschein / Rechnung erfassen */}
       <DocumentCaptureDialog
-        open={showCapture}
-        onOpenChange={setShowCapture}
-        onShowAll={() => { setShowCapture(false); navigate("/incoming-documents"); }}
+        open={captureMode === "lieferschein"}
+        onOpenChange={(o) => { if (!o) setCaptureMode("none"); }}
+        onShowAll={() => { setCaptureMode("none"); navigate("/incoming-documents"); }}
+      />
+
+      {/* Foto zur Baustelle — landet in den Projekt-Fotos */}
+      <QuickUploadDialog
+        open={captureMode === "foto"}
+        documentType="photos"
+        onClose={() => setCaptureMode("none")}
       />
     </div>
   );

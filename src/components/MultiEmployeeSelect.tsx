@@ -21,6 +21,10 @@ type MultiEmployeeSelectProps = {
   startTime: string;
   endTime: string;
   label?: string;
+  /** true = nur der Baustelle zugewiesene Mitarbeiter (Vorarbeiter). */
+  restrictToAssigned?: boolean;
+  /** Projekt-IDs der aktuellen Zeitbloecke — fuer den Baustellen-Pool. */
+  projectIds?: string[];
 };
 
 export const MultiEmployeeSelect = ({
@@ -30,10 +34,72 @@ export const MultiEmployeeSelect = ({
   startTime,
   endTime,
   label = "Weitere Mitarbeiter (optional)",
+  restrictToAssigned = false,
+  projectIds = [],
 }: MultiEmployeeSelectProps) => {
-  const { employees, loading } = useAvailableEmployees(true);
+  const { employees: allEmployees, loading: allLoading } = useAvailableEmployees(true);
   const [conflicts, setConflicts] = useState<TimeConflict[]>([]);
   const [checkingConflicts, setCheckingConflicts] = useState(false);
+
+  // Baustellen-Pool (nur wenn restrictToAssigned) — Mitarbeiter, die der
+  // gewaehlten Baustelle zugewiesen sind (intern via worker_assignments,
+  // extern via external_employee_projects).
+  const [assignedEmployees, setAssignedEmployees] = useState<Employee[]>([]);
+  const [assignedLoading, setAssignedLoading] = useState(false);
+  const projectIdsKey = projectIds.join(",");
+
+  useEffect(() => {
+    if (!restrictToAssigned) return;
+    let cancelled = false;
+    (async () => {
+      setAssignedLoading(true);
+      try {
+        if (projectIds.length === 0 || !date) {
+          if (!cancelled) setAssignedEmployees([]);
+          return;
+        }
+        const { data: { user } } = await supabase.auth.getUser();
+        const [waRes, eepRes] = await Promise.all([
+          supabase.from("worker_assignments").select("user_id").in("project_id", projectIds).eq("datum", date),
+          supabase.from("external_employee_projects").select("employee_user_id").in("project_id", projectIds),
+        ]);
+        const ids = new Set<string>();
+        for (const r of waRes.data || []) if (r.user_id) ids.add(r.user_id);
+        for (const r of eepRes.data || []) if ((r as any).employee_user_id) ids.add((r as any).employee_user_id);
+        if (user) ids.delete(user.id);
+        if (ids.size === 0) {
+          if (!cancelled) setAssignedEmployees([]);
+          return;
+        }
+        const { data: profs } = await supabase
+          .from("profiles")
+          .select("id, vorname, nachname, is_active")
+          .in("id", Array.from(ids))
+          .eq("is_active", true)
+          .order("nachname");
+        if (!cancelled) setAssignedEmployees((profs || []) as Employee[]);
+      } finally {
+        if (!cancelled) setAssignedLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [restrictToAssigned, projectIdsKey, date]);
+
+  const employees = restrictToAssigned ? assignedEmployees : allEmployees;
+  const loading = restrictToAssigned ? assignedLoading : allLoading;
+
+  // Wenn der Pool wechselt (andere Baustelle): bereits gewaehlte Mitarbeiter,
+  // die nicht mehr im Pool sind, automatisch abwaehlen — so wird nie fuer
+  // jemanden gespeichert, der nicht (mehr) zugewiesen ist.
+  useEffect(() => {
+    if (!restrictToAssigned || loading) return;
+    const validIds = new Set(employees.map((e) => e.id));
+    const filtered = selectedEmployees.filter((id) => validIds.has(id));
+    if (filtered.length !== selectedEmployees.length) {
+      onSelectionChange(filtered);
+    }
+  }, [restrictToAssigned, loading, employees, selectedEmployees, onSelectionChange]);
   
   // Ref to track if component is mounted for async operations
   const isMountedRef = useRef(true);
@@ -180,15 +246,18 @@ export const MultiEmployeeSelect = ({
   }
 
   if (employees.length === 0) {
+    const emptyHint = restrictToAssigned
+      ? (projectIds.length === 0
+          ? "Bitte zuerst eine Baustelle wählen, dann erscheinen die zugewiesenen Mitarbeiter."
+          : "Keine Mitarbeiter dieser Baustelle zugewiesen — bitte in der Plantafel zuweisen.")
+      : "Keine weiteren aktiven Mitarbeiter verfügbar";
     return (
       <div className="space-y-2">
         <Label className="flex items-center gap-2">
           <Users className="h-4 w-4" />
           {label}
         </Label>
-        <p className="text-sm text-muted-foreground">
-          Keine weiteren aktiven Mitarbeiter verfügbar
-        </p>
+        <p className="text-sm text-muted-foreground">{emptyHint}</p>
       </div>
     );
   }

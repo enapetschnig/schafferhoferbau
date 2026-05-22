@@ -114,6 +114,7 @@ const TimeTracking = ({ embedded }: TimeTrackingEmbeddedProps = {}) => {
   // Admin editing another user's entries
   const targetUserId = searchParams.get("user_id");
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isVorarbeiter, setIsVorarbeiter] = useState(false);
   const [targetUserName, setTargetUserName] = useState("");
 
   const [projects, setProjects] = useState<Project[]>([]);
@@ -481,20 +482,19 @@ const TimeTracking = ({ embedded }: TimeTrackingEmbeddedProps = {}) => {
     }
   }, [existingDayEntries, loadingDayEntries]);
 
-  // Check admin status and fetch target user name
+  // Check admin/vorarbeiter status (jeweils fuer den EINGELOGGTEN User)
   useEffect(() => {
-    const checkAdmin = async () => {
+    const checkRoles = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-      const { data } = await supabase
-        .from("user_roles")
-        .select("role")
-        .eq("user_id", user.id)
-        .eq("role", "administrator")
-        .maybeSingle();
-      setIsAdmin(!!data);
+      const [{ data: roleData }, { data: empData }] = await Promise.all([
+        supabase.from("user_roles").select("role").eq("user_id", user.id).eq("role", "administrator").maybeSingle(),
+        supabase.from("employees").select("kategorie").eq("user_id", user.id).maybeSingle(),
+      ]);
+      setIsAdmin(!!roleData);
+      setIsVorarbeiter(empData?.kategorie === "vorarbeiter");
     };
-    checkAdmin();
+    checkRoles();
   }, []);
 
   useEffect(() => {
@@ -1320,8 +1320,9 @@ const TimeTracking = ({ embedded }: TimeTrackingEmbeddedProps = {}) => {
                 )}
               </div>
 
-              {/* Multi-Mitarbeiter Auswahl (nur fuer Admin/Vorarbeiter) */}
-              {isAdmin && !editMode && !targetUserId && !isExternalUser && timeBlocks.length > 0 && (
+              {/* Multi-Mitarbeiter Auswahl — Admin sieht alle, Vorarbeiter
+                  nur die der gewaehlten Baustelle zugewiesenen Mitarbeiter */}
+              {(isAdmin || isVorarbeiter) && !editMode && !targetUserId && !isExternalUser && timeBlocks.length > 0 && (
                 <MultiEmployeeSelect
                   selectedEmployees={selectedAdditionalEmployees}
                   onSelectionChange={setSelectedAdditionalEmployees}
@@ -1329,6 +1330,10 @@ const TimeTracking = ({ embedded }: TimeTrackingEmbeddedProps = {}) => {
                   startTime={timeBlocks[0].startTime || "06:30"}
                   endTime={timeBlocks[timeBlocks.length - 1].endTime || "17:00"}
                   label="Stunden auch für weitere Mitarbeiter erfassen"
+                  restrictToAssigned={!isAdmin}
+                  projectIds={Array.from(new Set(
+                    timeBlocks.map((b) => b.projectId).filter((id): id is string => !!id)
+                  ))}
                 />
               )}
 

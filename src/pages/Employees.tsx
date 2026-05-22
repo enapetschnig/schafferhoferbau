@@ -72,10 +72,21 @@ export default function Employees() {
   const [newEmployee, setNewEmployee] = useState({ vorname: "", nachname: "", email: "", kategorie: "facharbeiter" });
   const [showSizesDialog, setShowSizesDialog] = useState(false);
   const [profileActiveMap, setProfileActiveMap] = useState<Record<string, boolean>>({});
+  // Baustellen-Freigabe fuer externe Mitarbeiter
+  const [allProjects, setAllProjects] = useState<{ id: string; name: string; plz: string | null }[]>([]);
+  const [externalProjectIds, setExternalProjectIds] = useState<string[]>([]);
 
   useEffect(() => {
     checkAdminAccess();
     fetchEmployees();
+    (async () => {
+      const { data } = await supabase
+        .from("projects")
+        .select("id, name, plz")
+        .in("status", ["aktiv", "in_planung"])
+        .order("name");
+      setAllProjects(data || []);
+    })();
   }, []);
 
   const checkAdminAccess = async () => {
@@ -188,6 +199,25 @@ export default function Employees() {
 
       if (error) throw error;
 
+      // Baustellen-Freigaben fuer externe Mitarbeiter synchronisieren
+      if (formData.kategorie === "extern" && selectedEmployee.user_id) {
+        const { data: { user } } = await supabase.auth.getUser();
+        // bestehende Freigaben loeschen, gewaehlte neu anlegen
+        await supabase
+          .from("external_employee_projects")
+          .delete()
+          .eq("employee_user_id", selectedEmployee.user_id);
+        if (externalProjectIds.length > 0) {
+          const rows = externalProjectIds.map((pid) => ({
+            employee_user_id: selectedEmployee.user_id!,
+            project_id: pid,
+            created_by: user?.id ?? null,
+          }));
+          const { error: eepErr } = await supabase.from("external_employee_projects").insert(rows);
+          if (eepErr) throw eepErr;
+        }
+      }
+
       toast({ title: "Erfolg", description: "Änderungen gespeichert" });
       fetchEmployees();
       setSelectedEmployee(null);
@@ -199,6 +229,17 @@ export default function Employees() {
   useEffect(() => {
     if (selectedEmployee) {
       setFormData(selectedEmployee);
+      // Baustellen-Freigaben des externen Mitarbeiters laden
+      setExternalProjectIds([]);
+      if (selectedEmployee.kategorie === "extern" && selectedEmployee.user_id) {
+        (async () => {
+          const { data } = await supabase
+            .from("external_employee_projects")
+            .select("project_id")
+            .eq("employee_user_id", selectedEmployee.user_id!);
+          setExternalProjectIds((data || []).map((r: any) => r.project_id));
+        })();
+      }
     }
   }, [selectedEmployee]);
 
@@ -524,6 +565,47 @@ export default function Employees() {
                   </div>
 
                   <Separator />
+
+                  {/* Freigegebene Baustellen — nur fuer externe Mitarbeiter */}
+                  {formData.kategorie === "extern" && (
+                    <>
+                      <div>
+                        <h3 className="text-lg font-semibold mb-1">Freigegebene Baustellen</h3>
+                        <p className="text-xs text-muted-foreground mb-3">
+                          Baustellen, auf denen ein Vorarbeiter Stunden für diesen externen
+                          Mitarbeiter eintragen darf.
+                        </p>
+                        {!selectedEmployee?.user_id ? (
+                          <p className="text-sm text-muted-foreground rounded-md border p-3 bg-muted/30">
+                            Dieser Mitarbeiter hat keinen App-Zugang — eine Baustellen-Freigabe
+                            ist daher nicht möglich.
+                          </p>
+                        ) : allProjects.length === 0 ? (
+                          <p className="text-sm text-muted-foreground">Keine aktiven Projekte vorhanden.</p>
+                        ) : (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 max-h-56 overflow-y-auto rounded-md border p-2">
+                            {allProjects.map((p) => {
+                              const checked = externalProjectIds.includes(p.id);
+                              return (
+                                <label key={p.id} className="flex items-center gap-2 p-1.5 rounded hover:bg-muted/50 cursor-pointer">
+                                  <Checkbox
+                                    checked={checked}
+                                    onCheckedChange={(v) => {
+                                      setExternalProjectIds((prev) =>
+                                        v ? [...prev, p.id] : prev.filter((id) => id !== p.id)
+                                      );
+                                    }}
+                                  />
+                                  <span className="text-sm">{p.name}{p.plz ? ` (${p.plz})` : ""}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                      <Separator />
+                    </>
+                  )}
 
                   {/* Regelarbeitszeit (mit optionaler 14-taegiger Durchrechnung) */}
                   {formData.kategorie !== "extern" && (() => {

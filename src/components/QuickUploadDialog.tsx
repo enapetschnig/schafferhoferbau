@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Upload, X, Info } from "lucide-react";
 import { sanitizeStorageFileName } from "@/lib/storageFileName";
 import { useToast } from "@/hooks/use-toast";
@@ -11,7 +13,8 @@ import { Progress } from "@/components/ui/progress";
 type DocumentType = "plans" | "reports" | "materials" | "photos";
 
 interface QuickUploadDialogProps {
-  projectId: string;
+  /** Wenn gesetzt, ist das Projekt fix. Sonst zeigt der Dialog eine Projektauswahl. */
+  projectId?: string;
   documentType?: DocumentType;
   open: boolean;
   onClose: () => void;
@@ -44,6 +47,24 @@ export function QuickUploadDialog({
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
 
+  // Projektauswahl, wenn keine projectId vorgegeben ist
+  const [projects, setProjects] = useState<{ id: string; name: string; plz: string | null }[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState("");
+  const effectiveProjectId = projectId || selectedProjectId;
+
+  useEffect(() => {
+    if (!open || projectId) return;
+    setSelectedProjectId("");
+    (async () => {
+      const { data } = await supabase
+        .from("projects")
+        .select("id, name, plz")
+        .in("status", ["aktiv", "in_planung"])
+        .order("name");
+      setProjects(data || []);
+    })();
+  }, [open, projectId]);
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const filesArray = Array.from(e.target.files);
@@ -57,6 +78,10 @@ export function QuickUploadDialog({
 
   const handleUpload = async () => {
     if (selectedFiles.length === 0) return;
+    if (!effectiveProjectId) {
+      toast({ variant: "destructive", title: "Projekt fehlt", description: "Bitte zuerst ein Projekt wählen." });
+      return;
+    }
 
     setUploading(true);
     setUploadProgress(0);
@@ -72,7 +97,7 @@ export function QuickUploadDialog({
 
     for (let i = 0; i < selectedFiles.length; i++) {
       const file = selectedFiles[i];
-      const filePath = `${projectId}/${Date.now()}_${sanitizeStorageFileName(file.name)}`;
+      const filePath = `${effectiveProjectId}/${Date.now()}_${sanitizeStorageFileName(file.name)}`;
 
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from(bucket)
@@ -99,7 +124,7 @@ export function QuickUploadDialog({
         if (user) {
           const { error: docError } = await supabase.from("documents").insert({
             name: file.name,
-            project_id: projectId,
+            project_id: effectiveProjectId,
             typ: documentType,
             sub_type: subType,
             file_url: filePath,
@@ -158,6 +183,21 @@ export function QuickUploadDialog({
         </DialogHeader>
 
         <div className="space-y-4">
+          {/* Projektauswahl — nur wenn keine projectId vorgegeben */}
+          {!projectId && (
+            <div className="space-y-1.5">
+              <Label>Projekt / Baustelle *</Label>
+              <Select value={selectedProjectId} onValueChange={setSelectedProjectId} disabled={uploading}>
+                <SelectTrigger><SelectValue placeholder="Projekt auswählen" /></SelectTrigger>
+                <SelectContent>
+                  {projects.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>{p.name}{p.plz ? ` (${p.plz})` : ""}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
           {/* Drag & Drop Zone */}
           <label htmlFor="file-upload" className="cursor-pointer">
             <div className="border-2 border-dashed rounded-lg p-6 text-center hover:border-primary/50 transition-colors">
@@ -240,9 +280,9 @@ export function QuickUploadDialog({
             >
               Abbrechen
             </Button>
-            <Button 
+            <Button
               onClick={handleUpload}
-              disabled={selectedFiles.length === 0 || uploading}
+              disabled={selectedFiles.length === 0 || uploading || !effectiveProjectId}
               className="flex-1"
             >
               {uploading ? "Lädt hoch..." : "Hochladen"}
