@@ -723,6 +723,12 @@ const ProjectDetail = () => {
 
       // Sub-Type Filter (fuer Plaene)
       if (currentTabConfig?.subType) {
+        // "Aktuelle Pläne" ist der Default-Bucket: Dateien mit sub_type
+        // "plan" ODER ganz ohne DB-Record/sub_type (z.B. Quick-Upload ohne
+        // Record, Alt-Dateien) gehoeren hierher. Konsistent mit getTabCount.
+        if (currentTabConfig.subType === "plan") {
+          return !docRecord?.sub_type || docRecord.sub_type === "plan";
+        }
         return docRecord?.sub_type === currentTabConfig.subType;
       }
 

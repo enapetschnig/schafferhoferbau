@@ -62,7 +62,13 @@ export function QuickUploadDialog({
     setUploadProgress(0);
 
     const bucket = bucketMap[documentType];
+    // sub_type "plan" fuer Plaene-Uploads, damit die Datei im Tab
+    // "Aktuelle Pläne" erscheint (analog zum Upload direkt in der
+    // Plaene-Ansicht). Andere Typen haben keinen sub_type.
+    const subType = documentType === "plans" ? "plan" : null;
     let successCount = 0;
+
+    const { data: { user } } = await supabase.auth.getUser();
 
     for (let i = 0; i < selectedFiles.length; i++) {
       const file = selectedFiles[i];
@@ -88,6 +94,27 @@ export function QuickUploadDialog({
       }
 
       if (uploadData) {
+        // DB-Record anlegen, damit die Datei in der jeweiligen Ansicht
+        // auftaucht und nicht nur im Storage liegt.
+        if (user) {
+          const { error: docError } = await supabase.from("documents").insert({
+            name: file.name,
+            project_id: projectId,
+            typ: documentType,
+            sub_type: subType,
+            file_url: filePath,
+            user_id: user.id,
+            archived: false,
+          });
+          if (docError) {
+            console.error("documents-Record-Fehler:", docError);
+            toast({
+              variant: "destructive",
+              title: "Upload unvollständig",
+              description: `${file.name}: Datei gespeichert, aber Eintrag fehlgeschlagen — ${docError.message}`,
+            });
+          }
+        }
         successCount++;
       }
 
