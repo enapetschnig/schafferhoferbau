@@ -1387,7 +1387,8 @@ export type Database = {
           notizen: string | null
           photo_url: string
           positionen: Json | null
-          project_id: string
+          project_id: string | null
+          projekt_freitext: string | null
           status: string
           typ: string
           unterschrift: string | null
@@ -1411,7 +1412,8 @@ export type Database = {
           notizen?: string | null
           photo_url: string
           positionen?: Json | null
-          project_id: string
+          project_id?: string | null
+          projekt_freitext?: string | null
           status?: string
           typ: string
           unterschrift?: string | null
@@ -1435,7 +1437,8 @@ export type Database = {
           notizen?: string | null
           photo_url?: string
           positionen?: Json | null
-          project_id?: string
+          project_id?: string | null
+          projekt_freitext?: string | null
           status?: string
           typ?: string
           unterschrift?: string | null

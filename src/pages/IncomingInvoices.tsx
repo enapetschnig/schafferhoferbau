@@ -256,7 +256,7 @@ export default function IncomingInvoices() {
       setInvoices(
         invData.map((d: any) => ({
           ...d,
-          project_name: d.projects?.name || "–",
+          project_name: d.projects?.name || (d as any).projekt_freitext || "–",
           employee_name: nameMap[d.user_id] || "–",
         }))
       );
@@ -276,7 +276,7 @@ export default function IncomingInvoices() {
       setLieferscheine(
         lsData.map((d: any) => ({
           ...d,
-          project_name: d.projects?.name || "–",
+          project_name: d.projects?.name || (d as any).projekt_freitext || "–",
           employee_name: lsNameMap[d.user_id] || null,
         }))
       );

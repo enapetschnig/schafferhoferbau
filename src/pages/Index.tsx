@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import ChangePasswordDialog from "@/components/ChangePasswordDialog";
 import { AzgPendingCard } from "@/components/AzgPendingCard";
+import { DocumentCaptureDialog } from "@/components/DocumentCaptureDialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -81,6 +82,7 @@ export default function Index() {
   const [isActivated, setIsActivated] = useState<boolean | null>(null);
   const [missingHoursDates, setMissingHoursDates] = useState<string[]>([]);
   const [pendingBestellungen, setPendingBestellungen] = useState(0);
+  const [showCapture, setShowCapture] = useState(false);
   const [kategorie, setKategorie] = useState<string | null>(null);
   const [favoriteProjects, setFavoriteProjects] = useState<{ id: string; name: string; adresse: string | null }[]>([]);
   const [pendingCount, setPendingCount] = useState(0);
@@ -1045,6 +1047,23 @@ export default function Index() {
           </div>
         )}
 
+        {/* Schnellzugriff: Lieferschein / Foto erfassen — taeglich mehrfach genutzt */}
+        {menuVisible("lieferscheine") && (
+          <button
+            onClick={() => setShowCapture(true)}
+            className="mb-4 w-full flex items-center gap-4 rounded-xl border-2 border-primary bg-primary/5 hover:bg-primary/10 active:bg-primary/15 p-4 sm:p-5 transition-colors text-left"
+          >
+            <div className="h-14 w-14 rounded-lg bg-primary flex items-center justify-center shrink-0">
+              <Camera className="h-7 w-7 text-primary-foreground" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold text-base sm:text-lg text-primary">Lieferschein / Foto erfassen</p>
+              <p className="text-sm text-muted-foreground">Dokument abfotografieren und hochladen</p>
+            </div>
+            <ArrowRight className="h-6 w-6 text-primary shrink-0" />
+          </button>
+        )}
+
         {/* Dashboard-Nachricht (Admin editierbar) */}
         {dashboardMessage && (
           <div className="mb-4 p-3 rounded-lg bg-primary/5 border border-primary/20 flex items-center justify-between gap-3">
@@ -1979,6 +1998,13 @@ export default function Index() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Lieferschein / Foto erfassen — direkt vom Dashboard */}
+      <DocumentCaptureDialog
+        open={showCapture}
+        onOpenChange={setShowCapture}
+        onShowAll={() => { setShowCapture(false); navigate("/incoming-documents"); }}
+      />
     </div>
   );
 }

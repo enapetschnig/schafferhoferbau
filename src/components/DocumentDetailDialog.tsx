@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,8 @@ import { Trash2 } from "lucide-react";
 
 export type IncomingDocument = {
   id: string;
-  project_id: string;
+  project_id: string | null;
+  projekt_freitext?: string | null;
   user_id: string;
   typ: string;
   status: string;
@@ -70,6 +71,26 @@ export function DocumentDetailDialog({ document, open, onOpenChange, isAdmin, on
   const [editStatus, setEditStatus] = useState("");
   const [editNotizen, setEditNotizen] = useState("");
   const [editBezahltAm, setEditBezahltAm] = useState("");
+  // Kopfdaten (Admin kann Falscheingaben korrigieren / Projekt neu zuordnen)
+  const [editProjectId, setEditProjectId] = useState("");
+  const [editProjektFreitext, setEditProjektFreitext] = useState("");
+  const [editLieferant, setEditLieferant] = useState("");
+  const [editDatum, setEditDatum] = useState("");
+  const [editBelegnummer, setEditBelegnummer] = useState("");
+  const [editBetrag, setEditBetrag] = useState("");
+  const [projects, setProjects] = useState<{ id: string; name: string; plz: string | null }[]>([]);
+
+  // Projektliste fuer das Admin-Edit-Dropdown laden
+  useEffect(() => {
+    if (!open || !isAdmin) return;
+    (async () => {
+      const { data } = await supabase
+        .from("projects")
+        .select("id, name, plz")
+        .order("name");
+      if (data) setProjects(data);
+    })();
+  }, [open, isAdmin]);
 
   // Initialize edit fields when document changes
   const initEdit = () => {
@@ -77,6 +98,12 @@ export function DocumentDetailDialog({ document, open, onOpenChange, isAdmin, on
       setEditStatus(document.status);
       setEditNotizen(document.notizen || "");
       setEditBezahltAm(document.bezahlt_am || "");
+      setEditProjectId(document.project_id || "");
+      setEditProjektFreitext(document.projekt_freitext || "");
+      setEditLieferant(document.lieferant || "");
+      setEditDatum(document.dokument_datum || "");
+      setEditBelegnummer(document.dokument_nummer || "");
+      setEditBetrag(document.betrag != null ? String(document.betrag) : "");
     }
   };
 
@@ -96,12 +123,23 @@ export function DocumentDetailDialog({ document, open, onOpenChange, isAdmin, on
 
   const handleSave = async () => {
     if (!document) return;
+    // Projekt-Zuordnung pruefen: bestehendes Projekt ODER Freitext
+    if (!editProjectId && !editProjektFreitext.trim()) {
+      toast({ variant: "destructive", title: "Projekt fehlt", description: "Bitte ein Projekt wählen oder eingeben." });
+      return;
+    }
     setSaving(true);
 
     const updates: Record<string, any> = {
       status: editStatus,
       notizen: editNotizen.trim() || null,
       bezahlt_am: editBezahltAm || null,
+      project_id: editProjectId || null,
+      projekt_freitext: editProjectId ? null : editProjektFreitext.trim(),
+      lieferant: editLieferant.trim() || null,
+      dokument_datum: editDatum || null,
+      dokument_nummer: editBelegnummer.trim() || null,
+      betrag: editBetrag ? parseFloat(editBetrag) : null,
       updated_at: new Date().toISOString(),
     };
 
@@ -273,6 +311,53 @@ export function DocumentDetailDialog({ document, open, onOpenChange, isAdmin, on
             {isAdmin && (
               <div className="border-t pt-4 space-y-3">
                 <Label className="text-base font-semibold">Admin-Bereich</Label>
+
+                {/* Kopfdaten korrigieren / Projekt neu zuordnen */}
+                <div className="space-y-2">
+                  <Label>Projekt / Baustelle</Label>
+                  <Select
+                    value={editProjectId}
+                    onValueChange={(v) => { setEditProjectId(v); setEditProjektFreitext(""); }}
+                    disabled={!!editProjektFreitext.trim()}
+                  >
+                    <SelectTrigger><SelectValue placeholder="Projekt auswählen" /></SelectTrigger>
+                    <SelectContent>
+                      {projects.map((p) => (
+                        <SelectItem key={p.id} value={p.id}>{p.name}{p.plz ? ` (${p.plz})` : ""}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Input
+                    value={editProjektFreitext}
+                    onChange={(e) => {
+                      setEditProjektFreitext(e.target.value);
+                      if (e.target.value.trim()) setEditProjectId("");
+                    }}
+                    placeholder="Oder freier Projektname (nicht angelegtes Projekt)"
+                    className="text-sm"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="col-span-2">
+                    <Label>Lieferant</Label>
+                    <Input value={editLieferant} onChange={(e) => setEditLieferant(e.target.value)} placeholder="Lieferant" />
+                  </div>
+                  <div>
+                    <Label>Datum</Label>
+                    <Input type="date" value={editDatum} onChange={(e) => setEditDatum(e.target.value)} />
+                  </div>
+                  <div>
+                    <Label>Belegnummer</Label>
+                    <Input value={editBelegnummer} onChange={(e) => setEditBelegnummer(e.target.value)} placeholder="Belegnummer" />
+                  </div>
+                  {document.typ === "rechnung" && (
+                    <div className="col-span-2">
+                      <Label>Betrag (€)</Label>
+                      <Input type="number" step="0.01" value={editBetrag} onChange={(e) => setEditBetrag(e.target.value)} placeholder="0.00" />
+                    </div>
+                  )}
+                </div>
+
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <Label>Status</Label>

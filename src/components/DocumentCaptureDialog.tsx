@@ -14,6 +14,24 @@ import * as pdfjsLib from "pdfjs-dist";
 
 type DocType = "lieferschein" | "lagerlieferschein" | "rechnung";
 
+// Heutiges Datum als ISO (YYYY-MM-DD) — Default fuer das Pflicht-Datumsfeld.
+const todayISO = () => new Date().toISOString().split("T")[0];
+
+// Datum aus KI-Antwort (z.B. "29.04.2026" oder ISO) zu ISO YYYY-MM-DD.
+// Liefert null bei leerem/ungueltigem Wert — dann bleibt der heute-Default.
+const parseDateToISO = (v: unknown): string | null => {
+  if (!v) return null;
+  const s = String(v).trim();
+  if (!s || s.toLowerCase() === "nicht gefunden") return null;
+  let m = /^(\d{1,2})\.(\d{1,2})\.(\d{4})/.exec(s);
+  if (m) return `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+  m = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(s);
+  if (m) return `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`;
+  m = /^(\d{1,2})\.(\d{1,2})\.(\d{2})$/.exec(s);
+  if (m) return `20${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+  return null;
+};
+
 type ExtractedData = {
   lieferant: string | null;
   datum: string | null;
@@ -44,6 +62,9 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
   const [docType, setDocType] = useState<DocType>("lieferschein");
   const [projects, setProjects] = useState<{ id: string; name: string; plz: string | null }[]>([]);
   const [projectId, setProjectId] = useState("");
+  // Freitext-Projekt fuer noch nicht angelegte Baustellen. Wenn ausgefuellt,
+  // hat es Vorrang vor dem Select.
+  const [projektFreitext, setProjektFreitext] = useState("");
 
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -61,7 +82,7 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
 
   // Editable fields
   const [lieferant, setLieferant] = useState("");
-  const [dokumentDatum, setDokumentDatum] = useState("");
+  const [dokumentDatum, setDokumentDatum] = useState(todayISO());
   const [belegnummer, setBelegnummer] = useState("");
   const [betrag, setBetrag] = useState("");
 
@@ -115,6 +136,7 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
   const resetForm = () => {
     setDocType("lieferschein");
     setProjectId("");
+    setProjektFreitext("");
     setImageFile(null);
     setImagePreview(null);
     setExtraPages([]);
@@ -123,7 +145,7 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
     setExtracted(null);
     setEditPositionen([]);
     setLieferant("");
-    setDokumentDatum("");
+    setDokumentDatum(todayISO());
     setBelegnummer("");
     setBetrag("");
     setSignatureData(null);
@@ -145,12 +167,8 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
     } else {
       setImagePreview(null);
     }
-    // Fallback-Datum: Aufnahmedatum des Fotos vorbefuellen.
-    // Wird von der KI-Extraktion ueberschrieben, wenn ein Datum im Dokument steht.
-    if (!dokumentDatum && file.lastModified) {
-      const lm = new Date(file.lastModified);
-      setDokumentDatum(lm.toISOString().split("T")[0]);
-    }
+    // Datum ist bereits mit heute vorbefuellt; die KI-Extraktion ueberschreibt
+    // es spaeter, falls ein Datum im Dokument erkannt wird.
   };
 
   const handlePhotoCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -257,8 +275,8 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
     });
 
   const handleUploadAndExtract = async () => {
-    if (!imageFile || !projectId) {
-      toast({ variant: "destructive", title: "Fehler", description: "Bitte Foto und Projekt auswählen" });
+    if (!imageFile || (!projectId && !projektFreitext.trim())) {
+      toast({ variant: "destructive", title: "Fehler", description: "Bitte Foto und Projekt auswählen (oder neues Projekt eingeben)" });
       return;
     }
     if (istRetour && retourZiel === "baustelle" && !zielProjektId) {
@@ -269,9 +287,11 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
     setExtracting(true);
 
     try {
-      // 1. Upload to storage (for archiving)
+      // 1. Upload to storage (for archiving). Bei Freitext-Projekt gibt es
+      // keine project_id — dann in einen Sammelordner ablegen.
+      const storageFolder = projectId || "ohne-projekt";
       const ext = imageFile.name.split(".").pop() || "jpg";
-      const filePath = `${projectId}/${Date.now()}.${ext}`;
+      const filePath = `${storageFolder}/${Date.now()}.${ext}`;
 
       const { error: uploadError } = await supabase.storage
         .from("incoming-documents")
@@ -329,7 +349,10 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
       setExtracted(result);
       setEditPositionen(result.positionen);
       setLieferant(result.lieferant || "");
-      setDokumentDatum(result.datum || "");
+      // Datum nur uebernehmen, wenn die KI ein gueltiges erkannt hat —
+      // sonst bleibt der heute-Default stehen.
+      const kiDatum = parseDateToISO(result.datum);
+      if (kiDatum) setDokumentDatum(kiDatum);
       setBelegnummer(result.belegnummer || "");
       setBetrag(result.betrag != null ? result.betrag.toString() : "");
 
@@ -366,6 +389,16 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
       toast({ variant: "destructive", title: "Fehler", description: "Kein Foto hochgeladen" });
       return;
     }
+    // Datum ist Pflichtfeld
+    if (!dokumentDatum) {
+      toast({ variant: "destructive", title: "Datum fehlt", description: "Bitte ein Datum angeben." });
+      return;
+    }
+    // Projekt-Zuordnung Pflicht: bestehendes Projekt ODER Freitext
+    if (!projectId && !projektFreitext.trim()) {
+      toast({ variant: "destructive", title: "Projekt fehlt", description: "Bitte ein Projekt wählen oder eingeben." });
+      return;
+    }
 
     setSaving(true);
     const { data: { user } } = await supabase.auth.getUser();
@@ -382,11 +415,14 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
       if (emp) empName = `${emp.vorname} ${emp.nachname}`.trim();
     }
 
+    // Storage-Ordner: bei Freitext-Projekt kein project_id → Sammelordner
+    const storageFolder = projectId || "ohne-projekt";
+
     // Upload extra pages
     const zusatzUrls: string[] = [];
     for (const file of extraPages) {
       const ext = file.name.split(".").pop() || "jpg";
-      const filePath = `${projectId}/seite_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
+      const filePath = `${storageFolder}/seite_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
       const { error: upErr } = await supabase.storage
         .from("incoming-documents")
         .upload(filePath, file);
@@ -400,7 +436,7 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
     const warenUrls: string[] = [];
     for (const file of warePhotos) {
       const ext = file.name.split(".").pop() || "jpg";
-      const filePath = `${projectId}/ware_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
+      const filePath = `${storageFolder}/ware_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
       const { error: upErr } = await supabase.storage
         .from("incoming-documents")
         .upload(filePath, file);
@@ -410,22 +446,14 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
       }
     }
 
-    // Fallback: wenn KI kein Datum erkannt hat und der User auch nichts eingegeben hat,
-    // nimm das Aufnahme-/Modifikationsdatum der Datei (typisch bei Handyfotos =
-    // Aufnahmedatum). Liefert kein EXIF nötig, lastModified reicht in 95% der Faelle.
-    const effectiveDatum = dokumentDatum
-      ? dokumentDatum
-      : imageFile
-      ? new Date(imageFile.lastModified).toISOString().split("T")[0]
-      : null;
-
     const { error } = await supabase.from("incoming_documents").insert({
-      project_id: projectId,
+      project_id: projectId || null,
+      projekt_freitext: projectId ? null : projektFreitext.trim(),
       user_id: user.id,
       typ: docType,
       photo_url: uploadedUrl,
       lieferant: lieferant.trim() || null,
-      dokument_datum: effectiveDatum,
+      dokument_datum: dokumentDatum,
       dokument_nummer: belegnummer.trim() || null,
       betrag: betrag ? parseFloat(betrag) : null,
       positionen: editPositionen.map(p => ({
@@ -555,7 +583,11 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
               {/* Project */}
               <div className="space-y-2">
                 <Label>{istRetour ? "Quell-Baustelle (von wo wird abgebucht) *" : "Projekt / Baustelle *"}</Label>
-                <Select value={projectId} onValueChange={setProjectId}>
+                <Select
+                  value={projectId}
+                  onValueChange={(v) => { setProjectId(v); setProjektFreitext(""); }}
+                  disabled={!istRetour && !!projektFreitext.trim()}
+                >
                   <SelectTrigger><SelectValue placeholder="Projekt auswählen" /></SelectTrigger>
                   <SelectContent>
                     {projects.map((p) => (
@@ -563,6 +595,23 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
                     ))}
                   </SelectContent>
                 </Select>
+                {/* Freitext fuer noch nicht angelegte Projekte — nicht bei Retour */}
+                {!istRetour && (
+                  <div className="pt-1">
+                    <Input
+                      value={projektFreitext}
+                      onChange={(e) => {
+                        setProjektFreitext(e.target.value);
+                        if (e.target.value.trim()) setProjectId("");
+                      }}
+                      placeholder="Oder neues Projekt eingeben (noch nicht angelegt)"
+                      className="text-sm"
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Wenn die Baustelle noch nicht in der Liste ist, hier den Namen eintippen.
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Zielort bei Retour */}
@@ -757,7 +806,7 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
 
               <Button
                 onClick={handleUploadAndExtract}
-                disabled={!imageFile || !projectId || extracting}
+                disabled={!imageFile || (!projectId && !projektFreitext.trim()) || extracting}
                 className="w-full"
               >
                 {extracting ? (
@@ -808,8 +857,8 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
                   <Input value={lieferant} onChange={(e) => setLieferant(e.target.value)} placeholder="z.B. Lagerhaus Weiz" />
                 </div>
                 <div>
-                  <Label>Datum</Label>
-                  <Input type="date" value={dokumentDatum} onChange={(e) => setDokumentDatum(e.target.value)} />
+                  <Label>Datum *</Label>
+                  <Input type="date" value={dokumentDatum} onChange={(e) => setDokumentDatum(e.target.value)} required />
                 </div>
                 <div>
                   <Label>Belegnummer</Label>
@@ -885,13 +934,19 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
                 </Button>
               </div>
 
-              <div className="flex gap-2">
-                <Button variant="outline" onClick={handleRetakePhoto} className="flex-1">
-                  Zurück
+              {/* Speichern direkt (schnellster Weg) — Unterschrift optional */}
+              <div className="space-y-2">
+                <Button onClick={handleSave} disabled={saving} className="w-full">
+                  {saving ? "Speichere..." : "Speichern"}
                 </Button>
-                <Button onClick={() => setStep("sign")} className="flex-1">
-                  Weiter — Unterschreiben
-                </Button>
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={handleRetakePhoto} className="flex-1">
+                    Zurück
+                  </Button>
+                  <Button variant="outline" onClick={() => setStep("sign")} className="flex-1">
+                    Mit Unterschrift
+                  </Button>
+                </div>
               </div>
             </>
           )}
@@ -909,7 +964,7 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
               </div>
 
               <div>
-                <Label>Unterschrift *</Label>
+                <Label>Unterschrift <span className="text-muted-foreground font-normal">(optional)</span></Label>
                 <SignaturePad
                   onSignatureChange={(data) => setSignatureData(data)}
                   width={400}
@@ -921,7 +976,7 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
                 <Button variant="outline" onClick={() => setStep("review")} className="flex-1">
                   Zurück
                 </Button>
-                <Button onClick={handleSave} disabled={saving || !signatureData} className="flex-1">
+                <Button onClick={handleSave} disabled={saving} className="flex-1">
                   {saving ? "Speichere..." : "Dokument speichern"}
                 </Button>
               </div>

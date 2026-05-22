@@ -122,7 +122,7 @@ export default function IncomingDocuments() {
       setDocuments(
         data.map((d: any) => ({
           ...d,
-          project_name: d.projects?.name || "–",
+          project_name: d.projects?.name || d.projekt_freitext || "–",
           ziel_projekt_name: d.ziel_projekt?.name || null,
           employee_name: nameMap[d.user_id] || "–",
         }))
