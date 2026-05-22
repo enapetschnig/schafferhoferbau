@@ -1,10 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Upload, X, Info } from "lucide-react";
+import { Upload, X, Info, Camera } from "lucide-react";
 import { sanitizeStorageFileName } from "@/lib/storageFileName";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -65,11 +65,16 @@ export function QuickUploadDialog({
     })();
   }, [open, projectId]);
 
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+
+  // Dateien anhaengen (nicht ersetzen) — so kann man mehrere Fotos
+  // nacheinander aufnehmen und zusaetzlich aus der Galerie waehlen.
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const filesArray = Array.from(e.target.files);
-      setSelectedFiles(filesArray);
+      setSelectedFiles((prev) => [...prev, ...filesArray]);
     }
+    e.target.value = "";
   };
 
   const handleRemoveFile = (index: number) => {
@@ -196,6 +201,34 @@ export function QuickUploadDialog({
                 </SelectContent>
               </Select>
             </div>
+          )}
+
+          {/* Foto aufnehmen — oeffnet auf dem Handy direkt die Kamera */}
+          {documentType === "photos" && (
+            <>
+              <Button
+                type="button"
+                onClick={() => cameraInputRef.current?.click()}
+                disabled={uploading}
+                className="w-full"
+                size="lg"
+              >
+                <Camera className="h-5 w-5 mr-2" />
+                Foto aufnehmen
+              </Button>
+              <input
+                ref={cameraInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={handleFileSelect}
+                disabled={uploading}
+              />
+              <p className="text-xs text-center text-muted-foreground">
+                oder Datei(en) auswählen
+              </p>
+            </>
           )}
 
           {/* Drag & Drop Zone */}
