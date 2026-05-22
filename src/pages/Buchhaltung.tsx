@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   Upload, Play, Download, FileText, Loader2, CheckCircle2, AlertCircle, X,
   ChevronDown, ChevronRight, Trash2, Plus, Eye,
@@ -16,6 +17,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { sanitizeStorageFileName } from "@/lib/storageFileName";
 import { generateBuchhaltungExcel, type BuchhaltungExcelRow } from "@/lib/generateBuchhaltungExcel";
+import { PdfPreview } from "@/components/PdfPreview";
 
 // ===== Typen =====
 
@@ -203,6 +205,24 @@ export default function Buchhaltung() {
   const [currentIdx, setCurrentIdx] = useState<number | null>(null);
   const [reviewRechnungen, setReviewRechnungen] = useState<ReviewRechnung[]>([]);
   const [saving, setSaving] = useState(false);
+
+  // PDF-/Bild-Vorschau-Dialog (Original-Rechnung als Vorlage beim Pruefen)
+  const [preview, setPreview] = useState<
+    { url: string; isPdf: boolean; title: string; revoke: boolean } | null
+  >(null);
+
+  const openPreviewFromFile = (file: File) => {
+    const url = URL.createObjectURL(file);
+    setPreview({ url, isPdf: file.type === "application/pdf", title: file.name, revoke: true });
+  };
+  const closePreview = () => {
+    setPreview((prev) => {
+      if (prev?.revoke) {
+        try { URL.revokeObjectURL(prev.url); } catch { /* ignore */ }
+      }
+      return null;
+    });
+  };
 
   const [projektNamen, setProjektNamen] = useState<string[]>([]);
   const [bekannteBaustellen, setBekannteBaustellen] = useState<string[]>([]);
@@ -512,7 +532,7 @@ export default function Buchhaltung() {
     }
   };
 
-  const handleViewPdf = async (pdfPath: string | null) => {
+  const handleViewPdf = async (pdfPath: string | null, title: string) => {
     if (!pdfPath) {
       toast({ variant: "destructive", title: "Kein PDF", description: "Für diese Rechnung wurde kein PDF gespeichert." });
       return;
@@ -522,7 +542,8 @@ export default function Buchhaltung() {
       toast({ variant: "destructive", title: "Fehler", description: error?.message || "PDF nicht verfügbar." });
       return;
     }
-    window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+    const isPdf = /\.pdf(\?|$)/i.test(pdfPath);
+    setPreview({ url: data.signedUrl, isPdf, title, revoke: false });
   };
 
   const handleExportExcel = () => {
@@ -685,6 +706,13 @@ export default function Buchhaltung() {
                         />
                       </div>
                       <button
+                        onClick={() => openPreviewFromFile(r.file)}
+                        className="text-muted-foreground hover:text-primary"
+                        title="Original-Rechnung ansehen"
+                      >
+                        <Eye className="h-4 w-4" />
+                      </button>
+                      <button
                         onClick={() => removeReviewRechnung(r.id)}
                         className="text-muted-foreground hover:text-destructive"
                         title="Rechnung verwerfen"
@@ -828,7 +856,11 @@ export default function Buchhaltung() {
                       <Badge variant="outline" className="text-xs">{r.buchhaltung_positionen.length} Pos.</Badge>
                       <div className="flex-1" />
                       {r.pdf_url && (
-                        <button onClick={() => handleViewPdf(r.pdf_url)} className="text-muted-foreground hover:text-primary" title="PDF ansehen">
+                        <button
+                          onClick={() => handleViewPdf(r.pdf_url, r.lieferant || r.datei_name || "Rechnung")}
+                          className="text-muted-foreground hover:text-primary"
+                          title="Original-Rechnung ansehen"
+                        >
                           <Eye className="h-4 w-4" />
                         </button>
                       )}
@@ -880,6 +912,26 @@ export default function Buchhaltung() {
       <datalist id="buchh-baustellen">
         {baustellenVorschlaege.map((b) => <option key={b} value={b} />)}
       </datalist>
+
+      {/* PDF-/Bild-Vorschau der Original-Rechnung */}
+      <Dialog open={!!preview} onOpenChange={(o) => { if (!o) closePreview(); }}>
+        <DialogContent className="max-w-4xl h-[90vh] flex flex-col p-0">
+          <DialogHeader className="px-4 pt-4 shrink-0">
+            <DialogTitle className="text-sm truncate pr-8">{preview?.title || "Rechnung"}</DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto px-4 pb-4 bg-muted/30">
+            {preview && (preview.isPdf ? (
+              <PdfPreview pdfUrl={preview.url} />
+            ) : (
+              <img
+                src={preview.url}
+                alt={preview.title}
+                className="w-full h-auto rounded shadow-md mt-2"
+              />
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
