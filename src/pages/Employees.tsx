@@ -56,7 +56,15 @@ const KATEGORIE_LABELS: Record<string, string> = {
   facharbeiter: "Facharbeiter",
   vorarbeiter: "Vorarbeiter",
   extern: "Extern",
+  bauherr: "Bauherr",
 };
+
+// Kategorien, die ueber external_employee_projects pro Baustelle freigegeben
+// werden muessen (statt ueber die Plantafel). Bauherren werden wie externe
+// Mitarbeiter behandelt.
+const EXTERNAL_LIKE_KATEGORIEN = ["extern", "bauherr"];
+const isExternalLikeKategorie = (k: string | null | undefined) =>
+  !!k && EXTERNAL_LIKE_KATEGORIEN.includes(k);
 
 const DAY_LABELS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
 type DayKey = "mo" | "di" | "mi" | "do" | "fr" | "sa" | "so";
@@ -160,7 +168,9 @@ export default function Employees() {
     e.preventDefault();
     
     try {
-      const isExtern = newEmployee.kategorie === "extern";
+      // Bauherren werden technisch wie Externe behandelt (keine eigene
+      // Arbeitszeit-Regel, Freigabe per Baustelle).
+      const isExtern = isExternalLikeKategorie(newEmployee.kategorie);
       const { data, error } = await supabase
         .from("employees")
         .insert({
@@ -199,8 +209,8 @@ export default function Employees() {
 
       if (error) throw error;
 
-      // Baustellen-Freigaben fuer externe Mitarbeiter synchronisieren
-      if (formData.kategorie === "extern" && selectedEmployee.user_id) {
+      // Baustellen-Freigaben fuer externe Mitarbeiter und Bauherren synchronisieren
+      if (isExternalLikeKategorie(formData.kategorie) && selectedEmployee.user_id) {
         const { data: { user } } = await supabase.auth.getUser();
         // bestehende Freigaben loeschen, gewaehlte neu anlegen
         await supabase
@@ -231,7 +241,7 @@ export default function Employees() {
       setFormData(selectedEmployee);
       // Baustellen-Freigaben des externen Mitarbeiters laden
       setExternalProjectIds([]);
-      if (selectedEmployee.kategorie === "extern" && selectedEmployee.user_id) {
+      if (isExternalLikeKategorie(selectedEmployee.kategorie) && selectedEmployee.user_id) {
         (async () => {
           const { data } = await supabase
             .from("external_employee_projects")
@@ -293,7 +303,7 @@ export default function Employees() {
               <CardDescription className="flex items-center gap-2 flex-wrap">
                 {emp.position || "Mitarbeiter"}
                 {emp.kategorie && (
-                  <Badge variant={emp.kategorie === "extern" ? "outline" : "secondary"} className="text-xs">
+                  <Badge variant={isExternalLikeKategorie(emp.kategorie) ? "outline" : "secondary"} className="text-xs">
                     {KATEGORIE_LABELS[emp.kategorie] || emp.kategorie}
                   </Badge>
                 )}
@@ -322,7 +332,7 @@ export default function Employees() {
                     Seit: {format(new Date(emp.eintritt_datum), "dd.MM.yyyy")}
                   </div>
                 )}
-                {emp.kategorie !== "extern" && (() => {
+                {!isExternalLikeKategorie(emp.kategorie) && (() => {
                   const sched = emp.regelarbeitszeit as WeekSchedule | null;
                   const sw = emp.schwellenwert as Schwellenwert | null;
                   const wd: Array<keyof WeekSchedule> = ["mo", "di", "mi", "do", "fr"];
@@ -469,7 +479,7 @@ export default function Employees() {
                   <div>
                     <h3 className="text-lg font-semibold mb-3">Beschäftigung</h3>
                     <div className="grid grid-cols-2 gap-4">
-                      {formData.kategorie !== "extern" && (
+                      {!isExternalLikeKategorie(formData.kategorie) && (
                         <div>
                           <Label>SV-Nummer</Label>
                           <Input
@@ -484,10 +494,10 @@ export default function Employees() {
                         <Input
                           value={formData.position || ""}
                           onChange={(e) => setFormData({ ...formData, position: e.target.value })}
-                          placeholder={formData.kategorie === "extern" ? "z.B. Subunternehmer" : "z.B. Zimmermann"}
+                          placeholder={formData.kategorie === "bauherr" ? "z.B. Bauherr" : isExternalLikeKategorie(formData.kategorie) ? "z.B. Subunternehmer" : "z.B. Zimmermann"}
                         />
                       </div>
-                      {formData.kategorie !== "extern" && (
+                      {!isExternalLikeKategorie(formData.kategorie) && (
                         <>
                           <div>
                             <Label>Eintrittsdatum</Label>
@@ -528,13 +538,20 @@ export default function Employees() {
                         <Select
                           value={formData.kategorie || "facharbeiter"}
                           onValueChange={(v) => {
-                            const updates: Partial<Employee> = { kategorie: v, is_external: v === "extern" };
+                            // Bauherren werden technisch wie Externe behandelt
+                            // (kein Arbeitszeit-Plan, kein wochen_soll_stunden),
+                            // darum is_external = true bei v === "bauherr".
+                            const externLike = EXTERNAL_LIKE_KATEGORIEN.includes(v);
+                            const updates: Partial<Employee> = { kategorie: v, is_external: externLike };
                             if (v === "lehrling") {
                               updates.regelarbeitszeit = LEHRLING_SCHEDULE;
                               updates.wochen_soll_stunden = 39;
                             } else if (v === "facharbeiter" || v === "vorarbeiter") {
                               updates.regelarbeitszeit = DEFAULT_SCHEDULE;
                               updates.wochen_soll_stunden = 39;
+                            } else if (externLike) {
+                              updates.regelarbeitszeit = null;
+                              updates.wochen_soll_stunden = null;
                             }
                             setFormData({ ...formData, ...updates });
                           }}
@@ -547,6 +564,7 @@ export default function Employees() {
                             <SelectItem value="facharbeiter">Facharbeiter</SelectItem>
                             <SelectItem value="vorarbeiter">Vorarbeiter</SelectItem>
                             <SelectItem value="extern">Extern</SelectItem>
+                            <SelectItem value="bauherr">Bauherr</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -566,14 +584,15 @@ export default function Employees() {
 
                   <Separator />
 
-                  {/* Freigegebene Baustellen — nur fuer externe Mitarbeiter */}
-                  {formData.kategorie === "extern" && (
+                  {/* Freigegebene Baustellen — fuer Externe und Bauherren */}
+                  {isExternalLikeKategorie(formData.kategorie) && (
                     <>
                       <div>
                         <h3 className="text-lg font-semibold mb-1">Freigegebene Baustellen</h3>
                         <p className="text-xs text-muted-foreground mb-3">
-                          Baustellen, auf denen ein Vorarbeiter Stunden für diesen externen
-                          Mitarbeiter eintragen darf.
+                          {formData.kategorie === "bauherr"
+                            ? "Baustellen, auf denen ein Vorarbeiter Stunden für diesen Bauherrn eintragen darf (z.B. Eigenleistung)."
+                            : "Baustellen, auf denen ein Vorarbeiter Stunden für diesen externen Mitarbeiter eintragen darf."}
                         </p>
                         {!selectedEmployee?.user_id ? (
                           <p className="text-sm text-muted-foreground rounded-md border p-3 bg-muted/30">
@@ -608,7 +627,7 @@ export default function Employees() {
                   )}
 
                   {/* Regelarbeitszeit (mit optionaler 14-taegiger Durchrechnung) */}
-                  {formData.kategorie !== "extern" && (() => {
+                  {!isExternalLikeKategorie(formData.kategorie) && (() => {
                     const schedule = (formData.regelarbeitszeit as WeekSchedule) || DEFAULT_SCHEDULE;
                     const isBiweekly = schedule.zyklus === "biweekly";
                     const ankerDefault = (() => {
@@ -791,7 +810,7 @@ export default function Employees() {
                   })()}
 
                   {/* Schwellenwerte (Lohnstunden-Obergrenze pro Tag) */}
-                  {formData.kategorie !== "extern" && (() => {
+                  {!isExternalLikeKategorie(formData.kategorie) && (() => {
                     const sw = (formData.schwellenwert as Schwellenwert) || DEFAULT_SCHWELLENWERT;
                     const isBiweekly = sw.zyklus === "biweekly";
                     const ankerDefault = (() => {
@@ -893,7 +912,7 @@ export default function Employees() {
                     );
                   })()}
 
-                  {formData.kategorie !== "extern" && (
+                  {!isExternalLikeKategorie(formData.kategorie) && (
                   <>
                   <Separator />
 
@@ -1055,6 +1074,7 @@ export default function Employees() {
                   <SelectItem value="facharbeiter">Facharbeiter</SelectItem>
                   <SelectItem value="vorarbeiter">Vorarbeiter</SelectItem>
                   <SelectItem value="extern">Extern</SelectItem>
+                  <SelectItem value="bauherr">Bauherr</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -1074,7 +1094,7 @@ export default function Employees() {
                 required
               />
             </div>
-            {newEmployee.kategorie !== "extern" && (
+            {!isExternalLikeKategorie(newEmployee.kategorie) && (
               <div>
                 <Label>E-Mail (optional)</Label>
                 <Input

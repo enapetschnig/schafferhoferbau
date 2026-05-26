@@ -42,8 +42,10 @@ export const MultiEmployeeSelect = ({
   const [checkingConflicts, setCheckingConflicts] = useState(false);
 
   // Baustellen-Pool (nur wenn restrictToAssigned) — Mitarbeiter, die der
-  // gewaehlten Baustelle zugewiesen sind (intern via worker_assignments,
-  // extern via external_employee_projects).
+  // gewaehlten Baustelle zugewiesen sind. Drei Quellen werden vereinigt:
+  //  - worker_assignments  (intern, datumsabhaengige Plantafel-Zuweisung)
+  //  - project_access      (intern, datumsunabhaengige Projekt-Zuweisung)
+  //  - external_employee_projects (externe / Bauherren, datumsunabhaengig)
   const [assignedEmployees, setAssignedEmployees] = useState<Employee[]>([]);
   const [assignedLoading, setAssignedLoading] = useState(false);
   const projectIdsKey = projectIds.join(",");
@@ -59,12 +61,14 @@ export const MultiEmployeeSelect = ({
           return;
         }
         const { data: { user } } = await supabase.auth.getUser();
-        const [waRes, eepRes] = await Promise.all([
+        const [waRes, paRes, eepRes] = await Promise.all([
           supabase.from("worker_assignments").select("user_id").in("project_id", projectIds).eq("datum", date),
+          supabase.from("project_access").select("user_id").in("project_id", projectIds),
           supabase.from("external_employee_projects").select("employee_user_id").in("project_id", projectIds),
         ]);
         const ids = new Set<string>();
         for (const r of waRes.data || []) if (r.user_id) ids.add(r.user_id);
+        for (const r of paRes.data || []) if ((r as any).user_id) ids.add((r as any).user_id);
         for (const r of eepRes.data || []) if ((r as any).employee_user_id) ids.add((r as any).employee_user_id);
         if (user) ids.delete(user.id);
         if (ids.size === 0) {
@@ -249,7 +253,7 @@ export const MultiEmployeeSelect = ({
     const emptyHint = restrictToAssigned
       ? (projectIds.length === 0
           ? "Bitte zuerst eine Baustelle wählen, dann erscheinen die zugewiesenen Mitarbeiter."
-          : "Keine Mitarbeiter dieser Baustelle zugewiesen — bitte in der Plantafel zuweisen.")
+          : "Keine Mitarbeiter dieser Baustelle zugewiesen — bitte über die Plantafel oder direkt im Projekt zuweisen.")
       : "Keine weiteren aktiven Mitarbeiter verfügbar";
     return (
       <div className="space-y-2">
