@@ -116,19 +116,28 @@ export function generateBuchhaltungExcel(rows: BuchhaltungExcelRow[], jahr: numb
     }
   }
 
-  // Summenzeile fuer Gesamtpreis (K) — eine Zeile unter den Daten
+  // Summenzeile fuer Gesamtpreis (K und M) — eine Zeile unter den Daten.
+  // K und M berechnen sich beide aus dem gleichen Aufschlag-Pfad, deshalb
+  // ist sumKM identisch fuer beide Spalten.
   if (sorted.length > 0) {
     const sumRow = lastDataRow + 2; // 1-basiert, eine Leerzeile dazwischen
     const sumRi = sumRow - 1;
-    const sumK = sorted.reduce((s, r) => {
+    const sumKM = sorted.reduce((s, r) => {
       const e = r.ekPreis != null && Number.isFinite(r.ekPreis) ? r.ekPreis : 0;
       const f = Number.isFinite(r.aufschlag) ? r.aufschlag : 0;
       const b = r.menge != null && Number.isFinite(r.menge) ? r.menge : 0;
-      return s + Math.round((e + e * f) * 100) / 100 * b;
+      // Konsistent zu den Zeilen-Formeln: Aufschlag als Prozent (/100),
+      // pro Zeile auf 2 Stellen gerundet, dann mit Menge multipliziert.
+      const rowVal = Math.round((e + (e * f) / 100) * 100) / 100;
+      return s + Math.round(rowVal * b * 100) / 100;
     }, 0);
+    const sumValue = Math.round(sumKM * 100) / 100;
     ws[XLSX.utils.encode_cell({ r: sumRi, c: 3 })] = { t: "s", v: "Summe Netto:", s: { font: { bold: true } } };
     ws[XLSX.utils.encode_cell({ r: sumRi, c: 10 })] = {
-      t: "n", f: `SUM(K${firstDataRow}:K${lastDataRow})`, v: Math.round(sumK * 100) / 100, z: "0.00", s: { font: { bold: true } },
+      t: "n", f: `SUM(K${firstDataRow}:K${lastDataRow})`, v: sumValue, z: "0.00", s: { font: { bold: true } },
+    };
+    ws[XLSX.utils.encode_cell({ r: sumRi, c: 12 })] = {
+      t: "n", f: `SUM(M${firstDataRow}:M${lastDataRow})`, v: sumValue, z: "0.00", s: { font: { bold: true } },
     };
     // Sheet-Range erweitern, damit die Summenzeile enthalten ist
     const range = XLSX.utils.decode_range(ws["!ref"] || "A1");
