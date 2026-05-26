@@ -9,7 +9,7 @@ import { sanitizeStorageFileName } from "@/lib/storageFileName";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Progress } from "@/components/ui/progress";
-import { MobilePhotoCapture } from "@/components/MobilePhotoCapture";
+import { SerialPhotoCapture } from "@/components/SerialPhotoCapture";
 
 type DocumentType = "plans" | "reports" | "materials" | "photos";
 
@@ -321,15 +321,15 @@ export function QuickUploadDialog({
         </div>
       </DialogContent>
 
-      {/* Eigene Kamera-UI im Browser (getUserMedia). Foto wird der
-          Datei-Liste hinzugefuegt — nicht direkt hochgeladen, der User
-          klickt dann den Hochladen-Button im Hauptdialog. */}
-      <MobilePhotoCapture
+      {/* Vollbild-Serien-Kamera (getUserMedia). 1 Tap = 1 Foto, Stream
+          bleibt offen — siehe SerialPhotoCapture. Fotos werden der
+          Datei-Liste hinzugefuegt, Upload erst per Hauptdialog-Button. */}
+      <SerialPhotoCapture
         open={showInAppCamera}
-        onClose={() => setShowInAppCamera(false)}
-        successMessage="Foto übernommen"
-        onPhotoCapture={async (file) => {
-          setSelectedFiles((prev) => [...prev, file]);
+        onOpenChange={setShowInAppCamera}
+        title="Fotos aufnehmen"
+        onFinish={(files) => {
+          setSelectedFiles((prev) => [...prev, ...files]);
         }}
       />
     </Dialog>

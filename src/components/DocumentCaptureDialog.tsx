@@ -12,6 +12,7 @@ import { Upload, Loader2, AlertTriangle, CheckCircle2, Trash2, FileText, Plus, C
 import "@/lib/pdfjsSetup";
 import * as pdfjsLib from "pdfjs-dist";
 import { MobilePhotoCapture } from "@/components/MobilePhotoCapture";
+import { SerialPhotoCapture } from "@/components/SerialPhotoCapture";
 
 type DocType = "lieferschein" | "lagerlieferschein" | "rechnung";
 
@@ -1138,14 +1139,14 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
         }}
       />
 
-      {/* Eigene In-App-Kamera fuer Ware-Fotos — Foto wird zur Liste der
-          Ware-Fotos hinzugefuegt. */}
-      <MobilePhotoCapture
+      {/* Serien-Kamera fuer Ware-Fotos (Vollbild, 1 Tap pro Foto) —
+          typischerweise will man mehrere Ware-Fotos hintereinander machen. */}
+      <SerialPhotoCapture
         open={wareCamOpen}
-        onClose={() => setWareCamOpen(false)}
-        successMessage="Ware-Foto übernommen"
-        onPhotoCapture={async (file) => {
-          setWarePhotos((prev) => [...prev, file]);
+        onOpenChange={setWareCamOpen}
+        title="Ware fotografieren"
+        onFinish={(files) => {
+          setWarePhotos((prev) => [...prev, ...files]);
         }}
       />
     </Dialog>
