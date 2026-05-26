@@ -92,14 +92,15 @@ export function generateBuchhaltungExcel(rows: BuchhaltungExcelRow[], jahr: numb
     const e = src.ekPreis != null && Number.isFinite(src.ekPreis) ? src.ekPreis : 0;
     const f = Number.isFinite(src.aufschlag) ? src.aufschlag : 0;
     const b = src.menge != null && Number.isFinite(src.menge) ? src.menge : 0;
-    const jVal = Math.round((e + e * f) * 100) / 100;
-    const lVal = e + e * f;
-    // J = ROUND(E+(E*F),2)
-    ws[XLSX.utils.encode_cell({ r: ri, c: 9 })] = { t: "n", f: `ROUND(E${r}+(E${r}*F${r}),2)`, v: jVal, z: "0.00" };
+    // Aufschlag f ist Prozent (z.B. 15 = 15%), darum *f/100.
+    const jVal = Math.round((e + (e * f) / 100) * 100) / 100;
+    const lVal = Math.round((e + (e * f) / 100) * 100) / 100;
+    // J = ROUND(E+(E*F/100),2)
+    ws[XLSX.utils.encode_cell({ r: ri, c: 9 })] = { t: "n", f: `ROUND(E${r}+(E${r}*F${r}/100),2)`, v: jVal, z: "0.00" };
     // K = J*B
     ws[XLSX.utils.encode_cell({ r: ri, c: 10 })] = { t: "n", f: `J${r}*B${r}`, v: Math.round(jVal * b * 100) / 100, z: "0.00" };
-    // L = (E+(E*F))
-    ws[XLSX.utils.encode_cell({ r: ri, c: 11 })] = { t: "n", f: `(E${r}+(E${r}*F${r}))`, v: lVal, z: "0.00" };
+    // L = ROUND(E+(E*F/100),2)
+    ws[XLSX.utils.encode_cell({ r: ri, c: 11 })] = { t: "n", f: `ROUND(E${r}+(E${r}*F${r}/100),2)`, v: lVal, z: "0.00" };
     // M = L*B
     ws[XLSX.utils.encode_cell({ r: ri, c: 12 })] = { t: "n", f: `L${r}*B${r}`, v: Math.round(lVal * b * 100) / 100, z: "0.00" };
 
