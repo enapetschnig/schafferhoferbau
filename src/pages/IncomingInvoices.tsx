@@ -15,7 +15,18 @@ import { DocumentDetailDialog, type IncomingDocument } from "@/components/Docume
 import { BatchInvoiceProcessor } from "@/components/BatchInvoiceProcessor";
 import { Layers } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Download, Upload, Filter, FileText, Check, CheckCircle2, AlertTriangle, XCircle, Loader2, X, Plus, Sparkles } from "lucide-react";
+import { Download, Upload, Filter, FileText, Check, CheckCircle2, AlertTriangle, XCircle, Loader2, X, Plus, Sparkles, Trash2 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { format, parseISO } from "date-fns";
 import * as XLSX from "xlsx-js-style";
 import "@/lib/pdfjsSetup";
@@ -163,6 +174,7 @@ export default function IncomingInvoices() {
   const [showBatchDialog, setShowBatchDialog] = useState(false);
   const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<Set<string>>(new Set());
   const [bulkZipping, setBulkZipping] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   // Upload tab state
   const [dragOver, setDragOver] = useState(false);
@@ -811,11 +823,54 @@ export default function IncomingInvoices() {
                 {selectedInvoiceIds.size > 0 && (
                   <div className="flex items-center gap-2 mb-3 p-2 bg-muted rounded-lg flex-wrap">
                     <Badge variant="secondary">{selectedInvoiceIds.size} ausgewählt</Badge>
-                    <Button size="sm" onClick={handleBulkZipDownload} disabled={bulkZipping}>
+                    <Button size="sm" onClick={handleBulkZipDownload} disabled={bulkZipping || bulkDeleting}>
                       {bulkZipping ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Download className="h-3.5 w-3.5 mr-1" />}
                       Als ZIP laden
                     </Button>
-                    <Button size="sm" variant="ghost" onClick={() => setSelectedInvoiceIds(new Set())} disabled={bulkZipping}>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button size="sm" variant="destructive" disabled={bulkZipping || bulkDeleting}>
+                          <Trash2 className="h-3.5 w-3.5 mr-1" />
+                          {bulkDeleting ? "Löscht..." : `Löschen (${selectedInvoiceIds.size})`}
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>
+                            {selectedInvoiceIds.size} Rechnung{selectedInvoiceIds.size === 1 ? "" : "en"} löschen?
+                          </AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Die ausgewählten Rechnungen werden unwiderruflich gelöscht.
+                            Diese Aktion kann nicht rückgängig gemacht werden.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Abbrechen</AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={async () => {
+                              setBulkDeleting(true);
+                              const ids = Array.from(selectedInvoiceIds);
+                              const { error } = await supabase
+                                .from("incoming_documents")
+                                .delete()
+                                .in("id", ids);
+                              setBulkDeleting(false);
+                              if (error) {
+                                toast({ variant: "destructive", title: "Fehler", description: error.message });
+                                return;
+                              }
+                              toast({ title: `${ids.length} Rechnung(en) gelöscht` });
+                              setSelectedInvoiceIds(new Set());
+                              fetchData();
+                            }}
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                          >
+                            Löschen
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                    <Button size="sm" variant="ghost" onClick={() => setSelectedInvoiceIds(new Set())} disabled={bulkZipping || bulkDeleting}>
                       Auswahl aufheben
                     </Button>
                   </div>

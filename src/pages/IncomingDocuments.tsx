@@ -14,7 +14,18 @@ import { DocumentCaptureDialog } from "@/components/DocumentCaptureDialog";
 import { DocumentDetailDialog, type IncomingDocument } from "@/components/DocumentDetailDialog";
 import { WarehouseDeliveryNoteDialog } from "@/components/warehouse/WarehouseDeliveryNoteDialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Download, Plus, Filter, FileText, ArrowRightLeft, Camera, Pencil } from "lucide-react";
+import { Download, Plus, Filter, FileText, ArrowRightLeft, Camera, Pencil, Trash2 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { format, parseISO } from "date-fns";
 import { de } from "date-fns/locale";
 import * as XLSX from "xlsx-js-style";
@@ -61,6 +72,7 @@ export default function IncomingDocuments() {
   const [showWarehouseDialog, setShowWarehouseDialog] = useState(false);
   const [selectedDocIds, setSelectedDocIds] = useState<Set<string>>(new Set());
   const [zipLoading, setZipLoading] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const [selectedDoc, setSelectedDoc] = useState<IncomingDocument | null>(null);
   const [showDetailDialog, setShowDetailDialog] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -426,8 +438,53 @@ export default function IncomingDocuments() {
                           <Download className="h-3.5 w-3.5 mr-1" />
                           {zipLoading ? "Erstellt ZIP..." : "Als ZIP herunterladen"}
                         </Button>
+                        {isAdmin && (
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button size="sm" variant="destructive" disabled={bulkDeleting}>
+                                <Trash2 className="h-3.5 w-3.5 mr-1" />
+                                {bulkDeleting ? "Löscht..." : `Löschen (${selectedDocIds.size})`}
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>
+                                  {selectedDocIds.size} Dokument{selectedDocIds.size === 1 ? "" : "e"} löschen?
+                                </AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  Die ausgewählten Lieferscheine/Rechnungen werden unwiderruflich gelöscht.
+                                  Diese Aktion kann nicht rückgängig gemacht werden.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Abbrechen</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={async () => {
+                                    setBulkDeleting(true);
+                                    const ids = Array.from(selectedDocIds);
+                                    const { error } = await supabase
+                                      .from("incoming_documents")
+                                      .delete()
+                                      .in("id", ids);
+                                    setBulkDeleting(false);
+                                    if (error) {
+                                      toast({ variant: "destructive", title: "Fehler", description: error.message });
+                                      return;
+                                    }
+                                    toast({ title: `${ids.length} Dokument(e) gelöscht` });
+                                    setSelectedDocIds(new Set());
+                                    fetchDocuments();
+                                  }}
+                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                >
+                                  Löschen
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        )}
                         <Button size="sm" variant="ghost" onClick={() => setSelectedDocIds(new Set())}>
-                          Auswahl löschen
+                          Auswahl aufheben
                         </Button>
                       </div>
                     )}
