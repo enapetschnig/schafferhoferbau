@@ -90,6 +90,16 @@ export default function Admin() {
   const [loading, setLoading] = useState(true);
   const [inviteTelefon, setInviteTelefon] = useState("");
   const [sendingInvite, setSendingInvite] = useState(false);
+
+  // States fuer "Mitarbeiter ohne Login anlegen"
+  const [createWithoutLogin, setCreateWithoutLogin] = useState({
+    vorname: "",
+    nachname: "",
+    kategorie: "facharbeiter" as "lehrling" | "facharbeiter" | "vorarbeiter" | "extern" | "bauherr",
+    email: "",
+    telefon: "",
+  });
+  const [creatingWithoutLogin, setCreatingWithoutLogin] = useState(false);
   
   // Employee management states
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -666,6 +676,45 @@ export default function Admin() {
     }
   };
 
+  const handleCreateWithoutLogin = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!createWithoutLogin.vorname.trim() || !createWithoutLogin.nachname.trim()) {
+      toast({ variant: "destructive", title: "Fehler", description: "Vorname und Nachname sind erforderlich" });
+      return;
+    }
+    setCreatingWithoutLogin(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("create-employee-account", {
+        body: {
+          vorname: createWithoutLogin.vorname.trim(),
+          nachname: createWithoutLogin.nachname.trim(),
+          kategorie: createWithoutLogin.kategorie,
+          email: createWithoutLogin.email.trim() || undefined,
+          telefon: createWithoutLogin.telefon.trim() || undefined,
+        },
+      });
+      if (error) throw error;
+      const resp = data as { success?: boolean; error?: string; pseudoEmail?: boolean } | null;
+      if (!resp?.success) {
+        throw new Error(resp?.error || "Anlage fehlgeschlagen");
+      }
+      toast({
+        title: "Mitarbeiter angelegt",
+        description: resp.pseudoEmail
+          ? `${createWithoutLogin.vorname} ${createWithoutLogin.nachname} wurde mit einer internen Platzhalter-Email angelegt.`
+          : `${createWithoutLogin.vorname} ${createWithoutLogin.nachname} wurde angelegt.`,
+      });
+      setCreateWithoutLogin({ vorname: "", nachname: "", kategorie: "facharbeiter", email: "", telefon: "" });
+      // Listen refreshen
+      fetchUsers({ silent: true });
+      fetchEmployees();
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Fehler", description: err?.message || "Anlage fehlgeschlagen" });
+    } finally {
+      setCreatingWithoutLogin(false);
+    }
+  };
+
   const getEffectiveRoleFor = (userId: string) =>
     userRoles[userId] === "administrator"
       ? "administrator"
@@ -962,6 +1011,90 @@ export default function Admin() {
                 </div>
                 <Button type="submit" disabled={sendingInvite}>
                   {sendingInvite ? "Sendet..." : "SMS senden"}
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+
+          {/* Card: Mitarbeiter ohne Login anlegen — Admin legt stellvertretend
+              einen Account an. Der MA muss sich nicht selbst registrieren.
+              Wird per Edge Function create-employee-account erledigt. */}
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <UserPlus className="h-5 w-5" />
+                Mitarbeiter ohne Login anlegen
+              </CardTitle>
+              <CardDescription>
+                Fuer Bauherren, externe Subunternehmer und Mitarbeiter, die nicht selbst mit der App arbeiten.
+                Der Mitarbeiter kann sich nicht selbst einloggen — Vorarbeiter koennen aber Stunden fuer ihn buchen.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleCreateWithoutLogin} className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <Label htmlFor="cwl-vorname">Vorname *</Label>
+                    <Input
+                      id="cwl-vorname"
+                      value={createWithoutLogin.vorname}
+                      onChange={(e) => setCreateWithoutLogin(p => ({ ...p, vorname: e.target.value }))}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="cwl-nachname">Nachname *</Label>
+                    <Input
+                      id="cwl-nachname"
+                      value={createWithoutLogin.nachname}
+                      onChange={(e) => setCreateWithoutLogin(p => ({ ...p, nachname: e.target.value }))}
+                      required
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <Label htmlFor="cwl-kategorie">Kategorie *</Label>
+                    <Select
+                      value={createWithoutLogin.kategorie}
+                      onValueChange={(v) => setCreateWithoutLogin(p => ({ ...p, kategorie: v as typeof p.kategorie }))}
+                    >
+                      <SelectTrigger id="cwl-kategorie"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="lehrling">Lehrling</SelectItem>
+                        <SelectItem value="facharbeiter">Facharbeiter</SelectItem>
+                        <SelectItem value="vorarbeiter">Vorarbeiter</SelectItem>
+                        <SelectItem value="extern">Extern</SelectItem>
+                        <SelectItem value="bauherr">Bauherr</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label htmlFor="cwl-telefon">Telefon</Label>
+                    <Input
+                      id="cwl-telefon"
+                      type="tel"
+                      placeholder="+43..."
+                      value={createWithoutLogin.telefon}
+                      onChange={(e) => setCreateWithoutLogin(p => ({ ...p, telefon: e.target.value }))}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <Label htmlFor="cwl-email">E-Mail (optional)</Label>
+                  <Input
+                    id="cwl-email"
+                    type="email"
+                    placeholder="leer lassen, wenn nicht vorhanden"
+                    value={createWithoutLogin.email}
+                    onChange={(e) => setCreateWithoutLogin(p => ({ ...p, email: e.target.value }))}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Bei leerem Feld wird intern eine Platzhalter-Adresse vergeben.
+                  </p>
+                </div>
+                <Button type="submit" disabled={creatingWithoutLogin}>
+                  {creatingWithoutLogin ? "Legt an..." : "Mitarbeiter anlegen"}
                 </Button>
               </form>
             </CardContent>

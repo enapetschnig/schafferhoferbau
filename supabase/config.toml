@@ -8,3 +8,9 @@ verify_jwt = false
 
 [functions.send-invitation]
 verify_jwt = false
+
+# Function prueft Auth selbst (Bearer-Token + Admin-Rollen-Check).
+# verify_jwt=true wuerde den Bearer-Token vorab auf Echtheit pruefen — das
+# Admin-Role-Check muss die Function trotzdem selbst machen.
+[functions.create-employee-account]
+verify_jwt = true
