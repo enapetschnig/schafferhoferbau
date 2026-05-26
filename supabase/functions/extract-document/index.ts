@@ -85,6 +85,35 @@ Beispiel:
 
 Verwechsle NIEMALS Menge mit Preis oder Positionsnummer.
 
+MEHRERE LIEFERSCHEIN-BLÖCKE:
+- Eine Rechnung kann MEHRERE Lieferschein-Bloecke enthalten, jeder mit
+  eigener Positionsliste (typische Zwischenueberschriften: "Lieferschein: 12345 vom …",
+  "LS-Nr ...", "Angebot: ..."). Extrahiere ALLE Positionen aus ALLEN Bloecken
+  in EINER durchgehenden Positions-Liste, nicht nur den ersten Block.
+- Verlasse Dich nicht darauf, dass die laufende Positionsnummer bei 1
+  startet — sie kann ueber alle Bloecke hinweg fortlaufen oder pro Block neu beginnen.
+
+GUTSCHRIFTEN / STORNIERUNGEN (negative Mengen oder Betraege):
+- Negative Mengen ("-1,000 ST", "-5.000,000 LM") oder negative Betraege
+  ("-19,69", "-749,00") sind AUSDRUECKLICH erlaubt und bedeuten
+  Korrekturen oder Gutschriften innerhalb einer Rechnung.
+- Uebernimm das Minus-Vorzeichen EXAKT in die Felder "Menge" und
+  "Gesamt (€ netto)" — niemals ignorieren, niemals positiv umrechnen,
+  niemals als Fehler behandeln.
+- Auch wenn der Einzelpreis positiv ist, kann der Gesamt-Wert negativ sein
+  (wenn die Menge negativ ist).
+
+POSITIONS-RABATTE:
+- Wenn neben dem Einzelpreis ein Positions-Rabatt steht (z.B.
+  "8,9000 -30,00%"), rechne den Rabatt in den Gesamt-Wert ein:
+  Gesamt = Menge × Einzelpreis × (1 - Rabatt/100).
+- Schreibe den effektiven, bereits rabattierten Wert in "Gesamt (€ netto)".
+- Vermerke den Rabatt am Ende des "Material"-Feldes in Klammern, z.B.
+  "EISENDRAHT GEGLUEHT 1,6MM_2KG (Rabatt -30%)" — so bleibt der Rabatt im
+  Text sichtbar.
+- "Einzelpreis (€ netto)" bleibt der Brutto-Einzelpreis VOR Rabatt
+  (wie auf der Rechnung gedruckt).
+
 ------------------------------------
 
 3. POSITIONEN BERECHNUNG PRÜFEN
@@ -124,7 +153,11 @@ Die Ausgabe muss exakt der folgenden Struktur entsprechen (NUR JSON, kein Markdo
 
 Am Ende prüfe:
 
-- Stimmen die Positionssummen ungefähr mit dem Netto-Gesamtbetrag überein?
+- Stimmen die Positionssummen (inkl. negativer Gutschriften!) ungefähr mit dem
+  Netto-Gesamtbetrag überein? Wenn die Summe der Gesamt-Werte deutlich vom
+  Netto-Gesamtbetrag der Rechnung abweicht, hast Du wahrscheinlich eine
+  Position uebersehen — pruefe ALLE Lieferschein-Bloecke nochmal durch,
+  besonders im hinteren Teil der Rechnung.
 - Ist Brutto ≈ Netto + MwSt?
 
 Falls etwas nicht passt, füge ein optionales Feld "Warnung" mit einer kurzen Erklärung hinzu.
@@ -200,6 +233,19 @@ Beispiel:
 
 Verwechsle NIEMALS Menge mit Preis oder Positionsnummer. Falls Preise nicht angegeben sind, Felder leer lassen.
 
+MEHRERE BLÖCKE / SEITEN:
+- Auch Lieferscheine koennen mehrere Material-Bloecke oder mehrere Seiten
+  haben. Extrahiere ALLE Positionen aus ALLEN Bloecken, nicht nur den ersten.
+
+GUTSCHRIFTEN / STORNIERUNGEN (negative Mengen):
+- Negative Mengen ("-1,000 ST", "-5 RL") sind erlaubt und bedeuten Retouren
+  oder Korrekturen. Uebernimm das Minus-Vorzeichen EXAKT in das Feld "Menge".
+
+POSITIONS-RABATTE:
+- Wenn neben dem Einzelpreis ein Positions-Rabatt steht (z.B. "8,9000 -30%"),
+  rechne den Rabatt in "Gesamt (€ netto)" ein und vermerke den Rabatt am
+  Ende des "Material"-Feldes in Klammern, z.B. "MATERIAL XYZ (Rabatt -30%)".
+
 ------------------------------------
 
 3. AUSGABEFORMAT
@@ -245,9 +291,11 @@ serve(async (req) => {
     let messages: any[];
 
     if (pdfText && typeof pdfText === "string" && pdfText.trim().length > 0) {
-      // PDF mit eingebettetem Textlayer — direkt als Text an GPT
-      // Limit to 40000 chars to avoid exceeding context window
-      const truncatedText = pdfText.slice(0, 40000);
+      // PDF mit eingebettetem Textlayer — direkt als Text an GPT.
+      // GPT-4o hat 128k Tokens Context-Window (~500k Zeichen). 200k Zeichen
+      // sind ein sicherer Puffer und decken Rechnungen mit 100+ Positionen
+      // ueber 10+ Seiten ab.
+      const truncatedText = pdfText.slice(0, 200000);
       const prompt = `${activePrompt}
 
 ------------------------------------
