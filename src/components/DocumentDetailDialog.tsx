@@ -12,7 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
-import { Trash2 } from "lucide-react";
+import { Trash2, FileText } from "lucide-react";
 
 export type IncomingDocument = {
   id: string;
@@ -64,7 +64,11 @@ interface DocumentDetailDialogProps {
 
 export function DocumentDetailDialog({ document, open, onOpenChange, isAdmin, onUpdate, onDelete }: DocumentDetailDialogProps) {
   const { toast } = useToast();
-  const [showFullImage, setShowFullImage] = useState(false);
+  // URL des aktuell im Vollbild gezeigten Anhangs (Haupt-Foto, Zusatz-Seite
+  // oder Ware-Foto). null = kein Vollbild aktiv. Generalisiert vom alten
+  // showFullImage-Boolean, damit Klicks aus den Galerien dieselbe Komponente
+  // wiederverwenden koennen.
+  const [fullscreenUrl, setFullscreenUrl] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -92,20 +96,22 @@ export function DocumentDetailDialog({ document, open, onOpenChange, isAdmin, on
     })();
   }, [open, isAdmin]);
 
-  // Initialize edit fields when document changes
-  const initEdit = () => {
-    if (document) {
-      setEditStatus(document.status);
-      setEditNotizen(document.notizen || "");
-      setEditBezahltAm(document.bezahlt_am || "");
-      setEditProjectId(document.project_id || "");
-      setEditProjektFreitext(document.projekt_freitext || "");
-      setEditLieferant(document.lieferant || "");
-      setEditDatum(document.dokument_datum || "");
-      setEditBelegnummer(document.dokument_nummer || "");
-      setEditBetrag(document.betrag != null ? String(document.betrag) : "");
-    }
-  };
+  // Initialize edit fields when the dialog opens or the document changes.
+  // Wichtig: Radix feuert onOpenChange nicht, wenn der Parent open=true setzt,
+  // daher muss die Initialisierung hier laufen — sonst bleibt z.B. editStatus ""
+  // und der Save verletzt den DB-Check-Constraint auf incoming_documents.status.
+  useEffect(() => {
+    if (!open || !document) return;
+    setEditStatus(document.status || "offen");
+    setEditNotizen(document.notizen || "");
+    setEditBezahltAm(document.bezahlt_am || "");
+    setEditProjectId(document.project_id || "");
+    setEditProjektFreitext(document.projekt_freitext || "");
+    setEditLieferant(document.lieferant || "");
+    setEditDatum(document.dokument_datum || "");
+    setEditBelegnummer(document.dokument_nummer || "");
+    setEditBetrag(document.betrag != null ? String(document.betrag) : "");
+  }, [open, document]);
 
   const handleDelete = async () => {
     if (!document) return;
@@ -165,7 +171,7 @@ export function DocumentDetailDialog({ document, open, onOpenChange, isAdmin, on
 
   return (
     <>
-      <Dialog open={open} onOpenChange={(o) => { if (o) initEdit(); onOpenChange(o); }}>
+      <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 flex-wrap">
@@ -216,7 +222,7 @@ export function DocumentDetailDialog({ document, open, onOpenChange, isAdmin, on
               return (
                 <div
                   className="cursor-pointer rounded-lg border overflow-hidden bg-muted"
-                  onClick={() => setShowFullImage(true)}
+                  onClick={() => setFullscreenUrl(document.photo_url)}
                 >
                   <img
                     src={document.photo_url}
@@ -226,6 +232,65 @@ export function DocumentDetailDialog({ document, open, onOpenChange, isAdmin, on
                 </div>
               );
             })()}
+
+            {/* Weitere Seiten — Galerie analog zur Lager-Lieferschein-Detail
+                (WarehouseDeliveryNoteDetail.tsx:142-156). Zusatzseiten koennen
+                Bilder oder PDFs sein, deshalb pro Item PDF-Check. */}
+            {document.zusatz_seiten_urls && document.zusatz_seiten_urls.length > 0 && (
+              <div>
+                <span className="text-sm text-muted-foreground">
+                  Weitere Seiten ({document.zusatz_seiten_urls.length}):
+                </span>
+                <div className="grid grid-cols-3 gap-2 mt-1">
+                  {document.zusatz_seiten_urls.map((url, i) => {
+                    const isPdf = /\.pdf(\?|$)/i.test(url);
+                    if (isPdf) {
+                      return (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={() => setFullscreenUrl(url)}
+                          className="flex flex-col items-center justify-center gap-1 h-24 rounded border bg-muted cursor-pointer hover:opacity-80 transition-opacity"
+                          title={`Seite ${i + 2} (PDF)`}
+                        >
+                          <FileText className="h-8 w-8 text-muted-foreground" />
+                          <span className="text-xs text-muted-foreground">PDF</span>
+                        </button>
+                      );
+                    }
+                    return (
+                      <img
+                        key={i}
+                        src={url}
+                        alt={`Seite ${i + 2}`}
+                        className="w-full h-24 object-cover rounded cursor-pointer hover:opacity-80"
+                        onClick={() => setFullscreenUrl(url)}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Fotos der Ware — reine Bild-Galerie. */}
+            {document.waren_fotos_urls && document.waren_fotos_urls.length > 0 && (
+              <div>
+                <span className="text-sm text-muted-foreground">
+                  Fotos der Ware ({document.waren_fotos_urls.length}):
+                </span>
+                <div className="grid grid-cols-3 gap-2 mt-1">
+                  {document.waren_fotos_urls.map((url, i) => (
+                    <img
+                      key={i}
+                      src={url}
+                      alt={`Ware ${i + 1}`}
+                      className="w-full h-24 object-cover rounded cursor-pointer hover:opacity-80"
+                      onClick={() => setFullscreenUrl(url)}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Info grid */}
             <div className="grid grid-cols-2 gap-3 text-sm">
@@ -418,22 +483,23 @@ export function DocumentDetailDialog({ document, open, onOpenChange, isAdmin, on
         </DialogContent>
       </Dialog>
 
-      {/* Full-size Vorschau */}
-      <Dialog open={showFullImage} onOpenChange={setShowFullImage}>
+      {/* Full-size Vorschau — zeigt Haupt-Foto, Zusatz-Seite oder Ware-Foto,
+          je nachdem worauf der Nutzer geklickt hat. */}
+      <Dialog open={!!fullscreenUrl} onOpenChange={(o) => { if (!o) setFullscreenUrl(null); }}>
         <DialogContent className="max-w-5xl h-[95vh] p-2 flex flex-col">
-          {(() => {
-            const isPdf = /\.pdf(\?|$)/i.test(document.photo_url);
+          {fullscreenUrl && (() => {
+            const isPdf = /\.pdf(\?|$)/i.test(fullscreenUrl);
             if (isPdf) {
               return (
                 <iframe
-                  src={`${document.photo_url}#toolbar=1`}
+                  src={`${fullscreenUrl}#toolbar=1`}
                   title="PDF-Vorschau"
                   className="flex-1 w-full rounded"
                 />
               );
             }
             return (
-              <img src={document.photo_url} alt="Dokument" className="w-full max-h-full object-contain rounded" />
+              <img src={fullscreenUrl} alt="Dokument" className="w-full max-h-full object-contain rounded" />
             );
           })()}
         </DialogContent>
