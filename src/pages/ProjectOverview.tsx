@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, FileText, FileCheck, Camera, ImagePlus, Lock, Plus, MapPin, Users, Copy, Pencil, Trash2, Phone, Mail, Shield, MessageCircle, Download, Upload, GripVertical, X, Receipt } from "lucide-react";
+import { ArrowLeft, FileText, FileCheck, Camera, ImagePlus, Lock, Plus, MapPin, Users, Copy, Pencil, Trash2, Phone, Mail, Shield, MessageCircle, Download, Upload, GripVertical, X } from "lucide-react";
 import * as XLSX from "xlsx-js-style";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
@@ -1287,19 +1287,19 @@ const ProjectOverview = () => {
           <button
             type="button"
             onClick={() => setProjectCaptureMode("foto")}
-            className="h-28 rounded-xl bg-foreground text-background hover:opacity-90 active:opacity-80 flex flex-col items-center justify-center gap-2 transition-opacity"
+            className="h-24 rounded-xl bg-foreground text-background hover:opacity-90 active:opacity-80 flex flex-col items-center justify-center gap-1.5 transition-opacity"
             aria-label="Foto zur Baustelle aufnehmen"
           >
-            <Camera className="h-10 w-10" />
+            <Camera className="h-8 w-8" />
             <span className="text-sm font-medium">Foto</span>
           </button>
           <button
             type="button"
             onClick={() => setProjectCaptureMode("lieferschein")}
-            className="h-28 rounded-xl bg-primary text-primary-foreground hover:opacity-90 active:opacity-80 flex flex-col items-center justify-center gap-2 transition-opacity"
+            className="h-24 rounded-xl bg-primary text-primary-foreground hover:opacity-90 active:opacity-80 flex flex-col items-center justify-center gap-1.5 transition-opacity"
             aria-label="Lieferschein oder Rechnung erfassen"
           >
-            <Receipt className="h-10 w-10" />
+            <FileText className="h-8 w-8" />
             <span className="text-sm font-medium">Lieferschein</span>
           </button>
         </div>
