@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { SignaturePad } from "@/components/SignaturePad";
-import { Upload, Loader2, AlertTriangle, CheckCircle2, Trash2, FileText, Plus } from "lucide-react";
+import { Upload, Loader2, AlertTriangle, CheckCircle2, Trash2, FileText, Plus, Camera } from "lucide-react";
 import "@/lib/pdfjsSetup";
 import * as pdfjsLib from "pdfjs-dist";
 
@@ -16,6 +16,25 @@ type DocType = "lieferschein" | "lagerlieferschein" | "rechnung";
 
 // Heutiges Datum als ISO (YYYY-MM-DD) — Default fuer das Pflicht-Datumsfeld.
 const todayISO = () => new Date().toISOString().split("T")[0];
+
+// MIME-Typ → Datei-Endung. Android-Kamerafotos haben oft keinen oder einen
+// nutzlosen Namen (z.B. "image"), darum ist file.type die zuverlaessigere Quelle.
+const extFromFile = (file: File): string => {
+  const byMime: Record<string, string> = {
+    "image/jpeg": "jpg",
+    "image/jpg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+    "image/heic": "heic",
+    "image/heif": "heif",
+    "application/pdf": "pdf",
+  };
+  if (file.type && byMime[file.type]) return byMime[file.type];
+  const fromName = file.name?.includes(".") ? file.name.split(".").pop()?.toLowerCase() : "";
+  // Nur kurze, plausible Endungen akzeptieren — sonst Fallback auf jpg.
+  if (fromName && /^[a-z0-9]{1,5}$/.test(fromName)) return fromName;
+  return "jpg";
+};
 
 // Datum aus KI-Antwort (z.B. "29.04.2026" oder ISO) zu ISO YYYY-MM-DD.
 // Liefert null bei leerem/ungueltigem Wert — dann bleibt der heute-Default.
@@ -71,8 +90,10 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
   const [extraPages, setExtraPages] = useState<File[]>([]); // zusaetzliche Seiten fuer mehrseitige Lieferscheine
   const [warePhotos, setWarePhotos] = useState<File[]>([]); // optionale Fotos der Ware
   const [uploadedUrl, setUploadedUrl] = useState<string | null>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
   const extraPageInputRef = useRef<HTMLInputElement>(null);
   const warePhotoInputRef = useRef<HTMLInputElement>(null);
+  const wareCameraInputRef = useRef<HTMLInputElement>(null);
 
   const [extracting, setExtracting] = useState(false);
   const [extracted, setExtracted] = useState<ExtractedData | null>(null);
@@ -173,6 +194,9 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
 
   const handlePhotoCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    // Eingabe immer zuruecksetzen, damit dasselbe Foto erneut gewaehlt werden
+    // kann (z.B. nach "loeschen") — Android Chrome triggert sonst kein change.
+    e.target.value = "";
     if (!file) return;
     handleFileSelected(file);
   };
@@ -181,18 +205,30 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
     new Promise((resolve, reject) => {
       const QUALITY = 0.85;
 
-      const resizeAndExport = (src: HTMLCanvasElement | HTMLImageElement, maxW: number, maxH: number) => {
-        let w = "naturalWidth" in src ? src.naturalWidth : src.width;
-        let h = "naturalHeight" in src ? src.naturalHeight : src.height;
+      const resizeAndExport = (
+        src: HTMLCanvasElement | HTMLImageElement | ImageBitmap,
+        maxW: number,
+        maxH: number,
+      ) => {
+        let w = "naturalWidth" in src
+          ? (src as HTMLImageElement).naturalWidth
+          : (src as HTMLCanvasElement | ImageBitmap).width;
+        let h = "naturalHeight" in src
+          ? (src as HTMLImageElement).naturalHeight
+          : (src as HTMLCanvasElement | ImageBitmap).height;
         if (w > maxW) { h = Math.round((h * maxW) / w); w = maxW; }
         if (h > maxH) { w = Math.round((w * maxH) / h); h = maxH; }
         const out = document.createElement("canvas");
         out.width = w; out.height = h;
         const ctx = out.getContext("2d");
         if (!ctx) { reject(new Error("Canvas not supported")); return; }
-        ctx.drawImage(src, 0, 0, w, h);
-        const dataUrl = out.toDataURL("image/jpeg", QUALITY);
-        resolve({ base64: dataUrl.split(",")[1] || "", mimeType: "image/jpeg" });
+        ctx.drawImage(src as CanvasImageSource, 0, 0, w, h);
+        try {
+          const dataUrl = out.toDataURL("image/jpeg", QUALITY);
+          resolve({ base64: dataUrl.split(",")[1] || "", mimeType: "image/jpeg" });
+        } catch (err) {
+          reject(err);
+        }
       };
 
       if (file.type === "application/pdf") {
@@ -261,16 +297,36 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
         };
         reader.readAsArrayBuffer(file);
       } else {
-        // Image (JPEG, PNG, HEIC etc.): max 1500×1500px
-        const reader = new FileReader();
-        reader.onerror = reject;
-        reader.onload = (e) => {
-          const img = new Image();
-          img.onerror = reject;
-          img.onload = () => resizeAndExport(img, 1500, 1500);
-          img.src = e.target!.result as string;
+        // Image (JPEG, PNG, HEIC etc.): max 1500×1500px.
+        // Bevorzugt createImageBitmap — deutlich speicher-schonender als
+        // FileReader+Image und auf Android-Kamerafotos (oft 10MB+) viel
+        // stabiler. Fallback auf den klassischen Weg, falls die API fehlt
+        // oder das Bildformat (z.B. HEIC) nicht unterstuetzt wird.
+        const fallback = () => {
+          const reader = new FileReader();
+          reader.onerror = () => reject(new Error("Datei konnte nicht gelesen werden"));
+          reader.onload = (e) => {
+            const img = new Image();
+            img.onerror = () => reject(new Error("Bild konnte nicht dekodiert werden — Format moeglicherweise nicht unterstuetzt"));
+            img.onload = () => resizeAndExport(img, 1500, 1500);
+            img.src = e.target!.result as string;
+          };
+          reader.readAsDataURL(file);
         };
-        reader.readAsDataURL(file);
+
+        if (typeof createImageBitmap === "function") {
+          createImageBitmap(file)
+            .then((bitmap) => {
+              try {
+                resizeAndExport(bitmap, 1500, 1500);
+              } finally {
+                bitmap.close?.();
+              }
+            })
+            .catch(() => fallback());
+        } else {
+          fallback();
+        }
       }
     });
 
@@ -290,14 +346,20 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
       // 1. Upload to storage (for archiving). Bei Freitext-Projekt gibt es
       // keine project_id — dann in einen Sammelordner ablegen.
       const storageFolder = projectId || "ohne-projekt";
-      const ext = imageFile.name.split(".").pop() || "jpg";
+      const ext = extFromFile(imageFile);
       const filePath = `${storageFolder}/${Date.now()}.${ext}`;
 
       const { error: uploadError } = await supabase.storage
         .from("incoming-documents")
-        .upload(filePath, imageFile);
+        .upload(filePath, imageFile, {
+          contentType: imageFile.type || undefined,
+          upsert: false,
+        });
 
-      if (uploadError) throw uploadError;
+      if (uploadError) {
+        console.error("Storage-Upload-Fehler:", uploadError, "Datei:", imageFile.name, "Groesse:", imageFile.size, "Typ:", imageFile.type);
+        throw new Error(`Upload fehlgeschlagen (${(imageFile.size / 1024 / 1024).toFixed(1)} MB): ${uploadError.message}`);
+      }
 
       const { data: urlData } = supabase.storage
         .from("incoming-documents")
@@ -418,15 +480,21 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
     // Storage-Ordner: bei Freitext-Projekt kein project_id → Sammelordner
     const storageFolder = projectId || "ohne-projekt";
 
-    // Upload extra pages
+    // Upload extra pages. Fehler werden gesammelt und am Ende dem Nutzer
+    // gezeigt — sonst gehen Zusatz-Fotos auf Android still verloren, wenn
+    // ein einzelner Upload scheitert.
     const zusatzUrls: string[] = [];
+    const failedExtra: string[] = [];
     for (const file of extraPages) {
-      const ext = file.name.split(".").pop() || "jpg";
+      const ext = extFromFile(file);
       const filePath = `${storageFolder}/seite_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
       const { error: upErr } = await supabase.storage
         .from("incoming-documents")
-        .upload(filePath, file);
-      if (!upErr) {
+        .upload(filePath, file, { contentType: file.type || undefined, upsert: false });
+      if (upErr) {
+        console.error("Zusatz-Seite Upload-Fehler:", upErr, file.name);
+        failedExtra.push(file.name || "Seite");
+      } else {
         const { data: urlData } = supabase.storage.from("incoming-documents").getPublicUrl(filePath);
         zusatzUrls.push(urlData.publicUrl);
       }
@@ -434,16 +502,31 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
 
     // Upload Ware-Fotos
     const warenUrls: string[] = [];
+    const failedWare: string[] = [];
     for (const file of warePhotos) {
-      const ext = file.name.split(".").pop() || "jpg";
+      const ext = extFromFile(file);
       const filePath = `${storageFolder}/ware_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
       const { error: upErr } = await supabase.storage
         .from("incoming-documents")
-        .upload(filePath, file);
-      if (!upErr) {
+        .upload(filePath, file, { contentType: file.type || undefined, upsert: false });
+      if (upErr) {
+        console.error("Ware-Foto Upload-Fehler:", upErr, file.name);
+        failedWare.push(file.name || "Foto");
+      } else {
         const { data: urlData } = supabase.storage.from("incoming-documents").getPublicUrl(filePath);
         warenUrls.push(urlData.publicUrl);
       }
+    }
+
+    if (failedExtra.length > 0 || failedWare.length > 0) {
+      toast({
+        variant: "destructive",
+        title: "Manche Anhänge nicht hochgeladen",
+        description: [
+          failedExtra.length > 0 ? `${failedExtra.length} Zusatzseite(n)` : null,
+          failedWare.length > 0 ? `${failedWare.length} Ware-Foto(s)` : null,
+        ].filter(Boolean).join(", ") + " — bitte erneut anhängen.",
+      });
     }
 
     const { error } = await supabase.from("incoming_documents").insert({
@@ -683,26 +766,52 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
                     </Button>
                   </div>
                 ) : (
-                  <div
-                    className="border-2 border-dashed rounded-lg p-6 text-center hover:border-primary transition-colors cursor-pointer"
-                    onClick={() => fileInputRef.current?.click()}
-                    onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      const file = e.dataTransfer.files?.[0];
-                      if (file) handleFileSelected(file);
-                    }}
-                  >
-                    <Upload className="mx-auto h-10 w-10 text-muted-foreground mb-2" />
-                    <p className="text-sm font-medium">Datei auswählen, fotografieren oder hierher ziehen</p>
-                    <p className="text-xs text-muted-foreground mt-1">Bilder, PDFs und Dokumente werden unterstützt</p>
-                  </div>
+                  <>
+                    {/* Primaerer Weg auf dem Handy: direkt Kamera. Eigener Input mit
+                        capture="environment", weil manche Android-Browser sonst
+                        nur die Galerie zeigen. */}
+                    <Button
+                      type="button"
+                      onClick={() => cameraInputRef.current?.click()}
+                      className="w-full"
+                      size="lg"
+                    >
+                      <Camera className="h-5 w-5 mr-2" />
+                      Foto aufnehmen
+                    </Button>
+                    <div
+                      className="border-2 border-dashed rounded-lg p-4 text-center hover:border-primary transition-colors cursor-pointer"
+                      onClick={() => fileInputRef.current?.click()}
+                      onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const file = e.dataTransfer.files?.[0];
+                        if (file) handleFileSelected(file);
+                      }}
+                    >
+                      <Upload className="mx-auto h-8 w-8 text-muted-foreground mb-1.5" />
+                      <p className="text-sm font-medium">oder Datei wählen / PDF hochladen</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">Bilder und PDFs</p>
+                    </div>
+                  </>
                 )}
+                {/* Kamera-Input: oeffnet auf dem Handy direkt die Kamera */}
+                <input
+                  ref={cameraInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                  onChange={handlePhotoCapture}
+                />
+                {/* Datei-Picker: bewusst nur image/* + PDF — die Liste mit
+                    Extensions hat auf einigen Android-Browsern den Picker
+                    blockiert. */}
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept="image/*,.pdf,.doc,.docx,.jpg,.jpeg,.png,.heic"
+                  accept="image/*,application/pdf"
                   className="hidden"
                   onChange={handlePhotoCapture}
                 />
@@ -730,7 +839,7 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
                     <input
                       ref={extraPageInputRef}
                       type="file"
-                      accept="image/*,.pdf,.jpg,.jpeg,.png,.heic"
+                      accept="image/*,application/pdf"
                       multiple
                       className="hidden"
                       onChange={(e) => {
@@ -780,6 +889,18 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
                     </div>
                   )}
                   <input
+                    ref={wareCameraInputRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="hidden"
+                    onChange={(e) => {
+                      const files = Array.from(e.target.files || []);
+                      if (files.length > 0) setWarePhotos(prev => [...prev, ...files]);
+                      e.target.value = "";
+                    }}
+                  />
+                  <input
                     ref={warePhotoInputRef}
                     type="file"
                     accept="image/*"
@@ -791,16 +912,31 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
                       e.target.value = "";
                     }}
                   />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="w-full"
-                    onClick={() => warePhotoInputRef.current?.click()}
-                  >
-                    <Plus className="h-3.5 w-3.5 mr-1" />
-                    {warePhotos.length === 0 ? "Fotos der gelieferten Ware hinzufügen" : `+ Noch ein Foto (${warePhotos.length} bisher)`}
-                  </Button>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => wareCameraInputRef.current?.click()}
+                    >
+                      <Camera className="h-3.5 w-3.5 mr-1" />
+                      Foto aufnehmen
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => warePhotoInputRef.current?.click()}
+                    >
+                      <Plus className="h-3.5 w-3.5 mr-1" />
+                      Aus Galerie
+                    </Button>
+                  </div>
+                  {warePhotos.length > 0 && (
+                    <p className="text-xs text-center text-muted-foreground">
+                      {warePhotos.length} Foto{warePhotos.length === 1 ? "" : "s"} angehängt
+                    </p>
+                  )}
                 </div>
               )}
 
