@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, FileText, FileCheck, Camera, ImagePlus, Lock, Plus, MapPin, Users, Copy, Pencil, Trash2, Phone, Mail, Shield, MessageCircle, Download, Upload, GripVertical, X } from "lucide-react";
+import { ArrowLeft, FileText, FileCheck, Camera, ImagePlus, Lock, Plus, MapPin, Users, Copy, Pencil, Trash2, Phone, Mail, Shield, MessageCircle, Download, Upload, GripVertical, X, Receipt } from "lucide-react";
 import * as XLSX from "xlsx-js-style";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
@@ -16,6 +16,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { VoiceAIInput } from "@/components/VoiceAIInput";
+import { DocumentCaptureDialog } from "@/components/DocumentCaptureDialog";
+import { QuickUploadDialog } from "@/components/QuickUploadDialog";
 
 type DocumentCategory = {
   type: "plans" | "reports" | "photos" | "chef" | "polier";
@@ -186,6 +188,9 @@ const ProjectOverview = () => {
   const [templateSearch, setTemplateSearch] = useState("");
   const [selectedTemplateIds, setSelectedTemplateIds] = useState<Set<string>>(new Set());
   const [addingTemplates, setAddingTemplates] = useState(false);
+
+  // Schnellzugriff Foto / Lieferschein im Projekt-Kontext
+  const [projectCaptureMode, setProjectCaptureMode] = useState<"none" | "foto" | "lieferschein">("none");
 
   // Access management state
   const [showAccessDialog, setShowAccessDialog] = useState(false);
@@ -1276,6 +1281,29 @@ const ProjectOverview = () => {
           </Card>
         )}
 
+        {/* Schnellzugriff: Foto / Lieferschein direkt zur aktuellen Baustelle.
+            Klick = direkter Capture-Dialog mit defaultProjectId vorbelegt. */}
+        <div className="grid grid-cols-2 gap-3 mb-3">
+          <button
+            type="button"
+            onClick={() => setProjectCaptureMode("foto")}
+            className="h-28 rounded-xl bg-foreground text-background hover:opacity-90 active:opacity-80 flex flex-col items-center justify-center gap-2 transition-opacity"
+            aria-label="Foto zur Baustelle aufnehmen"
+          >
+            <Camera className="h-10 w-10" />
+            <span className="text-sm font-medium">Foto</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setProjectCaptureMode("lieferschein")}
+            className="h-28 rounded-xl bg-primary text-primary-foreground hover:opacity-90 active:opacity-80 flex flex-col items-center justify-center gap-2 transition-opacity"
+            aria-label="Lieferschein oder Rechnung erfassen"
+          >
+            <Receipt className="h-10 w-10" />
+            <span className="text-sm font-medium">Lieferschein</span>
+          </button>
+        </div>
+
         <div className="grid gap-3 grid-cols-2 lg:grid-cols-3">
           {/* 1. Projekt-Chat */}
           <Card
@@ -1309,20 +1337,8 @@ const ProjectOverview = () => {
             </Card>
           ))}
 
-          {/* 3. Lieferscheine & Rechnungen */}
-          <Card
-            className="cursor-pointer hover:shadow-lg transition-shadow"
-            onClick={() => navigate(`/incoming-documents?project=${projectId}${!isAdmin ? "&capture=1" : ""}`)}
-          >
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div className="text-primary"><FileText className="h-8 w-8" /></div>
-              </div>
-              <CardTitle className="text-xl">Lieferscheine & Rechnungen</CardTitle>
-              <CardDescription>Lieferscheine und Rechnungen verwalten</CardDescription>
-            </CardHeader>
-            <CardContent><Button variant="outline" className="w-full">Öffnen</Button></CardContent>
-          </Card>
+          {/* Lieferscheine & Rechnungen — die Quick-Erfassung sitzt jetzt oben
+              als Icon-Tile. Listen-Ansicht erreichbar ueber die Navigation. */}
 
           {/* 4. Berichte (Tages-, Regie-, Zwischenberichte) */}
           <Card
@@ -1875,6 +1891,22 @@ const ProjectOverview = () => {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Lieferschein / Rechnung erfassen — Projekt vorausgewaehlt */}
+      <DocumentCaptureDialog
+        open={projectCaptureMode === "lieferschein"}
+        onOpenChange={(o) => { if (!o) setProjectCaptureMode("none"); }}
+        defaultProjectId={projectId}
+        onShowAll={() => { setProjectCaptureMode("none"); navigate(`/incoming-documents?project=${projectId}`); }}
+      />
+
+      {/* Foto zur Baustelle — landet im Projekt-Foto-Ordner */}
+      <QuickUploadDialog
+        open={projectCaptureMode === "foto"}
+        projectId={projectId}
+        documentType="photos"
+        onClose={() => setProjectCaptureMode("none")}
+      />
     </div>
   );
 };

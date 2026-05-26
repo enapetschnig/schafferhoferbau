@@ -84,7 +84,7 @@ export default function Index() {
   const [missingHoursDates, setMissingHoursDates] = useState<string[]>([]);
   const [pendingBestellungen, setPendingBestellungen] = useState(0);
   // Erfass-Modus: choose = Auswahldialog, dann lieferschein oder foto
-  const [captureMode, setCaptureMode] = useState<"none" | "choose" | "lieferschein" | "foto">("none");
+  const [captureMode, setCaptureMode] = useState<"none" | "lieferschein" | "foto">("none");
   const [kategorie, setKategorie] = useState<string | null>(null);
   const [favoriteProjects, setFavoriteProjects] = useState<{ id: string; name: string; adresse: string | null }[]>([]);
   const [pendingCount, setPendingCount] = useState(0);
@@ -1049,21 +1049,30 @@ export default function Index() {
           </div>
         )}
 
-        {/* Schnellzugriff: Lieferschein / Foto erfassen — taeglich mehrfach genutzt */}
+        {/* Schnellzugriff: zwei Icon-Tiles (Foto / Lieferschein) — taeglich
+            mehrfach genutzt. Kein Zwischen-Dialog mehr; Klick = direkt der
+            jeweilige Capture-Dialog. */}
         {menuVisible("lieferscheine") && (
-          <button
-            onClick={() => setCaptureMode("choose")}
-            className="mb-4 w-full flex items-center gap-4 rounded-xl border-2 border-primary bg-primary/5 hover:bg-primary/10 active:bg-primary/15 p-4 sm:p-5 transition-colors text-left"
-          >
-            <div className="h-14 w-14 rounded-lg bg-primary flex items-center justify-center shrink-0">
-              <Camera className="h-7 w-7 text-primary-foreground" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="font-semibold text-base sm:text-lg text-primary">Lieferschein / Foto erfassen</p>
-              <p className="text-sm text-muted-foreground">Dokument abfotografieren und hochladen</p>
-            </div>
-            <ArrowRight className="h-6 w-6 text-primary shrink-0" />
-          </button>
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            <button
+              type="button"
+              onClick={() => setCaptureMode("foto")}
+              className="h-28 rounded-xl bg-foreground text-background hover:opacity-90 active:opacity-80 flex flex-col items-center justify-center gap-2 transition-opacity"
+              aria-label="Foto zur Baustelle aufnehmen"
+            >
+              <Camera className="h-10 w-10" />
+              <span className="text-sm font-medium">Foto</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setCaptureMode("lieferschein")}
+              className="h-28 rounded-xl bg-primary text-primary-foreground hover:opacity-90 active:opacity-80 flex flex-col items-center justify-center gap-2 transition-opacity"
+              aria-label="Lieferschein oder Rechnung erfassen"
+            >
+              <Receipt className="h-10 w-10" />
+              <span className="text-sm font-medium">Lieferschein</span>
+            </button>
+          </div>
         )}
 
         {/* Dashboard-Nachricht (Admin editierbar) */}
@@ -1998,37 +2007,6 @@ export default function Index() {
               </div>
             </div>
           )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Erfassen: erst Auswahl Lieferschein vs. Foto */}
-      <Dialog open={captureMode === "choose"} onOpenChange={(o) => { if (!o) setCaptureMode("none"); }}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Was möchtest du erfassen?</DialogTitle>
-          </DialogHeader>
-          <div className="grid grid-cols-1 gap-3 pt-1">
-            <button
-              onClick={() => setCaptureMode("lieferschein")}
-              className="flex items-center gap-3 rounded-xl border-2 border-muted-foreground/20 hover:border-primary p-4 text-left transition-colors"
-            >
-              <div className="text-3xl">📄</div>
-              <div>
-                <p className="font-semibold">Lieferschein / Rechnung</p>
-                <p className="text-xs text-muted-foreground">Dokument abfotografieren &amp; analysieren</p>
-              </div>
-            </button>
-            <button
-              onClick={() => setCaptureMode("foto")}
-              className="flex items-center gap-3 rounded-xl border-2 border-muted-foreground/20 hover:border-primary p-4 text-left transition-colors"
-            >
-              <div className="text-3xl">📷</div>
-              <div>
-                <p className="font-semibold">Foto zur Baustelle</p>
-                <p className="text-xs text-muted-foreground">Foto aufnehmen — landet im Foto-Ordner des Projekts</p>
-              </div>
-            </button>
-          </div>
         </DialogContent>
       </Dialog>
 
