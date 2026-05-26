@@ -11,6 +11,7 @@ import { SignaturePad } from "@/components/SignaturePad";
 import { Upload, Loader2, AlertTriangle, CheckCircle2, Trash2, FileText, Plus, Camera } from "lucide-react";
 import "@/lib/pdfjsSetup";
 import * as pdfjsLib from "pdfjs-dist";
+import { MobilePhotoCapture } from "@/components/MobilePhotoCapture";
 
 type DocType = "lieferschein" | "lagerlieferschein" | "rechnung";
 
@@ -94,6 +95,11 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
   const extraPageInputRef = useRef<HTMLInputElement>(null);
   const warePhotoInputRef = useRef<HTMLInputElement>(null);
   const wareCameraInputRef = useRef<HTMLInputElement>(null);
+  // Eigene In-App-Kamera (getUserMedia) statt nativer Samsung-Kamera-App.
+  // Wichtig fuer Android-Standalone-PWAs: verhindert App-Killing beim
+  // Wechsel zur externen Kamera-App.
+  const [mainCamOpen, setMainCamOpen] = useState(false);
+  const [wareCamOpen, setWareCamOpen] = useState(false);
 
   const [extracting, setExtracting] = useState(false);
   const [extracted, setExtracted] = useState<ExtractedData | null>(null);
@@ -772,7 +778,7 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
                         nur die Galerie zeigen. */}
                     <Button
                       type="button"
-                      onClick={() => cameraInputRef.current?.click()}
+                      onClick={() => setMainCamOpen(true)}
                       className="w-full"
                       size="lg"
                     >
@@ -917,7 +923,7 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
                       type="button"
                       variant="outline"
                       size="sm"
-                      onClick={() => wareCameraInputRef.current?.click()}
+                      onClick={() => setWareCamOpen(true)}
                     >
                       <Camera className="h-3.5 w-3.5 mr-1" />
                       Foto aufnehmen
@@ -1120,6 +1126,28 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
           )}
         </div>
       </DialogContent>
+
+      {/* Eigene In-App-Kamera fuer das Hauptfoto. Foto wird via
+          handleFileSelected gesetzt (inkl. Preview-Erzeugung). */}
+      <MobilePhotoCapture
+        open={mainCamOpen}
+        onClose={() => setMainCamOpen(false)}
+        successMessage="Foto übernommen"
+        onPhotoCapture={async (file) => {
+          handleFileSelected(file);
+        }}
+      />
+
+      {/* Eigene In-App-Kamera fuer Ware-Fotos — Foto wird zur Liste der
+          Ware-Fotos hinzugefuegt. */}
+      <MobilePhotoCapture
+        open={wareCamOpen}
+        onClose={() => setWareCamOpen(false)}
+        successMessage="Ware-Foto übernommen"
+        onPhotoCapture={async (file) => {
+          setWarePhotos((prev) => [...prev, file]);
+        }}
+      />
     </Dialog>
   );
 }

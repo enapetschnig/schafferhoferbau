@@ -8,9 +8,14 @@ interface MobilePhotoCaptureProps {
   open: boolean;
   onClose: () => void;
   onPhotoCapture: (file: File) => Promise<void>;
+  /** Toast-Text nach erfolgreichem onPhotoCapture. Default: "Foto wurde
+   *  hochgeladen". Wenn der Aufrufer das File nur uebernimmt (z.B. zur
+   *  Liste hinzufuegt) ohne direkt hochzuladen, kann hier z.B.
+   *  "Foto uebernommen" gesetzt werden. */
+  successMessage?: string;
 }
 
-export function MobilePhotoCapture({ open, onClose, onPhotoCapture }: MobilePhotoCaptureProps) {
+export function MobilePhotoCapture({ open, onClose, onPhotoCapture, successMessage }: MobilePhotoCaptureProps) {
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -103,10 +108,10 @@ export function MobilePhotoCapture({ open, onClose, onPhotoCapture }: MobilePhot
       const file = new File([blob], `photo_${timestamp}.jpg`, { type: 'image/jpeg' });
 
       await onPhotoCapture(file);
-      
+
       toast({
         title: "Erfolg",
-        description: "Foto wurde hochgeladen",
+        description: successMessage || "Foto wurde hochgeladen",
       });
       
       handleClose();

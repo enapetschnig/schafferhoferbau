@@ -9,6 +9,7 @@ import { sanitizeStorageFileName } from "@/lib/storageFileName";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Progress } from "@/components/ui/progress";
+import { MobilePhotoCapture } from "@/components/MobilePhotoCapture";
 
 type DocumentType = "plans" | "reports" | "materials" | "photos";
 
@@ -66,6 +67,9 @@ export function QuickUploadDialog({
   }, [open, projectId]);
 
   const cameraInputRef = useRef<HTMLInputElement>(null);
+  // Eigene Kamera-UI (MobilePhotoCapture via getUserMedia) statt nativer
+  // Samsung-Kamera-App. Verhindert PWA-Killing auf Android-Standalone-Apps.
+  const [showInAppCamera, setShowInAppCamera] = useState(false);
 
   // Dateien anhaengen (nicht ersetzen) — so kann man mehrere Fotos
   // nacheinander aufnehmen und zusaetzlich aus der Galerie waehlen.
@@ -203,12 +207,14 @@ export function QuickUploadDialog({
             </div>
           )}
 
-          {/* Foto aufnehmen — oeffnet auf dem Handy direkt die Kamera */}
+          {/* Foto aufnehmen — eigene In-App-Kamera (getUserMedia) statt
+              nativer Samsung-Kamera-App. Verhindert das PWA-Killing auf
+              Android-Standalone-Apps (siehe MobilePhotoCapture). */}
           {documentType === "photos" && (
             <>
               <Button
                 type="button"
-                onClick={() => cameraInputRef.current?.click()}
+                onClick={() => setShowInAppCamera(true)}
                 disabled={uploading}
                 className="w-full"
                 size="lg"
@@ -216,15 +222,6 @@ export function QuickUploadDialog({
                 <Camera className="h-5 w-5 mr-2" />
                 Foto aufnehmen
               </Button>
-              <input
-                ref={cameraInputRef}
-                type="file"
-                accept="image/*"
-                capture="environment"
-                className="hidden"
-                onChange={handleFileSelect}
-                disabled={uploading}
-              />
               <p className="text-xs text-center text-muted-foreground">
                 oder Datei(en) auswählen
               </p>
@@ -323,6 +320,18 @@ export function QuickUploadDialog({
           </div>
         </div>
       </DialogContent>
+
+      {/* Eigene Kamera-UI im Browser (getUserMedia). Foto wird der
+          Datei-Liste hinzugefuegt — nicht direkt hochgeladen, der User
+          klickt dann den Hochladen-Button im Hauptdialog. */}
+      <MobilePhotoCapture
+        open={showInAppCamera}
+        onClose={() => setShowInAppCamera(false)}
+        successMessage="Foto übernommen"
+        onPhotoCapture={async (file) => {
+          setSelectedFiles((prev) => [...prev, file]);
+        }}
+      />
     </Dialog>
   );
 }
