@@ -1282,7 +1282,7 @@ const ProjectOverview = () => {
         )}
 
         {/* Schnellzugriff: Foto / Lieferschein direkt zur aktuellen Baustelle.
-            Klick = direkter Capture-Dialog mit defaultProjectId vorbelegt. */}
+            Plus vor dem Icon signalisiert "neu erfassen". */}
         <div className="grid grid-cols-2 gap-3 mb-3">
           <button
             type="button"
@@ -1290,7 +1290,10 @@ const ProjectOverview = () => {
             className="h-24 rounded-xl bg-foreground text-background hover:opacity-90 active:opacity-80 flex flex-col items-center justify-center gap-1.5 transition-opacity"
             aria-label="Foto zur Baustelle aufnehmen"
           >
-            <Camera className="h-8 w-8" />
+            <div className="flex items-center gap-1">
+              <Plus className="h-5 w-5" />
+              <Camera className="h-8 w-8" />
+            </div>
             <span className="text-sm font-medium">Foto</span>
           </button>
           <button
@@ -1299,7 +1302,10 @@ const ProjectOverview = () => {
             className="h-24 rounded-xl bg-primary text-primary-foreground hover:opacity-90 active:opacity-80 flex flex-col items-center justify-center gap-1.5 transition-opacity"
             aria-label="Lieferschein oder Rechnung erfassen"
           >
-            <FileText className="h-8 w-8" />
+            <div className="flex items-center gap-1">
+              <Plus className="h-5 w-5" />
+              <FileText className="h-8 w-8" />
+            </div>
             <span className="text-sm font-medium">Lieferschein</span>
           </button>
         </div>

@@ -1468,8 +1468,8 @@ export default function Index() {
         )}
 
         {/* Schnellzugriff: zwei Icon-Tiles (Foto / Lieferschein) — direkt
-            ueber der Zeiterfassung positioniert, damit man am Handy von oben
-            die wichtigsten Aktionen auf einen Blick hat. */}
+            ueber der Zeiterfassung positioniert. Das Plus vor jedem Icon
+            signalisiert "neu erfassen / hinzufuegen" auf einen Blick. */}
         {menuVisible("lieferscheine") && (
           <div className="grid grid-cols-2 gap-3 mb-3 sm:mb-4">
             <button
@@ -1478,7 +1478,10 @@ export default function Index() {
               className="h-24 rounded-xl bg-foreground text-background hover:opacity-90 active:opacity-80 flex flex-col items-center justify-center gap-1.5 transition-opacity"
               aria-label="Foto zur Baustelle aufnehmen"
             >
-              <Camera className="h-8 w-8" />
+              <div className="flex items-center gap-1">
+                <Plus className="h-5 w-5" />
+                <Camera className="h-8 w-8" />
+              </div>
               <span className="text-sm font-medium">Foto</span>
             </button>
             <button
@@ -1487,7 +1490,10 @@ export default function Index() {
               className="h-24 rounded-xl bg-primary text-primary-foreground hover:opacity-90 active:opacity-80 flex flex-col items-center justify-center gap-1.5 transition-opacity"
               aria-label="Lieferschein oder Rechnung erfassen"
             >
-              <FileText className="h-8 w-8" />
+              <div className="flex items-center gap-1">
+                <Plus className="h-5 w-5" />
+                <FileText className="h-8 w-8" />
+              </div>
               <span className="text-sm font-medium">Lieferschein</span>
             </button>
           </div>
