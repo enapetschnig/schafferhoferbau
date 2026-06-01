@@ -44,6 +44,7 @@ export function SerialPhotoCapture({
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const pinchStateRef = useRef<{ startDist: number; startZoom: number } | null>(null);
+  const sliderTrackRef = useRef<HTMLDivElement>(null);
   const [captured, setCaptured] = useState<CapturedPhoto[]>([]);
   const [finishing, setFinishing] = useState(false);
   const [flash, setFlash] = useState(false);
@@ -375,13 +376,23 @@ export function SerialPhotoCapture({
             </button>
           )}
 
-          {/* Zoom-Schnellwahl-Pills unten in der Vorschau (iOS-Style) */}
+          {/* Zoom-Schnellwahl-Pills unten in der Vorschau (iOS-Style).
+              1x ist immer dabei, dazu min/max und (falls dazwischen) 2x. */}
           {streamReady && zoomCaps && zoomCaps.max > zoomCaps.min && (
             <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5 bg-black/50 rounded-full px-2 py-1">
-              {[zoomCaps.min, Math.min(2, zoomCaps.max), zoomCaps.max]
-                .filter((v, i, arr) => arr.indexOf(v) === i)
+              {Array.from(new Set([
+                zoomCaps.min,
+                ...(zoomCaps.min <= 1 && zoomCaps.max >= 1 ? [1] : []),
+                ...(zoomCaps.max >= 2 && zoomCaps.min < 2 ? [2] : []),
+                zoomCaps.max,
+              ]))
+                .sort((a, b) => a - b)
                 .map((preset) => {
                   const isActive = Math.abs(zoom - preset) < 0.05;
+                  // Label: ganze Zahlen ohne Komma, sonst eine Nachkommastelle.
+                  const label = Number.isInteger(preset)
+                    ? `${preset}x`
+                    : `${preset.toFixed(1)}x`;
                   return (
                     <button
                       key={preset}
@@ -393,47 +404,82 @@ export function SerialPhotoCapture({
                           ? "bg-white text-black"
                           : "text-white/90 hover:bg-white/15",
                       )}
-                      aria-label={`Zoom ${preset.toFixed(1)}x`}
+                      aria-label={`Zoom ${label}`}
                     >
-                      {preset.toFixed(preset >= 1 ? 0 : 1)}{preset >= 1 ? "x" : ""}
+                      {label}
                     </button>
                   );
                 })}
             </div>
           )}
 
-          {/* Zoom-Slider rechts, vertikal */}
-          {streamReady && zoomCaps && zoomCaps.max > zoomCaps.min && (
-            <div className="absolute right-3 top-1/2 -translate-y-1/2 flex flex-col items-center gap-1.5 bg-black/40 rounded-full px-1.5 py-2">
-              <button
-                type="button"
-                onClick={() => setZoomClamped(zoom + (zoomCaps.step * 5))}
-                className="text-white w-7 h-7 flex items-center justify-center hover:bg-white/15 rounded-full"
-                aria-label="Zoom rein"
-              >
-                <ZoomIn className="h-4 w-4" />
-              </button>
-              <input
-                type="range"
-                min={zoomCaps.min}
-                max={zoomCaps.max}
-                step={zoomCaps.step}
-                value={zoom}
-                onChange={(e) => setZoomClamped(Number(e.target.value))}
-                className="h-28 w-2 appearance-none accent-white [writing-mode:vertical-lr] [direction:rtl] cursor-pointer"
-                aria-label="Zoom"
-              />
-              <button
-                type="button"
-                onClick={() => setZoomClamped(zoom - (zoomCaps.step * 5))}
-                className="text-white w-7 h-7 flex items-center justify-center hover:bg-white/15 rounded-full"
-                aria-label="Zoom raus"
-              >
-                <ZoomOut className="h-4 w-4" />
-              </button>
-              <span className="text-white text-[10px] font-mono">{zoom.toFixed(1)}x</span>
-            </div>
-          )}
+          {/* Zoom-Slider rechts — Custom-Pointer-Slider statt input[range],
+              weil iOS Safari mit [writing-mode:vertical-lr] auf range-Inputs
+              nicht zuverlaessig vertikal rendert. Pointer-Events funktionieren
+              dafuer auf iOS, Android und Desktop gleich. */}
+          {streamReady && zoomCaps && zoomCaps.max > zoomCaps.min && (() => {
+            const range = zoomCaps.max - zoomCaps.min;
+            const ratio = range > 0 ? (zoom - zoomCaps.min) / range : 0;
+            // 0 = unten (min), 1 = oben (max). Thumb-Top = (1 - ratio) * 100%.
+            const thumbTopPct = (1 - ratio) * 100;
+            const updateFromClientY = (clientY: number) => {
+              const track = sliderTrackRef.current;
+              if (!track) return;
+              const rect = track.getBoundingClientRect();
+              const offsetRatio = 1 - Math.min(1, Math.max(0, (clientY - rect.top) / rect.height));
+              setZoomClamped(zoomCaps.min + offsetRatio * range);
+            };
+            return (
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 flex flex-col items-center gap-1.5 bg-black/40 rounded-full px-1.5 py-2 select-none">
+                <button
+                  type="button"
+                  onClick={() => setZoomClamped(zoom + (zoomCaps.step * 5))}
+                  className="text-white w-7 h-7 flex items-center justify-center hover:bg-white/15 rounded-full"
+                  aria-label="Zoom rein"
+                >
+                  <ZoomIn className="h-4 w-4" />
+                </button>
+                <div
+                  ref={sliderTrackRef}
+                  role="slider"
+                  aria-label="Zoom"
+                  aria-valuemin={zoomCaps.min}
+                  aria-valuemax={zoomCaps.max}
+                  aria-valuenow={zoom}
+                  tabIndex={0}
+                  className="relative h-32 w-6 touch-none cursor-pointer"
+                  onPointerDown={(e) => {
+                    e.preventDefault();
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                    updateFromClientY(e.clientY);
+                  }}
+                  onPointerMove={(e) => {
+                    if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
+                    updateFromClientY(e.clientY);
+                  }}
+                  onPointerUp={(e) => e.currentTarget.releasePointerCapture(e.pointerId)}
+                  onPointerCancel={(e) => e.currentTarget.releasePointerCapture(e.pointerId)}
+                >
+                  {/* Track-Linie */}
+                  <div className="absolute left-1/2 -translate-x-1/2 top-1 bottom-1 w-1 bg-white/30 rounded-full" />
+                  {/* Thumb */}
+                  <div
+                    className="absolute left-1/2 -translate-x-1/2 w-4 h-4 bg-white rounded-full shadow-md pointer-events-none"
+                    style={{ top: `calc(${thumbTopPct}% - 8px)` }}
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setZoomClamped(zoom - (zoomCaps.step * 5))}
+                  className="text-white w-7 h-7 flex items-center justify-center hover:bg-white/15 rounded-full"
+                  aria-label="Zoom raus"
+                >
+                  <ZoomOut className="h-4 w-4" />
+                </button>
+                <span className="text-white text-[10px] font-mono">{zoom.toFixed(1)}x</span>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Mini-Galerie der bisher aufgenommenen Fotos */}
