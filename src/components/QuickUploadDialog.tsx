@@ -183,15 +183,20 @@ export function QuickUploadDialog({
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
+      {/* Flex-Layout mit Hoehen-Limit, damit die Action-Buttons unten
+          sticky bleiben und nicht von einer langen Datei-Liste verdraengt
+          werden (User-Feedback: "unterster Hochladen-Button verschwindet"). */}
+      <DialogContent className="sm:max-w-md max-h-[90vh] flex flex-col p-0 gap-0">
+        <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
           <DialogTitle>{titleMap[documentType]} hochladen</DialogTitle>
           <DialogDescription>
             Wähle Dateien zum Hochladen aus
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
+        {/* Scroll-Container — min-h-0 ist Pflicht, damit overflow-y-auto im
+            Flex-Child wirklich greift. */}
+        <div className="flex-1 overflow-y-auto px-6 space-y-4 min-h-0">
           {/* Projektauswahl — nur wenn keine projectId vorgegeben */}
           {!projectId && (
             <div className="space-y-1.5">
@@ -264,29 +269,33 @@ export function QuickUploadDialog({
             </div>
           )}
 
-          {/* Selected Files List */}
+          {/* Selected Files List — eigener Scroll-Bereich, damit bei vielen
+              Fotos der Body nicht zu lang wird (Footer-Button bleibt
+              sichtbar). */}
           {selectedFiles.length > 0 && (
             <div className="space-y-2">
               <p className="text-sm font-medium">
                 Ausgewählte Dateien ({selectedFiles.length})
               </p>
-              {selectedFiles.map((file, index) => (
-                <div 
-                  key={index}
-                  className="flex items-center justify-between p-2 bg-muted rounded-lg"
-                >
-                  <span className="text-sm truncate flex-1 min-w-0">{file.name}</span>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleRemoveFile(index)}
-                    disabled={uploading}
-                    className="h-6 w-6 p-0"
+              <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                {selectedFiles.map((file, index) => (
+                  <div
+                    key={index}
+                    className="flex items-center justify-between p-2 bg-muted rounded-lg"
                   >
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-              ))}
+                    <span className="text-sm truncate flex-1 min-w-0">{file.name}</span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleRemoveFile(index)}
+                      disabled={uploading}
+                      className="h-6 w-6 p-0"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
@@ -300,24 +309,29 @@ export function QuickUploadDialog({
             </div>
           )}
 
-          {/* Action Buttons */}
-          <div className="flex gap-3">
-            <Button 
-              variant="outline" 
-              onClick={onClose}
-              disabled={uploading}
-              className="flex-1"
-            >
-              Abbrechen
-            </Button>
-            <Button
-              onClick={handleUpload}
-              disabled={selectedFiles.length === 0 || uploading || !effectiveProjectId}
-              className="flex-1"
-            >
-              {uploading ? "Lädt hoch..." : "Hochladen"}
-            </Button>
-          </div>
+          {/* Padding am Scroll-Ende, damit der letzte Eintrag nicht direkt
+              am sticky-Footer klebt. */}
+          <div className="pb-2" />
+        </div>
+
+        {/* Sticky Footer — bleibt dauerhaft sichtbar, egal wie lang der
+            Body-Scroll ist. */}
+        <div className="shrink-0 flex gap-3 px-6 py-4 border-t bg-background">
+          <Button
+            variant="outline"
+            onClick={onClose}
+            disabled={uploading}
+            className="flex-1"
+          >
+            Abbrechen
+          </Button>
+          <Button
+            onClick={handleUpload}
+            disabled={selectedFiles.length === 0 || uploading || !effectiveProjectId}
+            className="flex-1"
+          >
+            {uploading ? "Lädt hoch..." : "Hochladen"}
+          </Button>
         </div>
       </DialogContent>
 
