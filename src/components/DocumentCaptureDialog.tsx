@@ -11,7 +11,6 @@ import { SignaturePad } from "@/components/SignaturePad";
 import { Upload, Loader2, AlertTriangle, CheckCircle2, Trash2, FileText, Plus, Camera } from "lucide-react";
 import "@/lib/pdfjsSetup";
 import * as pdfjsLib from "pdfjs-dist";
-import { MobilePhotoCapture } from "@/components/MobilePhotoCapture";
 import { SerialPhotoCapture } from "@/components/SerialPhotoCapture";
 
 type DocType = "lieferschein" | "lagerlieferschein" | "rechnung";
@@ -798,8 +797,8 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
                       }}
                     >
                       <Upload className="mx-auto h-8 w-8 text-muted-foreground mb-1.5" />
-                      <p className="text-sm font-medium">oder Datei wählen / PDF hochladen</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">Bilder und PDFs</p>
+                      <p className="text-sm font-medium">oder PDF hochladen</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">Für Fotos / Galerie den Button oben nutzen</p>
                     </div>
                   </>
                 )}
@@ -812,13 +811,14 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
                   className="hidden"
                   onChange={handlePhotoCapture}
                 />
-                {/* Datei-Picker: bewusst nur image/* + PDF — die Liste mit
-                    Extensions hat auf einigen Android-Browsern den Picker
-                    blockiert. */}
+                {/* Datei-Picker: bewusst nur PDF — Bilder gehen ueber den
+                    Foto-Button (SerialPhotoCapture + Galerie-Fallback). Damit
+                    schliessen wir den Android-Picker-Kamera-Pfad aus, der bei
+                    PWA-Standalone zum App-Killing fuehrt (Foto verloren). */}
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept="image/*,application/pdf"
+                  accept="application/pdf"
                   className="hidden"
                   onChange={handlePhotoCapture}
                 />
@@ -1128,14 +1128,20 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
         </div>
       </DialogContent>
 
-      {/* Eigene In-App-Kamera fuer das Hauptfoto. Foto wird via
-          handleFileSelected gesetzt (inkl. Preview-Erzeugung). */}
-      <MobilePhotoCapture
+      {/* Serien-Vollbild-Kamera fuer Lieferschein-Foto: erstes Foto = Haupt,
+          weitere = Zusatzseiten (mehrseitiger Lieferschein in einem
+          Aufnahme-Flow). Konsistent zur Vollbild-Vorschau mit Zoom, die
+          auch im Dashboard-Foto-Pfad benutzt wird. */}
+      <SerialPhotoCapture
         open={mainCamOpen}
-        onClose={() => setMainCamOpen(false)}
-        successMessage="Foto übernommen"
-        onPhotoCapture={async (file) => {
-          handleFileSelected(file);
+        onOpenChange={setMainCamOpen}
+        title="Lieferschein-Foto"
+        onFinish={(files) => {
+          if (files.length === 0) return;
+          handleFileSelected(files[0]);
+          if (files.length > 1) {
+            setExtraPages((prev) => [...prev, ...files.slice(1)]);
+          }
         }}
       />
 
