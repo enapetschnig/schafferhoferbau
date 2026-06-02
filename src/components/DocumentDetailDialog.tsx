@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
-import { Trash2, FileText } from "lucide-react";
+import { Trash2, FileText, X, ChevronLeft, ChevronRight } from "lucide-react";
 
 export type IncomingDocument = {
   id: string;
@@ -64,11 +64,26 @@ interface DocumentDetailDialogProps {
 
 export function DocumentDetailDialog({ document, open, onOpenChange, isAdmin, onUpdate, onDelete }: DocumentDetailDialogProps) {
   const { toast } = useToast();
-  // URL des aktuell im Vollbild gezeigten Anhangs (Haupt-Foto, Zusatz-Seite
-  // oder Ware-Foto). null = kein Vollbild aktiv. Generalisiert vom alten
-  // showFullImage-Boolean, damit Klicks aus den Galerien dieselbe Komponente
-  // wiederverwenden koennen.
-  const [fullscreenUrl, setFullscreenUrl] = useState<string | null>(null);
+  // Vollbild-Galerie: eine Liste von URLs (Haupt-Foto + Zusatz-Seiten bilden
+  // eine Galerie, Ware-Fotos eine zweite). Index zeigt aktuelles Bild.
+  // Leeres Array = Vollbild geschlossen. Wischen ueber den Container blaettert.
+  const [fullscreenGallery, setFullscreenGallery] = useState<string[]>([]);
+  const [fullscreenIndex, setFullscreenIndex] = useState(0);
+  const fullscreenTouchStartX = useRef<number | null>(null);
+
+  const openFullscreen = (urls: string[], index = 0) => {
+    if (urls.length === 0) return;
+    setFullscreenGallery(urls);
+    setFullscreenIndex(Math.max(0, Math.min(urls.length - 1, index)));
+  };
+  const closeFullscreen = () => {
+    setFullscreenGallery([]);
+    setFullscreenIndex(0);
+  };
+  const fullscreenNext = () =>
+    setFullscreenIndex((i) => Math.min(fullscreenGallery.length - 1, i + 1));
+  const fullscreenPrev = () =>
+    setFullscreenIndex((i) => Math.max(0, i - 1));
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -219,10 +234,17 @@ export function DocumentDetailDialog({ document, open, onOpenChange, isAdmin, on
                   </div>
                 );
               }
+              // Dokument-Galerie: Hauptfoto + alle Zusatzseiten
+              // zusammen, damit man im Vollbild von einem zum naechsten
+              // wischen kann.
+              const docGallery = [
+                document.photo_url,
+                ...(document.zusatz_seiten_urls || []),
+              ];
               return (
                 <div
                   className="cursor-pointer rounded-lg border overflow-hidden bg-muted"
-                  onClick={() => setFullscreenUrl(document.photo_url)}
+                  onClick={() => openFullscreen(docGallery, 0)}
                 >
                   <img
                     src={document.photo_url}
@@ -233,46 +255,52 @@ export function DocumentDetailDialog({ document, open, onOpenChange, isAdmin, on
               );
             })()}
 
-            {/* Weitere Seiten — Galerie analog zur Lager-Lieferschein-Detail
-                (WarehouseDeliveryNoteDetail.tsx:142-156). Zusatzseiten koennen
-                Bilder oder PDFs sein, deshalb pro Item PDF-Check. */}
-            {document.zusatz_seiten_urls && document.zusatz_seiten_urls.length > 0 && (
-              <div>
-                <span className="text-sm text-muted-foreground">
-                  Weitere Seiten ({document.zusatz_seiten_urls.length}):
-                </span>
-                <div className="grid grid-cols-3 gap-2 mt-1">
-                  {document.zusatz_seiten_urls.map((url, i) => {
-                    const isPdf = /\.pdf(\?|$)/i.test(url);
-                    if (isPdf) {
+            {/* Weitere Seiten — gemeinsam mit dem Hauptfoto in einer
+                wischbaren Vollbild-Galerie. Index = i + 1 weil das Hauptfoto
+                am Anfang der Liste steht. */}
+            {document.zusatz_seiten_urls && document.zusatz_seiten_urls.length > 0 && (() => {
+              const docGallery = [
+                document.photo_url,
+                ...(document.zusatz_seiten_urls || []),
+              ];
+              return (
+                <div>
+                  <span className="text-sm text-muted-foreground">
+                    Weitere Seiten ({document.zusatz_seiten_urls.length}):
+                  </span>
+                  <div className="grid grid-cols-3 gap-2 mt-1">
+                    {document.zusatz_seiten_urls.map((url, i) => {
+                      const isPdf = /\.pdf(\?|$)/i.test(url);
+                      if (isPdf) {
+                        return (
+                          <button
+                            key={i}
+                            type="button"
+                            onClick={() => openFullscreen(docGallery, i + 1)}
+                            className="flex flex-col items-center justify-center gap-1 h-24 rounded border bg-muted cursor-pointer hover:opacity-80 transition-opacity"
+                            title={`Seite ${i + 2} (PDF)`}
+                          >
+                            <FileText className="h-8 w-8 text-muted-foreground" />
+                            <span className="text-xs text-muted-foreground">PDF</span>
+                          </button>
+                        );
+                      }
                       return (
-                        <button
+                        <img
                           key={i}
-                          type="button"
-                          onClick={() => setFullscreenUrl(url)}
-                          className="flex flex-col items-center justify-center gap-1 h-24 rounded border bg-muted cursor-pointer hover:opacity-80 transition-opacity"
-                          title={`Seite ${i + 2} (PDF)`}
-                        >
-                          <FileText className="h-8 w-8 text-muted-foreground" />
-                          <span className="text-xs text-muted-foreground">PDF</span>
-                        </button>
+                          src={url}
+                          alt={`Seite ${i + 2}`}
+                          className="w-full h-24 object-cover rounded cursor-pointer hover:opacity-80"
+                          onClick={() => openFullscreen(docGallery, i + 1)}
+                        />
                       );
-                    }
-                    return (
-                      <img
-                        key={i}
-                        src={url}
-                        alt={`Seite ${i + 2}`}
-                        className="w-full h-24 object-cover rounded cursor-pointer hover:opacity-80"
-                        onClick={() => setFullscreenUrl(url)}
-                      />
-                    );
-                  })}
+                    })}
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
-            {/* Fotos der Ware — reine Bild-Galerie. */}
+            {/* Fotos der Ware — eigene Galerie, unabhaengig vom Dokument-Foto. */}
             {document.waren_fotos_urls && document.waren_fotos_urls.length > 0 && (
               <div>
                 <span className="text-sm text-muted-foreground">
@@ -285,7 +313,7 @@ export function DocumentDetailDialog({ document, open, onOpenChange, isAdmin, on
                       src={url}
                       alt={`Ware ${i + 1}`}
                       className="w-full h-24 object-cover rounded cursor-pointer hover:opacity-80"
-                      onClick={() => setFullscreenUrl(url)}
+                      onClick={() => openFullscreen(document.waren_fotos_urls!, i)}
                     />
                   ))}
                 </div>
@@ -483,23 +511,96 @@ export function DocumentDetailDialog({ document, open, onOpenChange, isAdmin, on
         </DialogContent>
       </Dialog>
 
-      {/* Full-size Vorschau — zeigt Haupt-Foto, Zusatz-Seite oder Ware-Foto,
-          je nachdem worauf der Nutzer geklickt hat. */}
-      <Dialog open={!!fullscreenUrl} onOpenChange={(o) => { if (!o) setFullscreenUrl(null); }}>
-        <DialogContent className="max-w-5xl h-[95vh] p-2 flex flex-col">
-          {fullscreenUrl && (() => {
-            const isPdf = /\.pdf(\?|$)/i.test(fullscreenUrl);
-            if (isPdf) {
-              return (
-                <iframe
-                  src={`${fullscreenUrl}#toolbar=1`}
-                  title="PDF-Vorschau"
-                  className="flex-1 w-full rounded"
-                />
-              );
-            }
+      {/* Vollbild-Galerie — wischbar links/rechts. Eigener grosser X-Button
+          (auf iOS war der shadcn-Default zu klein), Pfeile fuer Desktop,
+          Index-Anzeige bei Multi-Bild-Galerie. Default-Close-Button von
+          DialogContent wird per [&>button]:hidden weggeblendet. */}
+      <Dialog
+        open={fullscreenGallery.length > 0}
+        onOpenChange={(o) => { if (!o) closeFullscreen(); }}
+      >
+        <DialogContent
+          className="max-w-5xl h-[95vh] p-0 flex flex-col bg-black border-0 [&>button]:hidden"
+        >
+          {fullscreenGallery.length > 0 && (() => {
+            const currentUrl = fullscreenGallery[fullscreenIndex];
+            const isPdf = /\.pdf(\?|$)/i.test(currentUrl);
+            const hasPrev = fullscreenIndex > 0;
+            const hasNext = fullscreenIndex < fullscreenGallery.length - 1;
             return (
-              <img src={fullscreenUrl} alt="Dokument" className="w-full max-h-full object-contain rounded" />
+              <div
+                className="relative flex-1 flex items-center justify-center overflow-hidden touch-pan-y"
+                onTouchStart={(e) => {
+                  if (isPdf) return;
+                  fullscreenTouchStartX.current = e.touches[0].clientX;
+                }}
+                onTouchEnd={(e) => {
+                  if (isPdf) return;
+                  const start = fullscreenTouchStartX.current;
+                  fullscreenTouchStartX.current = null;
+                  if (start == null) return;
+                  const dx = e.changedTouches[0].clientX - start;
+                  if (Math.abs(dx) < 50) return;
+                  if (dx < 0) fullscreenNext();
+                  else fullscreenPrev();
+                }}
+              >
+                {isPdf ? (
+                  <iframe
+                    src={`${currentUrl}#toolbar=1`}
+                    title="PDF-Vorschau"
+                    className="w-full h-full bg-white"
+                  />
+                ) : (
+                  <img
+                    src={currentUrl}
+                    alt="Dokument"
+                    className="max-w-full max-h-full object-contain select-none"
+                    draggable={false}
+                  />
+                )}
+
+                {/* Grosser X-Button oben rechts — leicht zu treffen auf iOS
+                    (44x44pt sind Apple-Mindestmass). */}
+                <button
+                  type="button"
+                  onClick={closeFullscreen}
+                  className="absolute top-3 right-3 h-12 w-12 rounded-full bg-black/70 text-white flex items-center justify-center hover:bg-black/90 active:bg-black z-20 shadow-lg"
+                  aria-label="Schließen"
+                >
+                  <X className="h-6 w-6" />
+                </button>
+
+                {/* Vor/Zurueck-Pfeile fuer Desktop und Tap (alternativ zum
+                    Wisch). Bei nur einem Bild nicht anzeigen. */}
+                {fullscreenGallery.length > 1 && hasPrev && (
+                  <button
+                    type="button"
+                    onClick={fullscreenPrev}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 h-12 w-12 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80 z-10"
+                    aria-label="Vorheriges Bild"
+                  >
+                    <ChevronLeft className="h-7 w-7" />
+                  </button>
+                )}
+                {fullscreenGallery.length > 1 && hasNext && (
+                  <button
+                    type="button"
+                    onClick={fullscreenNext}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 h-12 w-12 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80 z-10"
+                    aria-label="Nächstes Bild"
+                  >
+                    <ChevronRight className="h-7 w-7" />
+                  </button>
+                )}
+
+                {/* Index-Indikator unten mittig. */}
+                {fullscreenGallery.length > 1 && (
+                  <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-black/70 text-white text-xs px-3 py-1 rounded-full z-10">
+                    {fullscreenIndex + 1} / {fullscreenGallery.length}
+                  </div>
+                )}
+              </div>
             );
           })()}
         </DialogContent>
