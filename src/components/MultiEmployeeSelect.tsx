@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { Users, AlertTriangle, Loader2 } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -37,7 +37,10 @@ export const MultiEmployeeSelect = ({
   restrictToAssigned = false,
   projectIds = [],
 }: MultiEmployeeSelectProps) => {
-  const { employees: allEmployees, loading: allLoading } = useAvailableEmployees(true);
+  // false = der eingeloggte Erfasser bleibt im Pool (er soll sich selbst
+  // ein- oder abwaehlen koennen — der Aufrufer entscheidet via Auto-Initial-
+  // Select, ob er vorausgewaehlt ist).
+  const { employees: allEmployees, loading: allLoading, currentUserId } = useAvailableEmployees(false);
   const [conflicts, setConflicts] = useState<TimeConflict[]>([]);
   const [checkingConflicts, setCheckingConflicts] = useState(false);
 
@@ -70,7 +73,9 @@ export const MultiEmployeeSelect = ({
         for (const r of waRes.data || []) if (r.user_id) ids.add(r.user_id);
         for (const r of paRes.data || []) if ((r as any).user_id) ids.add((r as any).user_id);
         for (const r of eepRes.data || []) if ((r as any).employee_user_id) ids.add((r as any).employee_user_id);
-        if (user) ids.delete(user.id);
+        // Erfasser ist immer Teil des Pools — er soll sich selbst ein- oder
+        // abwaehlen koennen.
+        if (user) ids.add(user.id);
         if (ids.size === 0) {
           if (!cancelled) setAssignedEmployees([]);
           return;
@@ -90,8 +95,19 @@ export const MultiEmployeeSelect = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [restrictToAssigned, projectIdsKey, date]);
 
-  const employees = restrictToAssigned ? assignedEmployees : allEmployees;
+  const rawEmployees = restrictToAssigned ? assignedEmployees : allEmployees;
   const loading = restrictToAssigned ? assignedLoading : allLoading;
+
+  // Erfasser steht ganz oben in der Liste, der Rest behaelt die DB-Sortierung
+  // (= nach Nachname). useMemo, damit die Sortierung nicht jedes Render neu
+  // laeuft.
+  const employees = useMemo(() => {
+    if (!currentUserId) return rawEmployees;
+    const meIndex = rawEmployees.findIndex((e) => e.id === currentUserId);
+    if (meIndex <= 0) return rawEmployees;
+    const me = rawEmployees[meIndex];
+    return [me, ...rawEmployees.slice(0, meIndex), ...rawEmployees.slice(meIndex + 1)];
+  }, [rawEmployees, currentUserId]);
 
   // Wenn der Pool wechselt (andere Baustelle): bereits gewaehlte Mitarbeiter,
   // die nicht mehr im Pool sind, automatisch abwaehlen — so wird nie fuer
@@ -284,8 +300,9 @@ export const MultiEmployeeSelect = ({
         {employees.map((employee) => {
           const isSelected = selectedEmployees.includes(employee.id);
           const hasConflict = conflicts.some(c => c.employeeId === employee.id);
+          const isMe = !!currentUserId && employee.id === currentUserId;
           const checkboxId = `employee-checkbox-${employee.id}`;
-          
+
           return (
             <label
               key={employee.id}
@@ -305,6 +322,11 @@ export const MultiEmployeeSelect = ({
               <span className="flex-1 text-sm font-medium">
                 {employee.vorname} {employee.nachname}
               </span>
+              {isMe && (
+                <Badge variant="outline" className="text-[10px] py-0 px-1.5 border-primary/40 text-primary">
+                  Du
+                </Badge>
+              )}
               {hasConflict && (
                 <AlertTriangle className="h-4 w-4 text-amber-500" />
               )}

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { Clock, Plus, AlertTriangle, CheckCircle2, Calendar, Sun, Trash2, Pencil, ChevronDown, CloudRain, Car } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
@@ -192,7 +192,13 @@ const TimeTracking = ({ embedded }: TimeTrackingEmbeddedProps = {}) => {
     sonstigerGrund: "",
   });
 
+  // Im Multi-Erfassen-Modus: Liste aller Arbeiter, fuer die ein Eintrag
+  // erstellt wird. Der eingeloggte Erfasser ist nach Auto-Initial-Select
+  // hier drin und kann sich abwaehlen.
   const [selectedAdditionalEmployees, setSelectedAdditionalEmployees] = useState<string[]>([]);
+  // Ref-Flag, damit Auto-Initial-Select genau einmal pro Erfass-Session
+  // wirkt — nach Save reset, dann beim naechsten Anzeigen wieder vorauswaehlen.
+  const autoSelectAppliedRef = useRef(false);
   const [editMode, setEditMode] = useState(false);
   const [editingEntryIds, setEditingEntryIds] = useState<string[]>([]);
   const [selectedDate, setSelectedDate] = useState(() => {
@@ -212,6 +218,26 @@ const TimeTracking = ({ embedded }: TimeTrackingEmbeddedProps = {}) => {
   const employeeSchedule = scheduleData.schedule;
   const employeeSchwellenwert = scheduleData.schwellenwert;
   const isExternalUser = scheduleData.isExternal;
+
+  // showMultiSelect: Bedingung fuer die Multi-Arbeiter-Auswahl. Wird auch
+  // unten im JSX (Zeile ~1325) als Render-Bedingung benutzt — hier nur als
+  // abgeleiteter Wert fuer den Auto-Init-Effect (siehe naechsten useEffect).
+  const showMultiSelect =
+    (isAdmin || isVorarbeiter) && !editMode && !targetUserId && !isExternalUser;
+
+  // Auto-Initial-Select: sobald der Multi-Select sichtbar wird, ist der
+  // Erfasser vorausgewaehlt. Ref-Flag verhindert Wieder-Einfuegen, wenn er
+  // sich abwaehlt. Nach Save wird das Flag zurueckgesetzt und die Liste
+  // geleert — dann triggert dieser Effect erneut (durch length=0 in den
+  // Dependencies) und waehlt den Erfasser wieder vor.
+  useEffect(() => {
+    if (showMultiSelect && authUserId && !autoSelectAppliedRef.current) {
+      setSelectedAdditionalEmployees((prev) =>
+        prev.includes(authUserId) ? prev : [authUserId, ...prev]
+      );
+      autoSelectAppliedRef.current = true;
+    }
+  }, [showMultiSelect, authUserId, selectedAdditionalEmployees.length]);
 
   // Datum im Abwesenheits-Dialog auf selectedDate setzen wenn Dialog geöffnet wird
   // + Beginn/Ende aus Regelarbeitszeit vorfüllen wenn isFullDay=false
@@ -1003,102 +1029,86 @@ const TimeTracking = ({ embedded }: TimeTrackingEmbeddedProps = {}) => {
     const dateObj = new Date(selectedDate);
     const daySplit = splitHours(dayTotalHours, dateObj, employeeSchedule, employeeSchwellenwert);
 
-    // Distribute lohnstunden/zeitausgleich proportionally across blocks
-    let remainingLohn = daySplit.lohnstunden;
+    // Ziel-User-Liste: im Multi-Modus sind das genau die ausgewaehlten
+    // Arbeiter (inkl. Erfasser, falls er nicht abgewaehlt hat). Sonst
+    // bleibt es beim klassischen Single-User-Pfad (Admin-edit fuer
+    // anderen / external / editMode).
+    const isMultiMode = showMultiSelect && !editMode;
+    const targetUserIds: string[] = isMultiMode
+      ? selectedAdditionalEmployees
+      : [targetUserId || user.id];
 
-    for (let bi = 0; bi < timeBlocks.length; bi++) {
-      const block = timeBlocks[bi];
-      const blockHours = allBlockHours[bi];
-      const pauseMinutes = isExternalUser ? 0 : calculateBlockPauseMinutes(block);
-
-      // Proportional split: lohnstunden first, rest is ZA
-      const blockLohn = Math.min(blockHours, remainingLohn);
-      const blockZA = Math.round((blockHours - blockLohn) * 100) / 100;
-      remainingLohn = Math.round((remainingLohn - blockLohn) * 100) / 100;
-
-      const km = block.kilometer ? parseFloat(block.kilometer) : null;
-
-      const entryData: Record<string, any> = {
-        user_id: targetUserId || user.id,
-        datum: selectedDate,
-        project_id: block.locationType === "werkstatt" ? null : (block.projectId || null),
-        taetigkeit: block.taetigkeit || null,
-        stunden: blockHours,
-        start_time: isExternalUser ? "00:00" : block.startTime,
-        end_time: isExternalUser ? "00:00" : block.endTime,
-        pause_minutes: pauseMinutes,
-        pause_start: isExternalUser ? null : (block.pauseStart || null),
-        pause_end: isExternalUser ? null : (block.pauseEnd || null),
-        location_type: block.locationType,
-        notizen: null,
-        week_type: null,
-        kilometer: km,
-        km_beschreibung: block.kmBeschreibung || null,
-        zeit_typ: isExternalUser ? "normal" : block.zeitTyp,
-        diaeten_typ: isExternalUser ? null : (bi === 0 ? calculateDiaeten(dayTotalHours, false).typ : null),
-        diaeten_betrag: null,
-      };
-      // Neue Spalten nur senden wenn sie vorhanden sein koennten (nach Migration)
-      if (blockLohn > 0) entryData.lohnstunden = blockLohn;
-      if (blockZA > 0) entryData.zeitausgleich_stunden = blockZA;
-
-      const { error: insertError } = await supabase.from("time_entries").insert(entryData);
-
-      if (insertError) {
-        hasError = true;
-        console.error("Error creating time entry:", insertError, "payload:", entryData);
-        const parts = [insertError.message, (insertError as any).details, (insertError as any).hint, (insertError as any).code].filter(Boolean);
-        toast({
-          variant: "destructive",
-          title: "Fehler beim Speichern",
-          description: parts.join(" — ") || "Unbekannter Fehler",
-        });
-        continue;
-      }
-
-      totalEntriesCreated += 1;
+    if (isMultiMode && targetUserIds.length === 0) {
+      toast({
+        variant: "destructive",
+        title: "Kein Arbeiter ausgewählt",
+        description: "Bitte mindestens einen Arbeiter auswählen oder dich selbst eintragen.",
+      });
+      setSaving(false);
+      return;
     }
 
-    // Duplicate entries for additional employees (Multi-MA)
-    if (!hasError && selectedAdditionalEmployees.length > 0 && !editMode) {
-      for (const empUserId of selectedAdditionalEmployees) {
-        let empRemainingLohn = daySplit.lohnstunden;
-        for (let bi = 0; bi < timeBlocks.length; bi++) {
-          const block = timeBlocks[bi];
-          const blockHours = allBlockHours[bi];
-          const pauseMinutes = isExternalUser ? 0 : calculateBlockPauseMinutes(block);
-          const blockLohn = Math.min(blockHours, empRemainingLohn);
-          const blockZA = Math.round((blockHours - blockLohn) * 100) / 100;
-          empRemainingLohn = Math.round((empRemainingLohn - blockLohn) * 100) / 100;
-          const km = block.kilometer ? parseFloat(block.kilometer) : null;
+    // Ein Block-Insert-Loop pro User in der Ziel-Liste. Identisch fuer alle.
+    for (const targetUid of targetUserIds) {
+      let remainingLohn = daySplit.lohnstunden;
+      for (let bi = 0; bi < timeBlocks.length; bi++) {
+        const block = timeBlocks[bi];
+        const blockHours = allBlockHours[bi];
+        const pauseMinutes = isExternalUser ? 0 : calculateBlockPauseMinutes(block);
 
-          const empEntry: Record<string, any> = {
-            user_id: empUserId,
-            datum: selectedDate,
-            project_id: block.locationType === "werkstatt" ? null : (block.projectId || null),
-            taetigkeit: block.taetigkeit || null,
-            stunden: blockHours,
-            start_time: isExternalUser ? "00:00" : block.startTime,
-            end_time: isExternalUser ? "00:00" : block.endTime,
-            pause_minutes: pauseMinutes,
-            pause_start: isExternalUser ? null : (block.pauseStart || null),
-            pause_end: isExternalUser ? null : (block.pauseEnd || null),
-            location_type: block.locationType,
-            kilometer: km,
-            km_beschreibung: block.kmBeschreibung || null,
-            zeit_typ: isExternalUser ? "normal" : block.zeitTyp,
-            diaeten_typ: isExternalUser ? null : (bi === 0 ? calculateDiaeten(dayTotalHours, false).typ : null),
-          };
-          if (blockLohn > 0) empEntry.lohnstunden = blockLohn;
-          if (blockZA > 0) empEntry.zeitausgleich_stunden = blockZA;
-          await supabase.from("time_entries").insert(empEntry);
+        // Proportional split: lohnstunden first, rest is ZA
+        const blockLohn = Math.min(blockHours, remainingLohn);
+        const blockZA = Math.round((blockHours - blockLohn) * 100) / 100;
+        remainingLohn = Math.round((remainingLohn - blockLohn) * 100) / 100;
+
+        const km = block.kilometer ? parseFloat(block.kilometer) : null;
+
+        const entryData: Record<string, any> = {
+          user_id: targetUid,
+          datum: selectedDate,
+          project_id: block.locationType === "werkstatt" ? null : (block.projectId || null),
+          taetigkeit: block.taetigkeit || null,
+          stunden: blockHours,
+          start_time: isExternalUser ? "00:00" : block.startTime,
+          end_time: isExternalUser ? "00:00" : block.endTime,
+          pause_minutes: pauseMinutes,
+          pause_start: isExternalUser ? null : (block.pauseStart || null),
+          pause_end: isExternalUser ? null : (block.pauseEnd || null),
+          location_type: block.locationType,
+          notizen: null,
+          week_type: null,
+          kilometer: km,
+          km_beschreibung: block.kmBeschreibung || null,
+          zeit_typ: isExternalUser ? "normal" : block.zeitTyp,
+          diaeten_typ: isExternalUser ? null : (bi === 0 ? calculateDiaeten(dayTotalHours, false).typ : null),
+          diaeten_betrag: null,
+        };
+        // Neue Spalten nur senden wenn sie vorhanden sein koennten (nach Migration)
+        if (blockLohn > 0) entryData.lohnstunden = blockLohn;
+        if (blockZA > 0) entryData.zeitausgleich_stunden = blockZA;
+
+        const { error: insertError } = await supabase.from("time_entries").insert(entryData);
+
+        if (insertError) {
+          hasError = true;
+          console.error("Error creating time entry:", insertError, "payload:", entryData);
+          const parts = [insertError.message, (insertError as any).details, (insertError as any).hint, (insertError as any).code].filter(Boolean);
+          toast({
+            variant: "destructive",
+            title: "Fehler beim Speichern",
+            description: parts.join(" — ") || "Unbekannter Fehler",
+          });
+          continue;
         }
+
+        totalEntriesCreated += 1;
       }
-      totalEntriesCreated += selectedAdditionalEmployees.length * timeBlocks.length;
     }
 
     if (!hasError) {
       setSelectedAdditionalEmployees([]);
+      // Auto-Initial-Select fuer das naechste Erfassen wieder aktivieren.
+      autoSelectAppliedRef.current = false;
       toast({ title: "Erfolg", description: editMode
         ? `${totalEntriesCreated} Eintrag/Einträge aktualisiert`
         : `${totalEntriesCreated} Eintrag/Einträge gespeichert`
@@ -1321,15 +1331,17 @@ const TimeTracking = ({ embedded }: TimeTrackingEmbeddedProps = {}) => {
               </div>
 
               {/* Multi-Mitarbeiter Auswahl — Admin sieht alle, Vorarbeiter
-                  nur die der gewaehlten Baustelle zugewiesenen Mitarbeiter */}
-              {(isAdmin || isVorarbeiter) && !editMode && !targetUserId && !isExternalUser && timeBlocks.length > 0 && (
+                  nur die der gewaehlten Baustelle zugewiesenen Mitarbeiter.
+                  Der Erfasser steht oben in der Liste und ist nach Auto-
+                  Initial-Select bereits vorausgewaehlt (kann sich abwaehlen). */}
+              {showMultiSelect && timeBlocks.length > 0 && (
                 <MultiEmployeeSelect
                   selectedEmployees={selectedAdditionalEmployees}
                   onSelectionChange={setSelectedAdditionalEmployees}
                   date={selectedDate}
                   startTime={timeBlocks[0].startTime || "06:30"}
                   endTime={timeBlocks[timeBlocks.length - 1].endTime || "17:00"}
-                  label="Stunden auch für weitere Mitarbeiter erfassen"
+                  label="Arbeiter auswählen"
                   restrictToAssigned={!isAdmin}
                   projectIds={Array.from(new Set(
                     timeBlocks.map((b) => b.projectId).filter((id): id is string => !!id)
