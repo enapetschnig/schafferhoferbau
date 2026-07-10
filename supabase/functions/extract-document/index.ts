@@ -104,15 +104,22 @@ GUTSCHRIFTEN / STORNIERUNGEN (negative Mengen oder Betraege):
   (wenn die Menge negativ ist).
 
 POSITIONS-RABATTE:
-- Wenn neben dem Einzelpreis ein Positions-Rabatt steht (z.B.
-  "8,9000 -30,00%"), rechne den Rabatt in den Gesamt-Wert ein:
-  Gesamt = Menge × Einzelpreis × (1 - Rabatt/100).
-- Schreibe den effektiven, bereits rabattierten Wert in "Gesamt (€ netto)".
+- Wenn eine Position einen Rabatt hat (z.B. "-30,00%" neben dem Preis oder
+  in einer eigenen Rabatt-Spalte), rechne den Rabatt SOWOHL in den
+  Einzelpreis ALS AUCH in den Gesamt-Wert ein:
+  - "Einzelpreis (€ netto)" = gedruckter Einzelpreis × (1 - Rabatt/100)
+    — also der effektive Preis NACH Rabatt. NIEMALS den unrabattierten
+    Listen-Preis eintragen.
+  - "Gesamt (€ netto)" = der gedruckte Betrag der Position (der ist auf
+    der Rechnung bereits rabattiert). Kontrolle: Gesamt ≈ Menge ×
+    rabattierter Einzelpreis.
+  - Alternativ, wenn der gedruckte Betrag vorhanden ist: Einzelpreis =
+    Betrag ÷ Menge (ist automatisch der rabattierte Preis).
+- Beispiel: "DRAHTSTIFT | Menge 1 PG | Preis exkl. 21,4498 | -30,00% |
+  Betrag 15,01" → Einzelpreis: "15.01", Gesamt: "15.01".
 - Vermerke den Rabatt am Ende des "Material"-Feldes in Klammern, z.B.
-  "EISENDRAHT GEGLUEHT 1,6MM_2KG (Rabatt -30%)" — so bleibt der Rabatt im
-  Text sichtbar.
-- "Einzelpreis (€ netto)" bleibt der Brutto-Einzelpreis VOR Rabatt
-  (wie auf der Rechnung gedruckt).
+  "DRAHTSTIFT BLANK (Rabatt -30%)" — so bleibt sichtbar, dass rabattiert
+  wurde.
 
 ------------------------------------
 
@@ -243,7 +250,8 @@ GUTSCHRIFTEN / STORNIERUNGEN (negative Mengen):
 
 POSITIONS-RABATTE:
 - Wenn neben dem Einzelpreis ein Positions-Rabatt steht (z.B. "8,9000 -30%"),
-  rechne den Rabatt in "Gesamt (€ netto)" ein und vermerke den Rabatt am
+  rechne den Rabatt SOWOHL in "Einzelpreis (€ netto)" (= effektiver Preis
+  nach Rabatt) ALS AUCH in "Gesamt (€ netto)" ein. Vermerke den Rabatt am
   Ende des "Material"-Feldes in Klammern, z.B. "MATERIAL XYZ (Rabatt -30%)".
 
 ------------------------------------
