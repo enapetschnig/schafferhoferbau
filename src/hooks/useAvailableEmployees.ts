@@ -25,10 +25,13 @@ export const useAvailableEmployees = (excludeCurrentUser = true) => {
       setCurrentUserId(user.id);
     }
 
+    // Manuell sortierte (Admin-Drag&Drop, profiles.sort_order) zuerst,
+    // Rest alphabetisch.
     const { data, error } = await supabase
       .from("profiles")
       .select("id, vorname, nachname, is_active")
       .eq("is_active", true)
+      .order("sort_order", { ascending: true, nullsFirst: false })
       .order("nachname");
 
     if (!error && data) {

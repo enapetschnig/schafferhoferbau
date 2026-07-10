@@ -94,14 +94,32 @@ export function DailyReportForm({ open, onOpenChange, onSuccess, defaultProjectI
   }, [totalSteps, step]);
 
   const fetchEmployees = useCallback(async () => {
-    const { data } = await supabase
-      .from("employees")
-      .select("id, user_id, vorname, nachname, is_external, kategorie")
-      .not("user_id", "is", null)
-      .order("nachname");
+    // Reihenfolge folgt der Admin-Sortierung (profiles.sort_order,
+    // Drag&Drop in der Benutzerverwaltung). employees hat keine eigene
+    // Sortier-Spalte, daher zweite Query auf profiles + Client-Merge.
+    const [{ data }, { data: profOrder }] = await Promise.all([
+      supabase
+        .from("employees")
+        .select("id, user_id, vorname, nachname, is_external, kategorie")
+        .not("user_id", "is", null)
+        .order("nachname"),
+      // Cast noetig: generierte Supabase-Types kennen sort_order noch nicht.
+      (supabase.from("profiles") as any)
+        .select("id, sort_order")
+        .not("sort_order", "is", null),
+    ]);
     if (data) {
+      const orderMap = new Map<string, number>(
+        (profOrder || []).map((p: { id: string; sort_order: number | null }) => [p.id, p.sort_order ?? Number.MAX_SAFE_INTEGER])
+      );
+      const sorted = [...data].sort((a, b) => {
+        const oa = orderMap.get(a.user_id!) ?? Number.MAX_SAFE_INTEGER;
+        const ob = orderMap.get(b.user_id!) ?? Number.MAX_SAFE_INTEGER;
+        if (oa !== ob) return oa - ob;
+        return (a.nachname || "").localeCompare(b.nachname || "");
+      });
       setEmployees(
-        data
+        sorted
           .filter(e => !e.is_external && e.kategorie !== "extern")
           .map(e => ({ id: e.id, user_id: e.user_id!, name: `${e.vorname} ${e.nachname}`.trim() }))
       );

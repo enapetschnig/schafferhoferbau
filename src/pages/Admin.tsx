@@ -5,7 +5,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, Shield, User as UserIcon, UserPlus, Send, Mail, Phone, MapPin, Shirt, FileText, Clock, Trash2, Settings, Save, Calendar, Menu, Plus, Upload } from "lucide-react";
+import { ArrowLeft, Shield, User as UserIcon, UserPlus, Send, Mail, Phone, MapPin, Shirt, FileText, Clock, Trash2, Settings, Save, Calendar, Menu, Plus, Upload, GripVertical } from "lucide-react";
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -31,7 +34,37 @@ type Profile = {
   vorname: string;
   nachname: string;
   is_active: boolean | null;
+  sort_order?: number | null;
 };
+
+// Sortierbare Zeile fuer die "Registrierte Benutzer"-Liste. Griff links,
+// Rest des Inhalts kommt als children. Pattern analog SortableContactItem
+// in ProjectOverview.tsx.
+function SortableUserRow({ id, children }: { id: string; children: React.ReactNode }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      id={`registered-user-${id}`}
+      className={`flex items-stretch gap-2 rounded-lg border bg-card transition-shadow ${isDragging ? "shadow-lg opacity-80 z-10 relative" : ""}`}
+    >
+      <button
+        type="button"
+        {...attributes}
+        {...listeners}
+        className="flex items-center px-2 cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground touch-none shrink-0"
+        title="Ziehen zum Sortieren"
+        aria-label="Ziehen zum Sortieren"
+      >
+        <GripVertical className="h-5 w-5" />
+      </button>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 sm:p-4 pl-0 flex-1 min-w-0">
+        {children}
+      </div>
+    </div>
+  );
+}
 
 type UserRole = {
   user_id: string;
@@ -269,9 +302,13 @@ export default function Admin() {
     const silent = options?.silent ?? false;
     if (!silent) setLoading(true);
 
-    const { data: profilesData } = await supabase
-      .from("profiles")
-      .select("id, vorname, nachname, is_active")
+    // Reihenfolge: erst manuell sortierte (sort_order), dann der Rest
+    // alphabetisch — gleiche Logik wie in Zeiterfassung/Berichten.
+    // Cast noetig: generierte Supabase-Types kennen sort_order noch nicht.
+    const { data: profilesData } = await (supabase
+      .from("profiles") as any)
+      .select("id, vorname, nachname, is_active, sort_order")
+      .order("sort_order", { ascending: true, nullsFirst: false })
       .order("nachname");
 
     const { data: rolesData } = await supabase
@@ -291,6 +328,32 @@ export default function Admin() {
     }
 
     if (!silent) setLoading(false);
+  };
+
+  // Drag&Drop-Sortierung der Registrierte-Benutzer-Liste. Die Reihenfolge
+  // wird in profiles.sort_order persistiert und gilt ueberall (Zeiterfassung,
+  // Berichte, Admin-Liste).
+  const dndSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  const handleUserDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const activeProfiles = profiles.filter((p) => p.is_active);
+    const oldIdx = activeProfiles.findIndex((p) => p.id === active.id);
+    const newIdx = activeProfiles.findIndex((p) => p.id === over.id);
+    if (oldIdx < 0 || newIdx < 0) return;
+    const reordered = arrayMove(activeProfiles, oldIdx, newIdx);
+    // Optimistic UI: aktive in neuer Reihenfolge + inaktive hinten anhaengen
+    const inactive = profiles.filter((p) => !p.is_active);
+    setProfiles([...reordered.map((p, i) => ({ ...p, sort_order: i })), ...inactive]);
+    // Persistieren: sort_order = Index in der neuen Reihenfolge.
+    // Cast noetig: generierte Supabase-Types kennen sort_order noch nicht.
+    for (let i = 0; i < reordered.length; i++) {
+      await (supabase.from("profiles") as any).update({ sort_order: i }).eq("id", reordered[i].id);
+    }
   };
 
   const scrollToRegisteredUser = (userId: string) => {
@@ -1152,72 +1215,76 @@ export default function Admin() {
           </div>
         </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                {profiles.filter(p => p.is_active).map((profile) => (
-                  <div
-                    key={profile.id}
-                    id={`registered-user-${profile.id}`}
-                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 sm:p-4 rounded-lg border bg-card transition-shadow"
-                  >
-                    <div className="flex items-center gap-3">
-                      <Avatar>
-                        <AvatarFallback>
-                          {profile.vorname[0]}
-                          {profile.nachname[0]}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div>
-                        <p className="font-medium">
-                          {profile.vorname} {profile.nachname}
-                        </p>
-                        <p className="text-sm text-muted-foreground capitalize">
-                          {getEffectiveRoleFor(profile.id) === "administrator" ? "Administrator" : getEffectiveRoleFor(profile.id)}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                      <Select
-                        value={getEffectiveRoleFor(profile.id)}
-                        onValueChange={(val) => handleRoleChange(profile.id, val)}
-                      >
-                        <SelectTrigger className="w-full sm:w-[200px]">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="administrator">Administrator</SelectItem>
-                          <SelectItem value="vorarbeiter">Vorarbeiter</SelectItem>
-                          <SelectItem value="facharbeiter">Facharbeiter</SelectItem>
-                          <SelectItem value="lehrling">Lehrling</SelectItem>
-                          <SelectItem value="extern">Extern</SelectItem>
-                        </SelectContent>
-                      </Select>
+              {/* Drag&Drop: Reihenfolge gilt auch in Zeiterfassung + Berichten */}
+              <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleUserDragEnd}>
+                <SortableContext
+                  items={profiles.filter(p => p.is_active).map(p => p.id)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  <div className="space-y-4">
+                    {profiles.filter(p => p.is_active).map((profile) => (
+                      <SortableUserRow key={profile.id} id={profile.id}>
+                        <div className="flex items-center gap-3">
+                          <Avatar>
+                            <AvatarFallback>
+                              {profile.vorname[0]}
+                              {profile.nachname[0]}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <p className="font-medium">
+                              {profile.vorname} {profile.nachname}
+                            </p>
+                            <p className="text-sm text-muted-foreground capitalize">
+                              {getEffectiveRoleFor(profile.id) === "administrator" ? "Administrator" : getEffectiveRoleFor(profile.id)}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                          <Select
+                            value={getEffectiveRoleFor(profile.id)}
+                            onValueChange={(val) => handleRoleChange(profile.id, val)}
+                          >
+                            <SelectTrigger className="w-full sm:w-[200px]">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="administrator">Administrator</SelectItem>
+                              <SelectItem value="vorarbeiter">Vorarbeiter</SelectItem>
+                              <SelectItem value="facharbeiter">Facharbeiter</SelectItem>
+                              <SelectItem value="lehrling">Lehrling</SelectItem>
+                              <SelectItem value="extern">Extern</SelectItem>
+                            </SelectContent>
+                          </Select>
 
-                      <div className="flex gap-2">
-                        <Button
-                          variant="outline"
-                          onClick={() => openEmployeeEditorForUser(profile.id, 'stammdaten')}
-                        >
-                          Bearbeiten
-                        </Button>
-                        <Button onClick={() => openEmployeeEditorForUser(profile.id, 'dokumente')}>
-                          <FileText className="w-4 h-4 mr-2" />
-                          Dokumente
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setUserToDelete(profile);
-                            setDeleteDialogOpen(true);
-                          }}
-                        >
-                          Deaktivieren
-                        </Button>
-                      </div>
-                    </div>
+                          <div className="flex gap-2">
+                            <Button
+                              variant="outline"
+                              onClick={() => openEmployeeEditorForUser(profile.id, 'stammdaten')}
+                            >
+                              Bearbeiten
+                            </Button>
+                            <Button onClick={() => openEmployeeEditorForUser(profile.id, 'dokumente')}>
+                              <FileText className="w-4 h-4 mr-2" />
+                              Dokumente
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setUserToDelete(profile);
+                                setDeleteDialogOpen(true);
+                              }}
+                            >
+                              Deaktivieren
+                            </Button>
+                          </div>
+                        </div>
+                      </SortableUserRow>
+                    ))}
                   </div>
-                ))}
-              </div>
+                </SortableContext>
+              </DndContext>
             </CardContent>
           </Card>
 

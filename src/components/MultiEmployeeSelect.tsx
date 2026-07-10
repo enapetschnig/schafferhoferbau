@@ -85,6 +85,7 @@ export const MultiEmployeeSelect = ({
           .select("id, vorname, nachname, is_active")
           .in("id", Array.from(ids))
           .eq("is_active", true)
+          .order("sort_order", { ascending: true, nullsFirst: false })
           .order("nachname");
         if (!cancelled) setAssignedEmployees((profs || []) as Employee[]);
       } finally {
