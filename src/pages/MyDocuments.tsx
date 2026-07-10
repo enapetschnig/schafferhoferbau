@@ -7,8 +7,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { FileText, Camera, Upload, Download, Eye, Trash2, Archive } from "lucide-react";
+import { FileText, Camera, Upload, Download, Eye, Trash2, Archive, Users } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
 import { FileViewer } from "@/components/FileViewer";
 
@@ -17,6 +18,8 @@ interface Document {
   path: string;
   created_at?: string;
 }
+
+type EmployeeOption = { user_id: string; name: string };
 
 export default function MyDocuments() {
   const [payslips, setPayslips] = useState<Document[]>([]);
@@ -28,6 +31,11 @@ export default function MyDocuments() {
   const [selectedPayslips, setSelectedPayslips] = useState<Set<string>>(new Set());
   const [selectedSickNotes, setSelectedSickNotes] = useState<Set<string>>(new Set());
   const [downloadingZip, setDownloadingZip] = useState(false);
+  // Admin-Ansicht: Lohnzettel aller Mitarbeiter einsehbar, getrennt nach MA.
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [employeeOptions, setEmployeeOptions] = useState<EmployeeOption[]>([]);
+  // Wessen Lohnzettel gerade angezeigt werden (Admin kann wechseln).
+  const [viewUserId, setViewUserId] = useState<string>("");
 
   useEffect(() => {
     fetchUserAndDocuments();
@@ -41,21 +49,47 @@ export default function MyDocuments() {
     }
 
     setUserId(user.id);
-  await Promise.all([
-      fetchDocuments(user.id, "lohnzettel", setPayslips),
-      fetchDocuments(user.id, "krankmeldung", setSickNotes),
+    setViewUserId(user.id);
+
+    // Admin-Check + Mitarbeiter-Liste (fuer den Lohnzettel-Wechsler)
+    const { data: roleData } = await supabase
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    const admin = roleData?.role === "administrator";
+    setIsAdmin(admin);
+    if (admin) {
+      // Sortierung folgt der Admin-Reihenfolge (profiles.sort_order).
+      const { data: profs } = await (supabase.from("profiles") as any)
+        .select("id, vorname, nachname, is_active")
+        .eq("is_active", true)
+        .order("sort_order", { ascending: true, nullsFirst: false })
+        .order("nachname");
+      setEmployeeOptions(
+        (profs || []).map((p: any) => ({
+          user_id: p.id,
+          name: `${p.vorname} ${p.nachname}`.trim(),
+        }))
+      );
+    }
+
+    await Promise.all([
+      fetchDocuments(user.id, "lohnzettel", setPayslips, admin),
+      fetchDocuments(user.id, "krankmeldung", setSickNotes, admin),
     ]);
     setLoading(false);
   };
 
   const fetchDocuments = async (
-    userId: string,
+    targetUserId: string,
     type: "lohnzettel" | "krankmeldung",
-    setter: (docs: Document[]) => void
+    setter: (docs: Document[]) => void,
+    adminView: boolean
   ) => {
     const { data, error } = await supabase.storage
       .from("employee-documents")
-      .list(`${userId}/${type}`);
+      .list(`${targetUserId}/${type}`);
 
     if (error) {
       console.error(`Fehler beim Laden von ${type}:`, error);
@@ -69,12 +103,13 @@ export default function MyDocuments() {
 
     let docs = data.map((file) => ({
       name: file.name,
-      path: `${userId}/${type}/${file.name}`,
+      path: `${targetUserId}/${type}/${file.name}`,
       created_at: file.created_at,
     }));
 
-    // Lohnzettel: nach Freigabedatum filtern (MA sieht nur freigegebene)
-    if (type === "lohnzettel" && docs.length > 0) {
+    // Lohnzettel: nach Freigabedatum filtern (MA sieht nur freigegebene).
+    // Admin sieht ALLE — auch noch nicht freigegebene (Kontroll-Zweck).
+    if (type === "lohnzettel" && docs.length > 0 && !adminView) {
       const paths = docs.map((d) => d.path);
       const { data: meta } = await supabase
         .from("payslip_metadata")
@@ -95,6 +130,13 @@ export default function MyDocuments() {
     }
 
     setter(docs);
+  };
+
+  // Admin wechselt den Mitarbeiter → dessen Lohnzettel laden.
+  const handleViewUserChange = async (newUserId: string) => {
+    setViewUserId(newUserId);
+    setSelectedPayslips(new Set());
+    await fetchDocuments(newUserId, "lohnzettel", setPayslips, true);
   };
 
   const handleUpload = async (type: "lohnzettel" | "krankmeldung", file: File | null) => {
@@ -138,7 +180,7 @@ export default function MyDocuments() {
       toast({ variant: "destructive", title: "Fehler", description: `Upload fehlgeschlagen: ${error.message}` });
     } else {
       toast({ title: "Erfolg", description: "Dokument hochgeladen" });
-      await fetchDocuments(userId, type, type === "lohnzettel" ? setPayslips : setSickNotes);
+      await fetchDocuments(userId, type, type === "lohnzettel" ? setPayslips : setSickNotes, isAdmin);
 
       // Notify admins when employee uploads a sick note
       if (type === "krankmeldung") {
@@ -250,7 +292,7 @@ export default function MyDocuments() {
       toast({ variant: "destructive", title: "Fehler", description: "Löschen fehlgeschlagen" });
     } else {
       toast({ title: "Erfolg", description: "Dokument gelöscht" });
-      await fetchDocuments(userId, type, type === "lohnzettel" ? setPayslips : setSickNotes);
+      await fetchDocuments(userId, type, type === "lohnzettel" ? setPayslips : setSickNotes, isAdmin);
     }
   };
 
@@ -276,9 +318,41 @@ export default function MyDocuments() {
           </TabsList>
 
           <TabsContent value="payslips" className="space-y-4">
+            {/* Admin: Lohnzettel aller Mitarbeiter einsehbar — getrennt nach MA */}
+            {isAdmin && employeeOptions.length > 0 && (
+              <Card>
+                <CardContent className="pt-4 pb-4">
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <Label className="flex items-center gap-1.5 shrink-0">
+                      <Users className="w-4 h-4" />
+                      Lohnzettel von:
+                    </Label>
+                    <Select value={viewUserId} onValueChange={handleViewUserChange}>
+                      <SelectTrigger className="w-full sm:w-72">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {employeeOptions.map((emp) => (
+                          <SelectItem key={emp.user_id} value={emp.user_id}>
+                            {emp.name}{emp.user_id === userId ? " (ich)" : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Als Administrator siehst du auch noch nicht freigegebene Lohnzettel.
+                  </p>
+                </CardContent>
+              </Card>
+            )}
             <Card>
               <CardHeader>
-                <CardTitle>Meine Lohnzettel</CardTitle>
+                <CardTitle>
+                  {isAdmin && viewUserId !== userId
+                    ? `Lohnzettel — ${employeeOptions.find((e) => e.user_id === viewUserId)?.name || "Mitarbeiter"}`
+                    : "Meine Lohnzettel"}
+                </CardTitle>
                 <CardDescription>
                   Vom Administrator hochgeladene Lohnzettel
                 </CardDescription>
