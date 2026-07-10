@@ -166,7 +166,7 @@ function AppContent() {
           <Route path="/bad-weather" element={<ProtectedRoute minRole="vorarbeiter"><BadWeather /></ProtectedRoute>} />
           <Route path="/daily-reports" element={<ProtectedRoute minRole="vorarbeiter"><DailyReports /></ProtectedRoute>} />
           <Route path="/daily-reports/:id" element={<ProtectedRoute minRole="vorarbeiter"><DailyReportDetail /></ProtectedRoute>} />
-          <Route path="/documents" element={<ProtectedRoute minRole="vorarbeiter"><DocumentLibrary /></ProtectedRoute>} />
+          <Route path="/documents" element={<ProtectedRoute minRole="vorarbeiter" menuKey="dokumentenbibliothek"><DocumentLibrary /></ProtectedRoute>} />
           <Route path="/safety" element={<SafetyHub />} />
           <Route path="/safety/jahresunterweisungen" element={<ProtectedRoute minRole="vorarbeiter"><SafetyEvaluations /></ProtectedRoute>} />
           <Route path="/safety/baustellenunterweisungen" element={<ProtectedRoute minRole="vorarbeiter"><SafetyEvaluations /></ProtectedRoute>} />

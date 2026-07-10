@@ -22,9 +22,15 @@ function getEffectiveRole(isAdmin: boolean, kategorie: string | null): string {
 export function ProtectedRoute({
   children,
   minRole,
+  menuKey,
 }: {
   children: React.ReactNode;
   minRole: MinRole;
+  /** Optional: Menu-Key aus role_menu_settings. Wenn der Admin das Menue
+   *  fuer die Rolle des Users sichtbar geschaltet hat, wird der Zugriff
+   *  auch UNTER minRole erlaubt — gleiche Semantik wie die Dashboard-Kachel.
+   *  Behebt den Fall "Kachel sichtbar, aber Route wirft zur Startseite". */
+  menuKey?: string;
 }) {
   const [allowed, setAllowed] = useState<boolean | null>(null);
 
@@ -60,7 +66,22 @@ export function ProtectedRoute({
         const userLevel = ROLE_LEVEL[effective] ?? 2;
         const requiredLevel = ROLE_LEVEL[minRole] ?? 0;
 
-        if (active) setAllowed(userLevel >= requiredLevel);
+        let isAllowed = userLevel >= requiredLevel;
+
+        // Menu-Sichtbarkeits-Override: Kachel sichtbar = Route zugaenglich.
+        // Kein Eintrag in role_menu_settings zaehlt als sichtbar (gleicher
+        // Default wie menuVisible() am Dashboard).
+        if (!isAllowed && menuKey) {
+          const { data: menuRow } = await supabase
+            .from("role_menu_settings")
+            .select("visible")
+            .eq("role", effective)
+            .eq("menu_key", menuKey)
+            .maybeSingle();
+          isAllowed = menuRow ? !!menuRow.visible : true;
+        }
+
+        if (active) setAllowed(isAllowed);
       } catch (e) {
         console.error("ProtectedRoute checkAccess failed:", e);
         if (active) {
@@ -77,7 +98,7 @@ export function ProtectedRoute({
       active = false;
       window.clearTimeout(watchdog);
     };
-  }, [minRole]);
+  }, [minRole, menuKey]);
 
   if (allowed === null) return null; // loading
   if (!allowed) return <Navigate to="/" replace />;

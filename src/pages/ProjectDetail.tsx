@@ -200,14 +200,14 @@ const ProjectDetail = () => {
     if (data) setDocRecords(data as DocRecord[]);
   };
 
+  // Favoriten sind GLOBAL: vom Admin gesetzte Favoriten gelten fuer alle
+  // Anwender (kein user_id-Filter mehr). Schreiben duerfen per RLS nur
+  // Admins — der Stern-Button ist fuer Nicht-Admins read-only versteckt.
   const fetchFavorites = async () => {
     if (!projectId || type !== "plans") return;
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
     const { data } = await supabase
       .from("plan_favorites")
       .select("file_name, document_id")
-      .eq("user_id", user.id)
       .eq("project_id", projectId);
     if (data) {
       setFavFiles(new Set(data.filter((d: any) => d.file_name).map((d: any) => d.file_name)));
@@ -221,17 +221,24 @@ const ProjectDetail = () => {
     if (!user) return;
     const isFav = favFiles.has(fileName);
     if (isFav) {
-      await supabase
+      const { error } = await supabase
         .from("plan_favorites")
         .delete()
-        .eq("user_id", user.id)
         .eq("project_id", projectId)
         .eq("file_name", fileName);
+      if (error) {
+        toast({ variant: "destructive", title: "Fehler", description: "Nur Administratoren können Favoriten ändern." });
+        return;
+      }
       setFavFiles((prev) => { const n = new Set(prev); n.delete(fileName); return n; });
     } else {
-      await supabase
+      const { error } = await supabase
         .from("plan_favorites")
         .insert({ user_id: user.id, project_id: projectId, file_name: fileName });
+      if (error) {
+        toast({ variant: "destructive", title: "Fehler", description: "Nur Administratoren können Favoriten ändern." });
+        return;
+      }
       setFavFiles((prev) => new Set(prev).add(fileName));
     }
   };
@@ -288,17 +295,24 @@ const ProjectDetail = () => {
     if (!user) return;
     const isFav = favDocs.has(docId);
     if (isFav) {
-      await supabase
+      const { error } = await supabase
         .from("plan_favorites")
         .delete()
-        .eq("user_id", user.id)
         .eq("project_id", projectId)
         .eq("document_id", docId);
+      if (error) {
+        toast({ variant: "destructive", title: "Fehler", description: "Nur Administratoren können Favoriten ändern." });
+        return;
+      }
       setFavDocs((prev) => { const n = new Set(prev); n.delete(docId); return n; });
     } else {
-      await supabase
+      const { error } = await supabase
         .from("plan_favorites")
         .insert({ user_id: user.id, project_id: projectId, document_id: docId });
+      if (error) {
+        toast({ variant: "destructive", title: "Fehler", description: "Nur Administratoren können Favoriten ändern." });
+        return;
+      }
       setFavDocs((prev) => new Set(prev).add(docId));
     }
   };
@@ -1032,19 +1046,23 @@ const ProjectDetail = () => {
                                 {doc.text_content}
                               </p>
                             </div>
-                            {!archivMode && (
+                            {/* Favoriten sind global (Admin setzt fuer alle).
+                                Nicht-Admins sehen den Stern nur als Anzeige. */}
+                            {!archivMode && (isAdmin ? (
                               <Button
                                 variant="ghost"
                                 size="icon"
                                 className="h-8 w-8 shrink-0"
                                 onClick={() => toggleFavoriteDoc(doc.id)}
-                                title={favDocs.has(doc.id) ? "Favorit entfernen" : "Als Favorit markieren"}
+                                title={favDocs.has(doc.id) ? "Favorit entfernen (gilt für alle)" : "Als Favorit markieren (gilt für alle)"}
                               >
                                 <Star
                                   className={`w-4 h-4 ${favDocs.has(doc.id) ? "fill-yellow-400 text-yellow-500" : "text-muted-foreground"}`}
                                 />
                               </Button>
-                            )}
+                            ) : favDocs.has(doc.id) ? (
+                              <Star className="w-4 h-4 shrink-0 fill-yellow-400 text-yellow-500 mt-2" />
+                            ) : null)}
                             {/* Archiv/Endgueltig-Loeschen */}
                             {!archivMode ? (
                               <Button
@@ -1151,19 +1169,25 @@ const ProjectDetail = () => {
 
                           {/* Actions */}
                           <div className="flex gap-1 shrink-0">
-                            {isFavTab && (
+                            {/* Favoriten sind global (Admin setzt fuer alle).
+                                Nicht-Admins sehen den Stern nur als Anzeige. */}
+                            {isFavTab && (isAdmin ? (
                               <Button
                                 variant="ghost"
                                 size="icon"
                                 className="h-8 w-8"
                                 onClick={() => toggleFavoriteFile(file.name)}
-                                title={favFiles.has(file.name) ? "Favorit entfernen" : "Als Favorit markieren"}
+                                title={favFiles.has(file.name) ? "Favorit entfernen (gilt für alle)" : "Als Favorit markieren (gilt für alle)"}
                               >
                                 <Star
                                   className={`w-4 h-4 ${favFiles.has(file.name) ? "fill-yellow-400 text-yellow-500" : "text-muted-foreground"}`}
                                 />
                               </Button>
-                            )}
+                            ) : favFiles.has(file.name) ? (
+                              <span className="h-8 w-8 flex items-center justify-center">
+                                <Star className="w-4 h-4 fill-yellow-400 text-yellow-500" />
+                              </span>
+                            ) : null)}
                             {!isArchivTab && (() => {
                               const rec = findDocRecord(file.name);
                               const hasMeta = !!(rec?.bezeichnung || rec?.beschreibung);
