@@ -73,6 +73,13 @@ Aufgabe:
    - "stichtag": Das Ende des Abrechnungsmonats im Format YYYY-MM-DD (z.B. Abrechnung "04/2026" oder
      "April 2026" → "2026-04-30"). Falls nicht eindeutig: null.
 
+3) Extrahiere pro Mitarbeiter den ABRECHNUNGSMONAT des Lohnzettels:
+   - "abrechnungsmonat": Der Monat, fuer den der Lohnzettel gilt, im Format "MM/YYYY"
+     (z.B. "06/2026" fuer Juni 2026). Typische Bezeichnungen: "Abrechnung fuer",
+     "Abrechnungsmonat", "Abrechnungszeitraum", "Lohn/Gehalt fuer", "Periode",
+     oder ein Monat/Jahr im Kopfbereich des Lohnzettels.
+     Falls nicht eindeutig erkennbar: null.
+
 Antworte NUR mit einem validen JSON-Objekt:
 {
   "assignments": [
@@ -84,7 +91,8 @@ Antworte NUR mit einem validen JSON-Objekt:
       "urlaubsanspruch": 25,
       "resturlaub": 12,
       "urlaub_einheit": "tage",
-      "stichtag": "2026-04-30"
+      "stichtag": "2026-04-30",
+      "abrechnungsmonat": "04/2026"
     }
   ],
   "unassigned_pages": [5, 6]

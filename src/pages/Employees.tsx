@@ -142,6 +142,38 @@ export default function Employees() {
     setLoading(false);
   };
 
+  const [attachingAccount, setAttachingAccount] = useState(false);
+
+  // App-Account fuer bestehenden MA ohne user_id anlegen (Edge Function,
+  // attach-Modus). Danach ist der MA in Lohnzettel-Zuordnung, Plantafel,
+  // Team-Zeiterfassung etc. verfuegbar.
+  const handleAttachAccount = async (employee: Employee) => {
+    if (employee.user_id) return;
+    setAttachingAccount(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("create-employee-account", {
+        body: {
+          mode: "attach",
+          employeeId: employee.id,
+          email: employee.email || undefined,
+        },
+      });
+      if (error) throw error;
+      const resp = data as { success?: boolean; error?: string; userId?: string } | null;
+      if (!resp?.success) throw new Error(resp?.error || "Account-Anlage fehlgeschlagen");
+      toast({
+        title: "App-Account angelegt",
+        description: `${employee.vorname} ${employee.nachname} ist jetzt zuweisbar (Lohnzettel, Plantafel, Zeiterfassung).`,
+      });
+      setSelectedEmployee((prev) => prev ? { ...prev, user_id: resp.userId || null } : prev);
+      fetchEmployees();
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Fehler", description: err?.message || "Account-Anlage fehlgeschlagen" });
+    } finally {
+      setAttachingAccount(false);
+    }
+  };
+
   const handleToggleActive = async (employee: Employee) => {
     if (!employee.user_id) return;
     const currentActive = profileActiveMap[employee.user_id] !== false;
@@ -366,7 +398,7 @@ export default function Employees() {
               <DialogTitle>
                 {selectedEmployee?.vorname} {selectedEmployee?.nachname}
               </DialogTitle>
-              {selectedEmployee?.user_id && (
+              {selectedEmployee?.user_id ? (
                 <Button
                   variant={profileActiveMap[selectedEmployee.user_id] === false ? "default" : "destructive"}
                   size="sm"
@@ -374,7 +406,18 @@ export default function Employees() {
                 >
                   {profileActiveMap[selectedEmployee.user_id] === false ? "Aktivieren" : "Sperren"}
                 </Button>
-              )}
+              ) : selectedEmployee ? (
+                /* MA ohne App-Account: Account nachtraeglich anlegen — noetig
+                   z.B. fuer Lohnzettel-Zuordnung und Team-Zeiterfassung. */
+                <Button
+                  variant="default"
+                  size="sm"
+                  disabled={attachingAccount}
+                  onClick={() => handleAttachAccount(selectedEmployee)}
+                >
+                  {attachingAccount ? "Legt an..." : "App-Account anlegen"}
+                </Button>
+              ) : null}
             </div>
           </DialogHeader>
 

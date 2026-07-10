@@ -15,6 +15,10 @@ interface CreateEmployeeAccountRequest {
   email?: string;
   telefon?: string;
   stundenlohn?: number;
+  /** attach-Modus: statt neuem employees-Insert wird der Account an den
+   *  bestehenden employees-Datensatz mit dieser ID gehaengt. */
+  mode?: "create" | "attach";
+  employeeId?: string;
 }
 
 // Working-Hours-Defaults — gespiegelt von src/lib/workingHours.ts.
@@ -87,11 +91,36 @@ Deno.serve(async (req) => {
 
     // Eingabe parsen
     const body = (await req.json()) as CreateEmployeeAccountRequest;
-    const vorname = (body.vorname || "").trim();
-    const nachname = (body.nachname || "").trim();
-    const kategorie = body.kategorie;
+    const mode = body.mode === "attach" ? "attach" : "create";
+    let vorname = (body.vorname || "").trim();
+    let nachname = (body.nachname || "").trim();
+    let kategorie = body.kategorie;
     const telefon = body.telefon?.trim() || null;
     const stundenlohn = typeof body.stundenlohn === "number" ? body.stundenlohn : null;
+
+    // attach-Modus: bestehenden employees-Datensatz laden und Stammdaten
+    // von dort uebernehmen (Frontend muss sie nicht mitschicken).
+    let attachEmployee: { id: string; vorname: string; nachname: string; kategorie: string | null; user_id: string | null } | null = null;
+    if (mode === "attach") {
+      if (!body.employeeId) {
+        return json({ success: false, error: "employeeId ist im attach-Modus erforderlich" }, 400);
+      }
+      const { data: emp, error: empLoadErr } = await admin
+        .from("employees")
+        .select("id, vorname, nachname, kategorie, user_id")
+        .eq("id", body.employeeId)
+        .maybeSingle();
+      if (empLoadErr || !emp) {
+        return json({ success: false, error: "Mitarbeiter nicht gefunden" }, 404);
+      }
+      if (emp.user_id) {
+        return json({ success: false, error: "Dieser Mitarbeiter hat bereits einen App-Account" }, 400);
+      }
+      attachEmployee = emp;
+      vorname = emp.vorname;
+      nachname = emp.nachname;
+      kategorie = (emp.kategorie as Kategorie) || "facharbeiter";
+    }
 
     if (!vorname || !nachname) {
       return json({ success: false, error: "Vorname und Nachname sind erforderlich" }, 400);
@@ -137,7 +166,27 @@ Deno.serve(async (req) => {
       console.error("profile activate error:", profileErr);
     }
 
-    // employees-Row anlegen
+    // attach-Modus: bestehenden Datensatz mit dem neuen Account verknuepfen,
+    // Stammdaten bleiben unangetastet.
+    if (mode === "attach" && attachEmployee) {
+      const { error: attachErr } = await admin
+        .from("employees")
+        .update({ user_id: newUserId })
+        .eq("id", attachEmployee.id)
+        .is("user_id", null);
+      if (attachErr) {
+        await admin.auth.admin.deleteUser(newUserId).catch(() => {});
+        return json({ success: false, error: `Account-Verknuepfung fehlgeschlagen: ${attachErr.message}` }, 400);
+      }
+      return json({
+        success: true,
+        userId: newUserId,
+        employeeId: attachEmployee.id,
+        pseudoEmail: !inputEmail,
+      }, 200);
+    }
+
+    // create-Modus: employees-Row anlegen
     const employeeRow: Record<string, unknown> = {
       user_id: newUserId,
       vorname,

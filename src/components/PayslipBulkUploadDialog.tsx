@@ -30,7 +30,29 @@ type Assignment = {
   resturlaub: number | null;
   urlaub_einheit: "tage" | "stunden" | null;
   stichtag: string | null; // YYYY-MM-DD
+  // Abrechnungsmonat aus dem Lohnzettel (KI-extrahiert, editierbar).
+  // Format "MM/YYYY" — bestimmt den Dateinamen, nicht das Upload-Datum.
+  abrechnungsmonat: string | null;
 };
+
+// "06/2026" | "6/2026" → { mm: "06", yyyy: "2026" } | null
+const parseAbrechnungsmonat = (v: string | null): { mm: string; yyyy: string } | null => {
+  if (!v) return null;
+  const m = /^(\d{1,2})\s*\/\s*(\d{4})$/.exec(v.trim());
+  if (!m) return null;
+  const mm = m[1].padStart(2, "0");
+  if (Number(mm) < 1 || Number(mm) > 12) return null;
+  return { mm, yyyy: m[2] };
+};
+
+// Umlaute + Sonderzeichen fuer Storage-Dateinamen normalisieren.
+const sanitizeNamePart = (s: string): string =>
+  s
+    .replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue")
+    .replace(/Ä/g, "Ae").replace(/Ö/g, "Oe").replace(/Ü/g, "Ue")
+    .replace(/ß/g, "ss")
+    .replace(/[^a-zA-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
 
 interface Props {
   open: boolean;
@@ -221,6 +243,7 @@ export function PayslipBulkUploadDialog({ open, onOpenChange }: Props) {
         resturlaub: a.resturlaub ?? null,
         urlaub_einheit: a.urlaub_einheit ?? null,
         stichtag: a.stichtag ?? null,
+        abrechnungsmonat: a.abrechnungsmonat ?? null,
       }));
       setAssignments(withDates);
       setUnassignedPages(data.unassigned_pages || []);
@@ -247,6 +270,12 @@ export function PayslipBulkUploadDialog({ open, onOpenChange }: Props) {
   const updateAssignmentReleaseDate = (index: number, date: string) => {
     setAssignments((prev) =>
       prev.map((a, i) => (i === index ? { ...a, release_date: date } : a))
+    );
+  };
+
+  const updateAssignmentMonat = (index: number, value: string) => {
+    setAssignments((prev) =>
+      prev.map((a, i) => (i === index ? { ...a, abrechnungsmonat: value || null } : a))
     );
   };
 
@@ -280,17 +309,19 @@ export function PayslipBulkUploadDialog({ open, onOpenChange }: Props) {
     setStep(3);
 
     try {
-      // Dedupe: wenn die KI denselben MA zweimal erkannt hat (z.B. "Max Mueller"
-      // und "M. Mueller"), behalten wir nur den ersten Eintrag
+      // Dedupe: nur exakt gleiche (MA + Abrechnungsmonat)-Kombis werden
+      // uebersprungen. Derselbe MA mit ZWEI verschiedenen Monaten im selben
+      // Sammel-PDF ist legitim (z.B. Nachreichung aelterer Lohnzettel).
       const seen = new Set<string>();
       const duplicateNames: string[] = [];
       const validAssignments = assignments.filter((a) => {
         if (!a.matched_user_id) return false;
-        if (seen.has(a.matched_user_id)) {
+        const dedupeKey = `${a.matched_user_id}|${a.abrechnungsmonat || "?"}`;
+        if (seen.has(dedupeKey)) {
           duplicateNames.push(a.employee_name);
           return false;
         }
-        seen.add(a.matched_user_id);
+        seen.add(dedupeKey);
         return true;
       });
       if (duplicateNames.length > 0) {
@@ -319,17 +350,44 @@ export function PayslipBulkUploadDialog({ open, onOpenChange }: Props) {
         const pdfBytesOut = await newPdf.save();
         const blob = new Blob([pdfBytesOut], { type: "application/pdf" });
 
-        // Upload to storage
+        // Upload to storage. Dateiname: Vorname_Nachname_Lohnzettel_MM_JJJJ.
+        // MM/JJJJ kommt aus dem Abrechnungsmonat des Lohnzettels (KI-extrahiert,
+        // vom Admin editierbar) — NICHT aus dem Upload-Datum. Fallback auf
+        // Upload-Datum nur wenn kein Monat erkannt/eingegeben wurde.
+        const emp = employees.find((e) => e.user_id === assignment.matched_user_id);
+        const parsedMonat = parseAbrechnungsmonat(assignment.abrechnungsmonat);
         const now = new Date();
-        const monthYear = `${String(now.getMonth() + 1).padStart(2, "0")}_${now.getFullYear()}`;
-        const fileName = `${Date.now()}_Lohnzettel_${monthYear}.pdf`;
-        const filePath = `${assignment.matched_user_id}/lohnzettel/${fileName}`;
+        const mm = parsedMonat?.mm ?? String(now.getMonth() + 1).padStart(2, "0");
+        const yyyy = parsedMonat?.yyyy ?? String(now.getFullYear());
+        const nameStem = emp
+          ? `${sanitizeNamePart(emp.vorname)}_${sanitizeNamePart(emp.nachname)}`
+          : sanitizeNamePart(assignment.employee_name) || "Mitarbeiter";
+        const baseFileName = `${nameStem}_Lohnzettel_${mm}_${yyyy}`;
+
+        // Kollisions-Schutz: existiert die Datei schon (gleicher MA, gleicher
+        // Monat, z.B. Korrektur-Lohnzettel), Suffix _2, _3 ... anhaengen.
+        const folder = `${assignment.matched_user_id}/lohnzettel`;
+        let fileName = `${baseFileName}.pdf`;
+        const { data: existing } = await supabase.storage
+          .from("employee-documents")
+          .list(folder, { search: baseFileName });
+        if (existing && existing.some((f) => f.name === fileName)) {
+          let suffix = 2;
+          while (existing.some((f) => f.name === `${baseFileName}_${suffix}.pdf`)) suffix++;
+          fileName = `${baseFileName}_${suffix}.pdf`;
+        }
+        const filePath = `${folder}/${fileName}`;
 
         const { error: uploadError } = await supabase.storage
           .from("employee-documents")
           .upload(filePath, blob);
         if (uploadError) {
           console.error(`Upload error for ${assignment.employee_name}:`, uploadError);
+          toast({
+            variant: "destructive",
+            title: "Upload fehlgeschlagen",
+            description: `${assignment.employee_name}: ${uploadError.message}`,
+          });
           continue;
         }
 
@@ -557,6 +615,16 @@ export function PayslipBulkUploadDialog({ open, onOpenChange }: Props) {
                           onChange={(e) => updateAssignmentReleaseDate(i, e.target.value)}
                           className="h-8 text-xs w-36"
                           title="Freigabedatum für diesen Mitarbeiter"
+                        />
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs text-muted-foreground">Monat:</span>
+                        <Input
+                          value={a.abrechnungsmonat ?? ""}
+                          onChange={(e) => updateAssignmentMonat(i, e.target.value)}
+                          className={`h-8 text-xs w-24 ${!parseAbrechnungsmonat(a.abrechnungsmonat) ? "border-yellow-400" : ""}`}
+                          placeholder="MM/JJJJ"
+                          title="Abrechnungsmonat aus dem Lohnzettel — bestimmt den Dateinamen"
                         />
                       </div>
                     </div>
