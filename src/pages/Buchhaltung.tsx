@@ -311,7 +311,21 @@ export default function Buchhaltung() {
           ? { pdfText: prepared.pdfText, docType: "rechnung" }
           : { imageBase64: prepared.base64, mediaType: prepared.mimeType, docType: "rechnung" };
         const { data, error } = await supabase.functions.invoke("extract-document", { body: invokeBody });
-        if (error) throw new Error(error.message || "KI-Analyse fehlgeschlagen");
+        if (error) {
+          // Detail-Fehler aus dem Function-Response-Body ziehen — invoke
+          // liefert sonst nur "non-2xx status code".
+          let msg = error.message || "KI-Analyse fehlgeschlagen";
+          try {
+            const body = await (error as any).context?.json?.();
+            const details = `${body?.error || ""} ${body?.details || ""}`;
+            if (details.includes("insufficient_quota") || details.includes("exceeded your current quota")) {
+              msg = "KI-Guthaben aufgebraucht — bitte OpenAI-Konto aufladen (platform.openai.com → Billing).";
+            } else if (body?.error) {
+              msg = body.details ? `${body.error}: ${String(body.details).slice(0, 200)}` : body.error;
+            }
+          } catch { /* Body nicht lesbar — generische Meldung behalten */ }
+          throw new Error(msg);
+        }
         results.push({ idx, extracted: data });
         setUploadItems((prev) => prev.map((it, i) =>
           i === idx ? { ...it, status: "done", extracted: data } : it));
@@ -614,29 +628,36 @@ export default function Buchhaltung() {
             {uploadItems.length > 0 && (
               <div className="border rounded-lg divide-y max-h-56 overflow-y-auto">
                 {uploadItems.map((item, idx) => (
-                  <div key={item.id} className="flex items-center gap-2 p-2 text-sm">
-                    <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
-                    <span className="flex-1 truncate min-w-0">{item.file.name}</span>
-                    {item.status === "pending" && <Badge variant="outline" className="text-xs">Bereit</Badge>}
-                    {item.status === "processing" && (
-                      <Badge className="text-xs bg-blue-100 text-blue-800">
-                        <Loader2 className="h-3 w-3 mr-1 animate-spin" /> Läuft
-                      </Badge>
-                    )}
-                    {item.status === "done" && (
-                      <Badge className="text-xs bg-green-100 text-green-800">
-                        <CheckCircle2 className="h-3 w-3 mr-1" /> Fertig
-                      </Badge>
-                    )}
-                    {item.status === "error" && (
-                      <Badge className="text-xs bg-red-100 text-red-800" title={item.errorMsg}>
-                        <AlertCircle className="h-3 w-3 mr-1" /> Fehler
-                      </Badge>
-                    )}
-                    {!processing && (
-                      <button onClick={() => removeUploadItem(item.id)} className="text-muted-foreground hover:text-destructive">
-                        <X className="h-4 w-4" />
-                      </button>
+                  <div key={item.id} className="p-2 text-sm">
+                    <div className="flex items-center gap-2">
+                      <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      <span className="flex-1 truncate min-w-0">{item.file.name}</span>
+                      {item.status === "pending" && <Badge variant="outline" className="text-xs">Bereit</Badge>}
+                      {item.status === "processing" && (
+                        <Badge className="text-xs bg-blue-100 text-blue-800">
+                          <Loader2 className="h-3 w-3 mr-1 animate-spin" /> Läuft
+                        </Badge>
+                      )}
+                      {item.status === "done" && (
+                        <Badge className="text-xs bg-green-100 text-green-800">
+                          <CheckCircle2 className="h-3 w-3 mr-1" /> Fertig
+                        </Badge>
+                      )}
+                      {item.status === "error" && (
+                        <Badge className="text-xs bg-red-100 text-red-800" title={item.errorMsg}>
+                          <AlertCircle className="h-3 w-3 mr-1" /> Fehler
+                        </Badge>
+                      )}
+                      {!processing && (
+                        <button onClick={() => removeUploadItem(item.id)} className="text-muted-foreground hover:text-destructive">
+                          <X className="h-4 w-4" />
+                        </button>
+                      )}
+                    </div>
+                    {/* Fehlertext sichtbar ausschreiben — Tooltip allein
+                        reicht nicht (am Handy gar nicht erreichbar). */}
+                    {item.status === "error" && item.errorMsg && (
+                      <p className="text-xs text-red-600 mt-1 ml-6">{item.errorMsg}</p>
                     )}
                   </div>
                 ))}
