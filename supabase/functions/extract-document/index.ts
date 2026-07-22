@@ -103,23 +103,18 @@ GUTSCHRIFTEN / STORNIERUNGEN (negative Mengen oder Betraege):
 - Auch wenn der Einzelpreis positiv ist, kann der Gesamt-Wert negativ sein
   (wenn die Menge negativ ist).
 
-POSITIONS-RABATTE:
-- Wenn eine Position einen Rabatt hat (z.B. "-30,00%" neben dem Preis oder
-  in einer eigenen Rabatt-Spalte), rechne den Rabatt SOWOHL in den
-  Einzelpreis ALS AUCH in den Gesamt-Wert ein:
-  - "Einzelpreis (€ netto)" = gedruckter Einzelpreis × (1 - Rabatt/100)
-    — also der effektive Preis NACH Rabatt. NIEMALS den unrabattierten
-    Listen-Preis eintragen.
-  - "Gesamt (€ netto)" = der gedruckte Betrag der Position (der ist auf
-    der Rechnung bereits rabattiert). Kontrolle: Gesamt ≈ Menge ×
-    rabattierter Einzelpreis.
-  - Alternativ, wenn der gedruckte Betrag vorhanden ist: Einzelpreis =
-    Betrag ÷ Menge (ist automatisch der rabattierte Preis).
-- Beispiel: "DRAHTSTIFT | Menge 1 PG | Preis exkl. 21,4498 | -30,00% |
-  Betrag 15,01" → Einzelpreis: "15.01", Gesamt: "15.01".
-- Vermerke den Rabatt am Ende des "Material"-Feldes in Klammern, z.B.
-  "DRAHTSTIFT BLANK (Rabatt -30%)" — so bleibt sichtbar, dass rabattiert
-  wurde.
+PREISE (WICHTIG — inkl. Rabatte):
+- "Gesamt (€ netto)" = der gedruckte Betrag der Position (die Betrag-Spalte
+  der Rechnung). Dieser Wert ist bereits rabattiert, falls die Position
+  einen Rabatt hat.
+- "Einzelpreis (€ netto)" = der gedruckte Betrag ÷ Menge. Also NICHT den
+  Listen-/Katalogpreis aus der "Preis exkl."-Spalte, sondern den Betrag
+  durch die Menge teilen. So ist ein eventueller Rabatt automatisch
+  enthalten.
+- Beispiel mit Rabatt: "SPROSSENDOPPELLEITER | Menge 1 ST | Preis exkl.
+  87,4917 | -15,00% | Betrag 74,37" → Einzelpreis: "74.37", Gesamt: "74.37".
+- Rabatte NICHT in die Bezeichnung schreiben — das "Material"-Feld enthaelt
+  nur den reinen Artikelnamen, keinen Rabatt-Vermerk und kein Prozent.
 
 ------------------------------------
 
@@ -248,11 +243,11 @@ GUTSCHRIFTEN / STORNIERUNGEN (negative Mengen):
 - Negative Mengen ("-1,000 ST", "-5 RL") sind erlaubt und bedeuten Retouren
   oder Korrekturen. Uebernimm das Minus-Vorzeichen EXAKT in das Feld "Menge".
 
-POSITIONS-RABATTE:
-- Wenn neben dem Einzelpreis ein Positions-Rabatt steht (z.B. "8,9000 -30%"),
-  rechne den Rabatt SOWOHL in "Einzelpreis (€ netto)" (= effektiver Preis
-  nach Rabatt) ALS AUCH in "Gesamt (€ netto)" ein. Vermerke den Rabatt am
-  Ende des "Material"-Feldes in Klammern, z.B. "MATERIAL XYZ (Rabatt -30%)".
+PREISE (inkl. Rabatte):
+- "Gesamt (€ netto)" = gedruckter Betrag der Position (bereits rabattiert).
+- "Einzelpreis (€ netto)" = gedruckter Betrag ÷ Menge (Rabatt automatisch
+  enthalten), NICHT der Listenpreis.
+- Rabatte NICHT in die Bezeichnung schreiben — nur der reine Artikelname.
 
 ------------------------------------
 
@@ -384,6 +379,41 @@ Lies den Text des Dokuments buchstabengenau vom Bild ab. Achte besonders auf:
       } catch {
         console.error("JSON parse failed, returning empty structure. Raw text length:", text.length);
         extracted = {};
+      }
+    }
+
+    // ===== Deterministische Nachbearbeitung der Positionen =====
+    // 1) Einzelpreis = Betrag ÷ Menge. Der gedruckte Betrag ist auf der
+    //    Rechnung IMMER schon rabattiert — so ist der Einzelpreis unabhaengig
+    //    davon korrekt, ob die KI den Rabatt selbst verrechnet hat oder nicht
+    //    (behebt inkonsistente Rabatt-Anwendung, z.B. Sprossendoppelleiter).
+    // 2) Rabatt-Vermerk "(Rabatt -X%)" aus der Bezeichnung entfernen — der
+    //    Kunde soll den Rabatt im Artikelnamen nicht sehen.
+    const toNum = (v: unknown): number | null => {
+      if (v == null) return null;
+      const s = String(v).replace(",", ".").replace(/[^0-9.\-]/g, "").trim();
+      if (s === "" || s === "-" || s === ".") return null;
+      const n = Number(s);
+      return Number.isFinite(n) ? n : null;
+    };
+    if (Array.isArray(extracted?.["Positionen"])) {
+      for (const pos of extracted["Positionen"]) {
+        if (!pos || typeof pos !== "object") continue;
+        const menge = toNum(pos["Menge"]);
+        const gesamt = toNum(pos["Gesamt (€ netto)"]);
+        if (menge != null && menge !== 0 && gesamt != null) {
+          // auf 4 Nachkommastellen — deckt Cent-genaue Stueckpreise ab
+          const unit = Math.round((gesamt / menge) * 10000) / 10000;
+          pos["Einzelpreis (€ netto)"] = String(unit);
+        }
+        // Rabatt-Klammer + evtl. loses "-X%" aus dem Material-Namen strippen
+        if (typeof pos["Material"] === "string") {
+          pos["Material"] = pos["Material"]
+            .replace(/\s*\(\s*rabatt[^)]*\)/gi, "")
+            .replace(/\s*-?\d+([.,]\d+)?\s*%\s*/g, " ")
+            .replace(/\s{2,}/g, " ")
+            .trim();
+        }
       }
     }
 
