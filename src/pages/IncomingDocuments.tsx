@@ -14,7 +14,7 @@ import { DocumentCaptureDialog } from "@/components/DocumentCaptureDialog";
 import { DocumentDetailDialog, type IncomingDocument } from "@/components/DocumentDetailDialog";
 import { WarehouseDeliveryNoteDialog } from "@/components/warehouse/WarehouseDeliveryNoteDialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Download, Plus, Filter, FileText, ArrowRightLeft, Camera, Pencil, Trash2 } from "lucide-react";
+import { Download, Plus, Filter, FileText, ArrowRightLeft, Camera, Pencil, Trash2, ArrowUp, ArrowDown } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -63,6 +63,9 @@ export default function IncomingDocuments() {
   const [filterLieferant, setFilterLieferant] = useState("");
   const [filterMonth, setFilterMonth] = useState(now.getMonth() + 1);
   const [filterYear, setFilterYear] = useState(now.getFullYear());
+  // Sortierung nach Dokumentdatum: "desc" = neueste zuerst (Default),
+  // "asc" = aelteste zuerst. Toggle ueber den Datum-Spaltenkopf.
+  const [sortDir, setSortDir] = useState<"desc" | "asc">("desc");
 
   const [showCaptureDialog, setShowCaptureDialog] = useState(() => searchParams.get("capture") === "1");
   const hideListInitially = searchParams.get("capture") === "1";
@@ -144,15 +147,25 @@ export default function IncomingDocuments() {
     setLoading(false);
   }, [filterMonth, filterYear]);
 
-  // Apply client-side filters
-  const filtered = documents.filter((doc) => {
-    if (filterTyp !== "alle" && doc.typ !== filterTyp) return false;
-    if (filterStatus !== "alle" && doc.status !== filterStatus) return false;
-    if (filterProject !== "alle" && doc.project_id !== filterProject) return false;
-    if (filterLieferant && doc.lieferant && !doc.lieferant.toLowerCase().includes(filterLieferant.toLowerCase())) return false;
-    if (filterLieferant && !doc.lieferant) return false;
-    return true;
-  });
+  // Apply client-side filters + Sortierung nach Dokumentdatum.
+  // dokument_datum bevorzugt (das ist das fachlich relevante Datum, das in
+  // der Tabelle angezeigt wird), Fallback auf created_at wie in der Zelle.
+  const filtered = useMemo(() => {
+    const list = documents.filter((doc) => {
+      if (filterTyp !== "alle" && doc.typ !== filterTyp) return false;
+      if (filterStatus !== "alle" && doc.status !== filterStatus) return false;
+      if (filterProject !== "alle" && doc.project_id !== filterProject) return false;
+      if (filterLieferant && doc.lieferant && !doc.lieferant.toLowerCase().includes(filterLieferant.toLowerCase())) return false;
+      if (filterLieferant && !doc.lieferant) return false;
+      return true;
+    });
+    const dateOf = (d: IncomingDocument) => d.dokument_datum || d.created_at || "";
+    return [...list].sort((a, b) => {
+      const av = dateOf(a);
+      const bv = dateOf(b);
+      return sortDir === "desc" ? bv.localeCompare(av) : av.localeCompare(bv);
+    });
+  }, [documents, filterTyp, filterStatus, filterProject, filterLieferant, sortDir]);
 
   // Abgleich: filter without typ/status (show all for reconciliation)
   const abgleichFiltered = documents.filter((doc) => {
@@ -501,7 +514,19 @@ export default function IncomingDocuments() {
                               }}
                             />
                           </TableHead>
-                          <TableHead>Datum</TableHead>
+                          <TableHead>
+                            <button
+                              type="button"
+                              onClick={() => setSortDir((d) => (d === "desc" ? "asc" : "desc"))}
+                              className="flex items-center gap-1 hover:text-foreground transition-colors"
+                              title={sortDir === "desc" ? "Neueste zuerst — klicken für älteste zuerst" : "Älteste zuerst — klicken für neueste zuerst"}
+                            >
+                              Datum
+                              {sortDir === "desc"
+                                ? <ArrowDown className="h-3.5 w-3.5" />
+                                : <ArrowUp className="h-3.5 w-3.5" />}
+                            </button>
+                          </TableHead>
                           <TableHead>Typ</TableHead>
                           <TableHead>Lieferant</TableHead>
                           <TableHead className="hidden md:table-cell">Projekt</TableHead>

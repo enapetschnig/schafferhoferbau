@@ -12,6 +12,7 @@ import { Upload, Loader2, AlertTriangle, CheckCircle2, Trash2, FileText, Plus, C
 import "@/lib/pdfjsSetup";
 import * as pdfjsLib from "pdfjs-dist";
 import { SerialPhotoCapture } from "@/components/SerialPhotoCapture";
+import { normalizeImageOrientation } from "@/lib/imageOrientation";
 
 type DocType = "lieferschein" | "lagerlieferschein" | "rechnung";
 
@@ -185,12 +186,17 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
     setZielProjektId("");
   };
 
-  const handleFileSelected = (file: File) => {
-    setImageFile(file);
-    if (file.type.startsWith("image/")) {
+  const handleFileSelected = async (file: File) => {
+    // EXIF-Orientation gleich beim Auswaehlen in die Pixel backen — sonst
+    // werden Handy-Fotos (Rotation nur als EXIF-Tag) spaeter verdreht
+    // angezeigt und auch verdreht archiviert. Bei PDFs / In-App-Kamera-
+    // Snapshots ist das ein harmloser No-Op.
+    const normalized = await normalizeImageOrientation(file);
+    setImageFile(normalized);
+    if (normalized.type.startsWith("image/")) {
       const reader = new FileReader();
       reader.onload = (ev) => setImagePreview(ev.target?.result as string);
-      reader.readAsDataURL(file);
+      reader.readAsDataURL(normalized);
     } else {
       setImagePreview(null);
     }
@@ -491,7 +497,8 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
     // ein einzelner Upload scheitert.
     const zusatzUrls: string[] = [];
     const failedExtra: string[] = [];
-    for (const file of extraPages) {
+    for (const rawFile of extraPages) {
+      const file = await normalizeImageOrientation(rawFile);
       const ext = extFromFile(file);
       const filePath = `${storageFolder}/seite_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
       const { error: upErr } = await supabase.storage
@@ -509,7 +516,8 @@ export function DocumentCaptureDialog({ open, onOpenChange, onSuccess, onShowAll
     // Upload Ware-Fotos
     const warenUrls: string[] = [];
     const failedWare: string[] = [];
-    for (const file of warePhotos) {
+    for (const rawFile of warePhotos) {
+      const file = await normalizeImageOrientation(rawFile);
       const ext = extFromFile(file);
       const filePath = `${storageFolder}/ware_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
       const { error: upErr } = await supabase.storage
