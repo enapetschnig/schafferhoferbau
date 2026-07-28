@@ -148,7 +148,7 @@ export function MobilePhotoCapture({ open, onClose, onPhotoCapture, successMessa
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-auto p-0">
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-auto p-0" hideClose>
         <DialogHeader className="px-4 pt-4 pb-2">
           <DialogTitle className="flex items-center gap-2">
             <Camera className="w-5 h-5" />

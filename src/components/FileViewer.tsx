@@ -155,7 +155,7 @@ export function FileViewer({
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl h-[90vh] flex flex-col p-0">
+      <DialogContent className="max-w-4xl h-[90vh] flex flex-col p-0" hideClose>
         <DialogHeader className="px-6 py-4 border-b">
           <div className="flex items-center justify-between">
             <DialogTitle className="text-lg truncate pr-4">{fileName}</DialogTitle>

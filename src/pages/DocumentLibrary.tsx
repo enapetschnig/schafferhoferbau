@@ -544,7 +544,7 @@ export default function DocumentLibrary() {
 
       {/* Lightbox fuer Bilder mit Swipe */}
       <Dialog open={!!lightboxImage} onOpenChange={() => setLightboxImage(null)}>
-        <DialogContent className="max-w-4xl h-[90vh] flex flex-col p-0 bg-black/95">
+        <DialogContent className="max-w-4xl h-[90vh] flex flex-col p-0 bg-black/95" hideClose>
           {(() => {
             const imgs = lightboxImagesForCat(activeTab);
             const idx = lightboxImage ? imgs.findIndex((x) => x.url === lightboxImage) : -1;

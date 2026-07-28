@@ -514,13 +514,14 @@ export function DocumentDetailDialog({ document, open, onOpenChange, isAdmin, on
       {/* Vollbild-Galerie — wischbar links/rechts. Eigener grosser X-Button
           (auf iOS war der shadcn-Default zu klein), Pfeile fuer Desktop,
           Index-Anzeige bei Multi-Bild-Galerie. Default-Close-Button von
-          DialogContent wird per [&>button]:hidden weggeblendet. */}
+          DialogContent wird per hideClose ausgeblendet. */}
       <Dialog
         open={fullscreenGallery.length > 0}
         onOpenChange={(o) => { if (!o) closeFullscreen(); }}
       >
         <DialogContent
-          className="max-w-5xl h-[95vh] p-0 flex flex-col bg-black border-0 [&>button]:hidden"
+          className="max-w-5xl h-[95vh] p-0 flex flex-col bg-black border-0"
+          hideClose
         >
           {fullscreenGallery.length > 0 && (() => {
             const currentUrl = fullscreenGallery[fullscreenIndex];

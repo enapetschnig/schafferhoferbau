@@ -286,6 +286,7 @@ export function SerialPhotoCapture({
     >
       <DialogContent
         className="max-w-full w-screen h-[100dvh] p-0 m-0 border-0 rounded-none bg-black flex flex-col gap-0 sm:max-w-full"
+        hideClose
       >
         {/* Header */}
         <div className="flex items-center justify-between px-3 py-2 bg-black/90 text-white shrink-0">

@@ -250,7 +250,7 @@ export const DisturbancePhotos = ({ disturbanceId, canEdit }: DisturbancePhotosP
 
       {/* Fullscreen image dialog */}
       <Dialog open={!!selectedPhoto} onOpenChange={() => setSelectedPhoto(null)}>
-        <DialogContent className="max-w-[95vw] max-h-[95vh] p-0 overflow-hidden">
+        <DialogContent className="max-w-[95vw] max-h-[95vh] p-0 overflow-hidden" hideClose>
           <DialogClose className="absolute right-4 top-4 z-10 rounded-sm bg-black/50 p-2 opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2">
             <X className="h-5 w-5 text-white" />
             <span className="sr-only">Close</span>

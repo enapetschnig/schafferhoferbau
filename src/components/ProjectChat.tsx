@@ -700,7 +700,7 @@ export function ProjectChat({ projectId, projectName, isAdmin }: { projectId: st
 
       {/* Bild-Vorschau Lightbox */}
       <Dialog open={!!previewImage} onOpenChange={() => setPreviewImage(null)}>
-        <DialogContent className="max-w-4xl h-[90vh] flex flex-col p-0 bg-black/95">
+        <DialogContent className="max-w-4xl h-[90vh] flex flex-col p-0 bg-black/95" hideClose>
           {(() => {
             const isPdfPreview = (() => {
               if (!previewImage) return false;

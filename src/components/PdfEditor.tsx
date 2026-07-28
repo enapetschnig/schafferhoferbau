@@ -176,6 +176,7 @@ export function PdfEditor({ open, onClose, pdfUrl, fileName, onSave }: Props) {
         className="max-w-6xl p-0 flex flex-col gap-0 h-[95vh] overflow-hidden"
         onPointerDownOutside={(e) => saving !== "idle" && e.preventDefault()}
         onEscapeKeyDown={(e) => saving !== "idle" && e.preventDefault()}
+        hideClose
       >
         <DialogHeader className="px-4 py-3 border-b flex-row items-center justify-between space-y-0">
           <DialogTitle className="flex items-center gap-2 text-base min-w-0">
