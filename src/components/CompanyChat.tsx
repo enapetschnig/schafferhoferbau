@@ -8,6 +8,10 @@ import { handleChatInputKeyDown } from "@/lib/chatInputKeyHandler";
 import { useToast } from "@/hooks/use-toast";
 import { normalizeImageOrientation } from "@/lib/imageOrientation";
 import { VoiceAIInput } from "@/components/VoiceAIInput";
+import { ReadReceipt, type Recipient } from "@/components/chat/ReadReceipt";
+
+/** Ein Lese-Eintrag aus broadcast_message_reads. */
+type ReadRow = { message_id: string; user_id: string; read_at: string };
 
 type BroadcastMessage = {
   id: string;
@@ -51,6 +55,9 @@ export function CompanyChat({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Lesebestaetigungen + Empfaengerkreis des Kanals
+  const [reads, setReads] = useState<ReadRow[]>([]);
+  const [channelMembers, setChannelMembers] = useState<Recipient[]>([]);
 
   // Get current user
   useEffect(() => {
@@ -58,6 +65,55 @@ export function CompanyChat({
       if (user) setCurrentUserId(user.id);
     });
   }, []);
+
+  // Empfaengerkreis des Kanals — spiegelt die Sichtbarkeits-Regel aus der
+  // chat_channels-RLS: direct = beide Beteiligte; broadcast ohne Rollen =
+  // alle Aktiven; broadcast mit Rollen = passende employees.kategorie.
+  useEffect(() => {
+    if (!channel) return;
+    (async () => {
+      let ids: string[] = [];
+      if (channel.channel_type === "direct") {
+        ids = [channel.created_by, channel.target_user_id].filter(Boolean) as string[];
+      } else if (channel.target_roles.length > 0) {
+        const { data: emps } = await supabase
+          .from("employees")
+          .select("user_id, kategorie")
+          .not("user_id", "is", null)
+          .in("kategorie", channel.target_roles);
+        ids = (emps || []).map((e: any) => e.user_id);
+      }
+      const query = supabase.from("profiles").select("id, vorname, nachname").eq("is_active", true);
+      const { data: profs } =
+        channel.channel_type === "direct" || channel.target_roles.length > 0
+          ? await query.in("id", ids.length > 0 ? ids : ["00000000-0000-0000-0000-000000000000"])
+          : await query;
+      setChannelMembers(
+        (profs || []).map((p: any) => ({
+          id: p.id,
+          name: `${p.vorname} ${p.nachname}`.trim() || "Unbekannt",
+        }))
+      );
+    })();
+  }, [channel]);
+
+  // Fremde Nachrichten als gelesen markieren.
+  useEffect(() => {
+    if (!currentUserId || messages.length === 0) return;
+    const unread = messages
+      .filter((m) => m.user_id !== currentUserId)
+      .filter((m) => !reads.some((r) => r.message_id === m.id && r.user_id === currentUserId))
+      .map((m) => m.id);
+    if (unread.length === 0) return;
+    (async () => {
+      const rows = unread.map((id) => ({ message_id: id, user_id: currentUserId }));
+      const { data } = await (supabase as any)
+        .from("broadcast_message_reads")
+        .upsert(rows, { onConflict: "message_id,user_id", ignoreDuplicates: true })
+        .select("message_id, user_id, read_at");
+      if (data && data.length > 0) setReads((prev) => [...prev, ...(data as ReadRow[])]);
+    })();
+  }, [messages, currentUserId, reads]);
 
   // Load channel details
   useEffect(() => {
@@ -119,6 +175,16 @@ export function CompanyChat({
       setMessages(enriched);
       setHasMore((data || []).length === PAGE_SIZE);
       setInitialLoad(false);
+
+      // Lesebestaetigungen laden (RLS liefert nur Erlaubtes).
+      const msgIds = (data || []).map((m: any) => m.id);
+      if (msgIds.length > 0) {
+        const { data: readData } = await (supabase as any)
+          .from("broadcast_message_reads")
+          .select("message_id, user_id, read_at")
+          .in("message_id", msgIds);
+        if (readData) setReads(readData as ReadRow[]);
+      }
     };
 
     loadMessages();
@@ -157,6 +223,19 @@ export function CompanyChat({
         (payload) => {
           const deletedId = (payload.old as any)?.id;
           if (deletedId) setMessages((prev) => prev.filter((m) => m.id !== deletedId));
+        }
+      )
+      // Lesebestaetigungen live
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "broadcast_message_reads" },
+        (payload) => {
+          const row = payload.new as ReadRow;
+          setReads((prev) =>
+            prev.some((r) => r.message_id === row.message_id && r.user_id === row.user_id)
+              ? prev
+              : [...prev, row]
+          );
         }
       )
       .subscribe();
@@ -457,9 +536,14 @@ export function CompanyChat({
                   {/* Text */}
                   {msg.message && <p className="text-sm whitespace-pre-wrap break-words">{formatChatText(msg.message)}</p>}
 
-                  {/* Timestamp */}
-                  <p className={`text-[10px] mt-0.5 text-right ${isOwn ? "opacity-70" : "text-muted-foreground"}`}>
+                  {/* Timestamp + Lesebestaetigung (nur Absender und Admins) */}
+                  <p className={`text-[10px] mt-0.5 text-right flex items-center justify-end gap-1 ${isOwn ? "opacity-70" : "text-muted-foreground"}`}>
                     {formatTime(msg.created_at)}
+                    <ReadReceipt
+                      visible={isOwn || isAdmin}
+                      reads={reads.filter((r) => r.message_id === msg.id)}
+                      recipients={channelMembers.filter((m) => m.id !== msg.user_id)}
+                    />
                   </p>
 
                   {/* Admin delete */}

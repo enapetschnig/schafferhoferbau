@@ -13,6 +13,7 @@ import { ZoomableImage } from "@/components/ZoomableImage";
 import { PdfPreview } from "@/components/PdfPreview";
 import { useToast } from "@/hooks/use-toast";
 import { normalizeImageOrientation } from "@/lib/imageOrientation";
+import { ReadReceipt, type Recipient } from "@/components/chat/ReadReceipt";
 
 type ChatMessage = {
   id: string;
@@ -25,6 +26,9 @@ type ChatMessage = {
 };
 
 type Reaction = { id: string; message_id: string; user_id: string; emoji: string };
+
+/** Ein Lese-Eintrag aus message_reads. */
+type ReadRow = { message_id: string; user_id: string; read_at: string };
 
 const QUICK_EMOJIS = ["👍", "❤️", "✅", "👏", "🔥"];
 
@@ -45,6 +49,10 @@ export function ProjectChat({ projectId, projectName, isAdmin }: { projectId: st
   const [editingImage, setEditingImage] = useState<string | null>(null);
   const [reactions, setReactions] = useState<Reaction[]>([]);
   const [showEmojiPicker, setShowEmojiPicker] = useState<string | null>(null);
+  // Lesebestaetigungen: alle Lese-Eintraege der geladenen Nachrichten +
+  // Empfaengerkreis (Projekt-Mitglieder ausser dem jeweiligen Absender).
+  const [reads, setReads] = useState<ReadRow[]>([]);
+  const [projectMembers, setProjectMembers] = useState<Recipient[]>([]);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pdfInputRef = useRef<HTMLInputElement>(null);
@@ -111,11 +119,61 @@ export function ProjectChat({ projectId, projectName, isAdmin }: { projectId: st
           .select("*")
           .in("message_id", msgIds);
         if (reactData) setReactions(reactData as Reaction[]);
+
+        // Lesebestaetigungen laden. RLS liefert nur, was der User sehen darf
+        // (eigene Eintraege, eigene Nachrichten, bzw. alles fuer Admins).
+        const { data: readData } = await (supabase as any).from("message_reads")
+          .select("message_id, user_id, read_at")
+          .in("message_id", msgIds);
+        if (readData) setReads(readData as ReadRow[]);
       }
     };
 
     loadMessages();
   }, [projectId]);
+
+  // Empfaengerkreis des Projekt-Chats = alle mit project_access.
+  useEffect(() => {
+    if (!projectId) return;
+    (async () => {
+      const { data: access } = await supabase
+        .from("project_access")
+        .select("user_id")
+        .eq("project_id", projectId);
+      const ids = (access || []).map((a: any) => a.user_id).filter(Boolean);
+      if (ids.length === 0) { setProjectMembers([]); return; }
+      const { data: profs } = await supabase
+        .from("profiles")
+        .select("id, vorname, nachname")
+        .in("id", ids);
+      setProjectMembers(
+        (profs || []).map((p: any) => ({
+          id: p.id,
+          name: `${p.vorname} ${p.nachname}`.trim() || "Unbekannt",
+        }))
+      );
+    })();
+  }, [projectId]);
+
+  // Sichtbare fremde Nachrichten als gelesen markieren (einmal pro Nachricht).
+  useEffect(() => {
+    if (!currentUserId || messages.length === 0) return;
+    const unread = messages
+      .filter((m) => m.user_id !== currentUserId)
+      .filter((m) => !reads.some((r) => r.message_id === m.id && r.user_id === currentUserId))
+      .map((m) => m.id);
+    if (unread.length === 0) return;
+    (async () => {
+      const rows = unread.map((id) => ({ message_id: id, user_id: currentUserId }));
+      // onConflict: doppelte Markierungen (z.B. zwei offene Tabs) ignorieren
+      const { data } = await (supabase as any).from("message_reads")
+        .upsert(rows, { onConflict: "message_id,user_id", ignoreDuplicates: true })
+        .select("message_id, user_id, read_at");
+      if (data && data.length > 0) {
+        setReads((prev) => [...prev, ...(data as ReadRow[])]);
+      }
+    })();
+  }, [messages, currentUserId, reads]);
 
   // Realtime subscription
   useEffect(() => {
@@ -156,6 +214,19 @@ export function ProjectChat({ projectId, projectName, isAdmin }: { projectId: st
         (payload) => {
           const deletedId = (payload.old as any)?.id;
           if (deletedId) setMessages(prev => prev.filter(m => m.id !== deletedId));
+        }
+      )
+      // Lesebestaetigungen live — Haken springen um, sobald jemand liest.
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "message_reads" },
+        (payload) => {
+          const row = payload.new as ReadRow;
+          setReads((prev) =>
+            prev.some((r) => r.message_id === row.message_id && r.user_id === row.user_id)
+              ? prev
+              : [...prev, row]
+          );
         }
       )
       .subscribe();
@@ -613,9 +684,14 @@ export function ProjectChat({ projectId, projectName, isAdmin }: { projectId: st
                     );
                   })()}
 
-                  {/* Timestamp */}
-                  <p className={`text-[10px] mt-0.5 text-right ${isOwn ? "opacity-70" : "text-muted-foreground"}`}>
+                  {/* Timestamp + Lesebestaetigung (nur Absender und Admins) */}
+                  <p className={`text-[10px] mt-0.5 text-right flex items-center justify-end gap-1 ${isOwn ? "opacity-70" : "text-muted-foreground"}`}>
                     {formatTime(msg.created_at)}
+                    <ReadReceipt
+                      visible={isOwn || !!isAdmin}
+                      reads={reads.filter((r) => r.message_id === msg.id)}
+                      recipients={projectMembers.filter((m) => m.id !== msg.user_id)}
+                    />
                   </p>
 
                   {/* Admin delete */}
