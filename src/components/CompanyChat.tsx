@@ -276,6 +276,22 @@ export function CompanyChat({
     const enriched = await enrichMessages(reversed);
     setMessages((prev) => [...enriched, ...prev]);
     setHasMore((data || []).length === PAGE_SIZE);
+
+    // Lesebestaetigungen der nachgeladenen Nachrichten holen — sonst wirken
+    // aeltere Nachrichten faelschlich als ungelesen.
+    const olderIds = (data || []).map((m: any) => m.id);
+    if (olderIds.length > 0) {
+      const { data: readData } = await (supabase as any)
+        .from("broadcast_message_reads")
+        .select("message_id, user_id, read_at")
+        .in("message_id", olderIds);
+      if (readData) {
+        setReads((prev) => {
+          const known = new Set(prev.map((r) => `${r.message_id}|${r.user_id}`));
+          return [...prev, ...(readData as ReadRow[]).filter((r) => !known.has(`${r.message_id}|${r.user_id}`))];
+        });
+      }
+    }
     setLoadingMore(false);
   };
 

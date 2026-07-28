@@ -290,6 +290,30 @@ export function ProjectChat({ projectId, projectName, isAdmin }: { projectId: st
     const enriched = await enrichMessages(reversed);
     setMessages(prev => [...enriched, ...prev]);
     setHasMore((data || []).length === PAGE_SIZE);
+
+    // Reaktionen + Lesebestaetigungen der nachgeladenen Nachrichten holen —
+    // sonst wirken aeltere Nachrichten faelschlich als ungelesen.
+    const olderIds = (data || []).map((m: any) => m.id);
+    if (olderIds.length > 0) {
+      const [{ data: reactData }, { data: readData }] = await Promise.all([
+        supabase.from("message_reactions").select("*").in("message_id", olderIds),
+        (supabase as any).from("message_reads")
+          .select("message_id, user_id, read_at")
+          .in("message_id", olderIds),
+      ]);
+      if (reactData) {
+        setReactions((prev) => {
+          const known = new Set(prev.map((r) => r.id));
+          return [...prev, ...(reactData as Reaction[]).filter((r) => !known.has(r.id))];
+        });
+      }
+      if (readData) {
+        setReads((prev) => {
+          const known = new Set(prev.map((r) => `${r.message_id}|${r.user_id}`));
+          return [...prev, ...(readData as ReadRow[]).filter((r) => !known.has(`${r.message_id}|${r.user_id}`))];
+        });
+      }
+    }
     setLoadingMore(false);
   };
 
