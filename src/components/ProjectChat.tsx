@@ -166,9 +166,17 @@ export function ProjectChat({ projectId, projectName, isAdmin }: { projectId: st
     (async () => {
       const rows = unread.map((id) => ({ message_id: id, user_id: currentUserId }));
       // onConflict: doppelte Markierungen (z.B. zwei offene Tabs) ignorieren
-      const { data } = await (supabase as any).from("message_reads")
+      const { data, error } = await (supabase as any).from("message_reads")
         .upsert(rows, { onConflict: "message_id,user_id", ignoreDuplicates: true })
         .select("message_id, user_id, read_at");
+      // Fehler nicht verschlucken — sonst sieht eine fehlgeschlagene
+      // Markierung exakt aus wie "noch nicht gelesen" und faellt nie auf.
+      if (error) {
+        console.error("Lesebestaetigung (Projekt-Chat) fehlgeschlagen:", error, {
+          anzahl: rows.length,
+        });
+        return;
+      }
       if (data && data.length > 0) {
         setReads((prev) => [...prev, ...(data as ReadRow[])]);
       }

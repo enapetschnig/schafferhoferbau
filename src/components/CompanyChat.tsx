@@ -107,10 +107,18 @@ export function CompanyChat({
     if (unread.length === 0) return;
     (async () => {
       const rows = unread.map((id) => ({ message_id: id, user_id: currentUserId }));
-      const { data } = await (supabase as any)
+      const { data, error } = await (supabase as any)
         .from("broadcast_message_reads")
         .upsert(rows, { onConflict: "message_id,user_id", ignoreDuplicates: true })
         .select("message_id, user_id, read_at");
+      // Fehler nicht verschlucken — sonst sieht eine fehlgeschlagene
+      // Markierung exakt aus wie "noch nicht gelesen" und faellt nie auf.
+      if (error) {
+        console.error("Lesebestaetigung (Firmen-Chat) fehlgeschlagen:", error, {
+          anzahl: rows.length,
+        });
+        return;
+      }
       if (data && data.length > 0) setReads((prev) => [...prev, ...(data as ReadRow[])]);
     })();
   }, [messages, currentUserId, reads]);
