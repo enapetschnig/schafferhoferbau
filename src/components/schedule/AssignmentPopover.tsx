@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { format, startOfISOWeek } from "date-fns";
 import { de } from "date-fns/locale";
-import { Trash2, AlertTriangle, Truck, Target } from "lucide-react";
+import { Trash2, AlertTriangle, Truck, Target, Users, ChevronDown, ChevronUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
@@ -33,6 +33,8 @@ interface Props {
   assignment: Assignment | null;
   existingAssignments?: Assignment[];
   projects: Project[];
+  /** Alle sichtbaren Mitarbeiter - fuer "weitere Mitarbeiter mit einteilen" */
+  allProfiles?: Profile[];
   holidays?: CompanyHoliday[];
   onAssign: (userId: string, date: Date, projectId: string, notizen?: string, transportErforderlich?: boolean) => void;
   onRemove: (userId: string, date: Date, assignmentId?: string) => void;
@@ -47,6 +49,7 @@ export function AssignmentPopover({
   assignment,
   existingAssignments = [],
   projects,
+  allProfiles = [],
   holidays = [],
   onAssign,
   onRemove,
@@ -58,6 +61,9 @@ export function AssignmentPopover({
   const [tagesziel, setTagesziel] = useState("");
   const [wochenziel, setWochenziel] = useState("");
   const [savingGoals, setSavingGoals] = useState(false);
+  // Weitere Mitarbeiter, die dieselbe Einteilung bekommen sollen
+  const [weitereUserIds, setWeitereUserIds] = useState<string[]>([]);
+  const [weitereOffen, setWeitereOffen] = useState(false);
 
   const isRangeMode = days && days.length > 1;
 
@@ -65,6 +71,9 @@ export function AssignmentPopover({
     setSelectedProject(assignment?.project_id || "");
     setNotizen(assignment?.notizen || "");
     setTransportErforderlich(!!assignment?.transport_erforderlich);
+    // Auswahl beim Oeffnen zuruecksetzen - sonst schleppt sie sich zum
+    // naechsten Mitarbeiter mit
+    setWeitereUserIds([]);
   }, [assignment, open]);
 
   // Bestehende Tages-/Wochenziele laden (nur im Single-Day-Modus)
@@ -98,12 +107,19 @@ export function AssignmentPopover({
     })();
   }, [open, profile, date, isRangeMode]);
 
-  const persistGoals = async () => {
-    if (!profile) return;
-    setSavingGoals(true);
+  /**
+   * Ziele speichern.
+   *
+   * @param userId Fuer wen
+   * @param darfLoeschen Nur beim urspruenglich angeklickten Mitarbeiter darf ein
+   *   leeres Feld ein bestehendes Ziel loeschen. Bei zusaetzlich ausgewaehlten
+   *   Mitarbeitern wuerde das sonst deren Ziele ungefragt mitloeschen.
+   */
+  const persistGoalsFor = async (userId: string, darfLoeschen: boolean) => {
     const { data: { user } } = await supabase.auth.getUser();
     const createdBy = user?.id || null;
     const nowIso = new Date().toISOString();
+    const profile = { id: userId };
 
     if (isRangeMode && days) {
       // Range-Mode: nur Upsert, kein Delete (leere Felder lassen bestehende Ziele unberuehrt)
@@ -142,7 +158,7 @@ export function AssignmentPopover({
           { user_id: profile.id, scope: "day", datum: datumStr, week_start: null, ziel: tagesziel.trim(), created_by: createdBy, updated_at: nowIso },
           { onConflict: "user_id,datum", ignoreDuplicates: false }
         );
-      } else {
+      } else if (darfLoeschen) {
         await (supabase.from("worker_goals") as any)
           .delete()
           .eq("user_id", profile.id)
@@ -156,7 +172,7 @@ export function AssignmentPopover({
           { user_id: profile.id, scope: "week", datum: null, week_start: weekStartStr, ziel: wochenziel.trim(), created_by: createdBy, updated_at: nowIso },
           { onConflict: "user_id,week_start", ignoreDuplicates: false }
         );
-      } else {
+      } else if (darfLoeschen) {
         await (supabase.from("worker_goals") as any)
           .delete()
           .eq("user_id", profile.id)
@@ -164,24 +180,37 @@ export function AssignmentPopover({
           .eq("week_start", weekStartStr);
       }
     }
-    setSavingGoals(false);
   };
 
   if (!profile || !date) return null;
 
   const handleSave = async () => {
     if (!selectedProject) return;
-    if (isRangeMode && days) {
-      for (const d of days) {
-        onAssign(profile.id, d, selectedProject, notizen || undefined, transportErforderlich);
+    setSavingGoals(true);
+
+    // Der angeklickte Mitarbeiter zuerst, danach die mitausgewaehlten -
+    // alle bekommen dieselbe Einteilung
+    const alleUserIds = [profile.id, ...weitereUserIds];
+
+    for (const userId of alleUserIds) {
+      if (isRangeMode && days) {
+        for (const d of days) {
+          onAssign(userId, d, selectedProject, notizen || undefined, transportErforderlich);
+        }
+      } else if (date) {
+        onAssign(userId, date, selectedProject, notizen || undefined, transportErforderlich);
       }
-    } else if (date) {
-      onAssign(profile.id, date, selectedProject, notizen || undefined, transportErforderlich);
+      // Leere Zielfelder duerfen nur beim angeklickten Mitarbeiter loeschen
+      await persistGoalsFor(userId, userId === profile.id);
     }
-    // Tages-/Wochenziel persistieren (Single- und Range-Modus)
-    await persistGoals();
+
+    setSavingGoals(false);
+    setWeitereUserIds([]);
     onOpenChange(false);
   };
+
+  // Alle ausser dem gerade angeklickten Mitarbeiter
+  const andereProfiles = allProfiles.filter((p) => p.id !== profile.id);
 
   const dateLabel = isRangeMode
     ? `${days.length} Tage: ${format(days[0], "EE dd.MM.", { locale: de })} – ${format(days[days.length - 1], "EE dd.MM.", { locale: de })}`
@@ -245,6 +274,76 @@ export function AssignmentPopover({
               ))}
             </SelectContent>
           </Select>
+
+          {/* Weitere Mitarbeiter gleich mit einteilen - erspart das einzelne
+              Hineinziehen in die Plantafel */}
+          {andereProfiles.length > 0 && (
+            <div className="rounded-md border">
+              <button
+                type="button"
+                onClick={() => setWeitereOffen((v) => !v)}
+                className="flex items-center justify-between w-full gap-2 p-2 text-left hover:bg-muted/30 transition-colors"
+              >
+                <span className="flex items-center gap-2 text-sm">
+                  <Users className="h-4 w-4 text-muted-foreground" />
+                  Weitere Mitarbeiter mit einteilen
+                </span>
+                <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                  {weitereUserIds.length > 0 && (
+                    <Badge variant="secondary" className="text-xs">
+                      {weitereUserIds.length}
+                    </Badge>
+                  )}
+                  {weitereOffen ? (
+                    <ChevronUp className="h-4 w-4" />
+                  ) : (
+                    <ChevronDown className="h-4 w-4" />
+                  )}
+                </span>
+              </button>
+              {weitereOffen && (
+                <div className="border-t p-2 space-y-1 max-h-44 overflow-y-auto">
+                  <div className="flex gap-2 pb-1">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() =>
+                        setWeitereUserIds(
+                          weitereUserIds.length === andereProfiles.length
+                            ? []
+                            : andereProfiles.map((p) => p.id)
+                        )
+                      }
+                    >
+                      {weitereUserIds.length === andereProfiles.length
+                        ? "Auswahl leeren"
+                        : "Alle auswählen"}
+                    </Button>
+                  </div>
+                  {andereProfiles.map((p) => (
+                    <label
+                      key={p.id}
+                      className="flex items-center gap-2 p-1.5 rounded hover:bg-muted/40 cursor-pointer"
+                    >
+                      <Checkbox
+                        checked={weitereUserIds.includes(p.id)}
+                        onCheckedChange={(v) =>
+                          setWeitereUserIds((prev) =>
+                            v === true ? [...prev, p.id] : prev.filter((id) => id !== p.id)
+                          )
+                        }
+                      />
+                      <span className="text-sm">
+                        {p.vorname} {p.nachname}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           <Textarea
             placeholder="Notiz für den Mitarbeiter (optional)..."
@@ -310,9 +409,13 @@ export function AssignmentPopover({
           >
             {savingGoals
               ? "Speichern..."
-              : isRangeMode && days
-                ? `${days.length} Tage zuweisen`
-                : "Speichern"}
+              : (() => {
+                  const anzahlMA = 1 + weitereUserIds.length;
+                  const maTeil = anzahlMA > 1 ? ` · ${anzahlMA} Mitarbeiter` : "";
+                  return isRangeMode && days
+                    ? `${days.length} Tage zuweisen${maTeil}`
+                    : `Speichern${maTeil}`;
+                })()}
           </Button>
         </DialogFooter>
       </DialogContent>

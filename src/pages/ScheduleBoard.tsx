@@ -13,6 +13,7 @@ import {
 import type {
   Assignment,
   DailyTarget,
+  Profile,
   ScheduleMode,
 } from "@/components/schedule/scheduleTypes";
 import { getAssignmentForDay, getAssignmentsForDay, getProjectColorClass } from "@/components/schedule/scheduleUtils";
@@ -30,7 +31,7 @@ import { ResourcesManager } from "@/components/schedule/ResourcesManager";
 import { ResourcesGanttSection } from "@/components/schedule/ResourcesGanttSection";
 import { WeekExcelIO } from "@/components/schedule/WeekExcelIO";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Package } from "lucide-react";
+import { Package, Eye, EyeOff } from "lucide-react";
 
 export default function ScheduleBoard() {
   const navigate = useNavigate();
@@ -95,6 +96,9 @@ export default function ScheduleBoard() {
 
   // Resources manager dialog
   const [resourcesDialogOpen, setResourcesDialogOpen] = useState(false);
+  // Ausgeblendete Mitarbeiter (Admin) - werden erst beim Oeffnen geladen
+  const [hiddenDialogOpen, setHiddenDialogOpen] = useState(false);
+  const [hiddenProfiles, setHiddenProfiles] = useState<Profile[]>([]);
 
   // Touch-Swipe-Navigation in der Wochenansicht: links wischen = naechste,
   // rechts wischen = vorherige Woche. Damit kann man auf dem Handy schneller
@@ -378,6 +382,52 @@ export default function ScheduleBoard() {
     }
   };
 
+  /**
+   * Mitarbeiter aus der Plantafel nehmen. Admin-Einstellung, gilt fuer alle -
+   * die Person bleibt vollstaendig angelegt, nur diese Tafel wird ruhiger.
+   */
+  const handleHideProfile = async (profile: Profile) => {
+    const name = `${profile.vorname} ${profile.nachname}`.trim();
+    if (
+      !confirm(
+        `"${name}" in der Plantafel ausblenden?\n\nDie Person bleibt angelegt, bestehende Einteilungen bleiben erhalten. Über "Ausgeblendete" lässt sie sich wieder einblenden.`
+      )
+    )
+      return;
+
+    const { error } = await (supabase.from("profiles") as any)
+      .update({ plantafel_sichtbar: false })
+      .eq("id", profile.id);
+    if (error) {
+      toast({ variant: "destructive", title: "Fehler", description: error.message });
+      return;
+    }
+    toast({ title: `${name} ausgeblendet` });
+    fetchData(weekStart, weekEnd, mode);
+  };
+
+  const openHiddenDialog = async () => {
+    const { data } = await (supabase.from("profiles") as any)
+      .select("id, vorname, nachname, sort_order, plantafel_sichtbar")
+      .eq("is_active", true)
+      .eq("plantafel_sichtbar", false)
+      .order("nachname");
+    setHiddenProfiles((data || []) as Profile[]);
+    setHiddenDialogOpen(true);
+  };
+
+  const handleShowProfile = async (profile: Profile) => {
+    const { error } = await (supabase.from("profiles") as any)
+      .update({ plantafel_sichtbar: true })
+      .eq("id", profile.id);
+    if (error) {
+      toast({ variant: "destructive", title: "Fehler", description: error.message });
+      return;
+    }
+    setHiddenProfiles((prev) => prev.filter((p) => p.id !== profile.id));
+    fetchData(weekStart, weekEnd, mode);
+  };
+
   const popoverProfile = profiles.find((p) => p.id === popoverUserId) || null;
   const popoverAssignment =
     popoverUserId && popoverDate
@@ -445,6 +495,11 @@ export default function ScheduleBoard() {
               <Package className="h-4 w-4 mr-1" /> Ressourcen
             </Button>
           )}
+          {isAdmin && (
+            <Button variant="outline" size="sm" onClick={openHiddenDialog}>
+              <EyeOff className="h-4 w-4 mr-1" /> Ausgeblendete
+            </Button>
+          )}
           {(isAdmin || isVorarbeiter) && mode === "week" && (
             <WeekExcelIO
               weekStart={weekStart}
@@ -506,6 +561,7 @@ export default function ScheduleBoard() {
                 onRangeSelect={
                   isAdmin || isVorarbeiter ? handleRangeSelect : undefined
                 }
+                onHideProfile={isAdmin ? handleHideProfile : undefined}
               />
               {!isExternView && (
                 <ResourcesGanttSection
@@ -530,6 +586,8 @@ export default function ScheduleBoard() {
             holidays={companyHolidays}
             leaveRequests={leaveRequests}
             onSelectWeek={(wStart) => { setWeekStart(wStart); setMode("week"); }}
+            // Schreiben auf yearly_plan_blocks ist per RLS Admins vorbehalten
+            canEdit={isAdmin}
           />
         )}
       </main>
@@ -544,12 +602,13 @@ export default function ScheduleBoard() {
         assignment={popoverAssignment || null}
         existingAssignments={popoverExistingAssignments}
         projects={projects}
+        allProfiles={profiles}
         holidays={companyHolidays}
+        // Genau EIN Tag je Aufruf: ueber die Tage laeuft bereits der Dialog.
+        // Frueher wurde hier nochmals ueber popoverDays geschleift - bei 5
+        // ausgewaehlten Tagen ergab das 25 statt 5 Schreibvorgaenge.
         onAssign={async (uid, date, projectId, notizen, transportErforderlich) => {
-          const daysToAssign = popoverDays.length > 1 ? popoverDays : [date];
-          for (const d of daysToAssign) {
-            await handleAssign(uid, d, projectId, notizen, transportErforderlich);
-          }
+          await handleAssign(uid, date, projectId, notizen, transportErforderlich);
         }}
         onRemove={handleRemove}
       />
@@ -565,6 +624,37 @@ export default function ScheduleBoard() {
         dailyTarget={sheetTarget || null}
         onUpdateTarget={upsertTarget}
       />
+
+      {/* Ausgeblendete Mitarbeiter wieder einblenden */}
+      <Dialog open={hiddenDialogOpen} onOpenChange={setHiddenDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Ausgeblendete Mitarbeiter</DialogTitle>
+          </DialogHeader>
+          {hiddenProfiles.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Aktuell ist niemand ausgeblendet. Zum Ausblenden in der Plantafel auf
+              den Namen zeigen und das Augen-Symbol anklicken.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {hiddenProfiles.map((p) => (
+                <div
+                  key={p.id}
+                  className="flex items-center justify-between gap-2 p-2 border rounded-md"
+                >
+                  <span className="text-sm">
+                    {p.vorname} {p.nachname}
+                  </span>
+                  <Button size="sm" variant="outline" onClick={() => handleShowProfile(p)}>
+                    <Eye className="h-4 w-4 mr-1" /> Einblenden
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Ressourcen-Verwaltung */}
       <Dialog open={resourcesDialogOpen} onOpenChange={setResourcesDialogOpen}>

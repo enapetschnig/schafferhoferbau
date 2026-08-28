@@ -16,7 +16,8 @@ import {
   isAfter,
 } from "date-fns";
 import { de } from "date-fns/locale";
-import { Plus, Trash2, GripVertical, Package } from "lucide-react";
+import { Plus, Trash2, GripVertical, Package, ChevronUp, ChevronDown } from "lucide-react";
+import { groupPlanBlocksByRow, assignStackLevels, blockLabel } from "@/lib/yearPlanning";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -84,6 +85,8 @@ interface Props {
   holidays: CompanyHoliday[];
   leaveRequests: LeaveRequest[];
   onSelectWeek?: (weekStart: Date) => void;
+  /** Nur Administratoren duerfen Bloecke pflegen (siehe RLS auf yearly_plan_blocks) */
+  canEdit?: boolean;
 }
 
 const BLOCK_COLORS = [
@@ -107,6 +110,7 @@ export function YearPlanningView({
   assignments,
   holidays,
   onSelectWeek,
+  canEdit = true,
 }: Props) {
   const { toast } = useToast();
   const [planBlocks, setPlanBlocks] = useState<PlanBlock[]>([]);
@@ -116,6 +120,9 @@ export function YearPlanningView({
   const [createDrag, setCreateDrag] = useState<{
     kind: "plan" | "resource";
     resourceId?: string;
+    /** Zeile, in der gezogen wird - so landet der neue Abschnitt beim richtigen Projekt */
+    rowKey?: string;
+    rowProjectId?: string | null;
     startWeek: number;
     endWeek: number;
     active: boolean;
@@ -285,9 +292,23 @@ export function YearPlanningView({
   };
 
   // Create-Drag: auf leerer Flaeche ziehen um neuen Block zu erstellen
-  const startCreateDrag = (e: React.PointerEvent, kind: "plan" | "resource", weekNum: number, resourceId?: string) => {
+  const startCreateDrag = (
+    e: React.PointerEvent,
+    kind: "plan" | "resource",
+    weekNum: number,
+    resourceId?: string,
+    row?: { key: string; blocks: PlanBlock[] }
+  ) => {
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    setCreateDrag({ kind, resourceId, startWeek: weekNum, endWeek: weekNum, active: true });
+    setCreateDrag({
+      kind,
+      resourceId,
+      rowKey: row?.key,
+      rowProjectId: row?.blocks[0]?.project_id ?? null,
+      startWeek: weekNum,
+      endWeek: weekNum,
+      active: true,
+    });
   };
 
   const updateCreateDrag = (weekNum: number) => {
@@ -303,13 +324,18 @@ export function YearPlanningView({
     const ew = Math.max(createDrag.startWeek, createDrag.endWeek);
     if (createDrag.kind === "plan") {
       setEditingBlock(null);
+      // Wurde in einer Projektzeile gezogen, ist das Projekt schon klar -
+      // dann entsteht ein weiterer Abschnitt fuer dasselbe Projekt.
+      const vorlage = createDrag.rowProjectId
+        ? planBlocks.find((b) => b.project_id === createDrag.rowProjectId)
+        : undefined;
       setBlockForm({
-        title: "",
-        projectId: "__none__",
-        color: BLOCK_COLORS[0],
+        title: vorlage?.title || "",
+        projectId: createDrag.rowProjectId || "__none__",
+        color: vorlage?.color || BLOCK_COLORS[0],
         startWeek: String(sw),
         endWeek: String(ew),
-        partie: "",
+        partie: vorlage?.partie || "",
         individualName: "",
       });
       setShowBlockDialog(true);
@@ -326,6 +352,61 @@ export function YearPlanningView({
       setShowResourceDialog(true);
     }
     setCreateDrag(null);
+  };
+
+  // Eine Zeile je Projekt (mit allen Abschnitten), freie Bloecke je eigene Zeile
+  const planRows = useMemo(
+    () => groupPlanBlocksByRow(planBlocks, (id) => projects.find((p) => p.id === id)?.name),
+    [planBlocks, projects]
+  );
+
+  /**
+   * Zeile verschieben. sort_order wird fuer ALLE Bloecke der Zeile gesetzt,
+   * damit die Gruppe zusammenbleibt - sonst reisst es ein Projekt auseinander.
+   */
+  const movePlanRow = async (rowIdx: number, direction: "up" | "down") => {
+    const ziel = direction === "up" ? rowIdx - 1 : rowIdx + 1;
+    if (ziel < 0 || ziel >= planRows.length) return;
+
+    const neu = [...planRows];
+    [neu[rowIdx], neu[ziel]] = [neu[ziel], neu[rowIdx]];
+
+    // Optimistisch anzeigen
+    const neueOrder = new Map<string, number>();
+    neu.forEach((row, idx) => row.blocks.forEach((b) => neueOrder.set(b.id, idx)));
+    setPlanBlocks((prev) =>
+      prev.map((b) => (neueOrder.has(b.id) ? { ...b, sort_order: neueOrder.get(b.id)! } : b))
+    );
+
+    const results = await Promise.all(
+      [...neueOrder.entries()].map(([id, order]) =>
+        supabase.from("yearly_plan_blocks").update({ sort_order: order }).eq("id", id)
+      )
+    );
+    if (results.some((r) => r.error)) {
+      toast({ variant: "destructive", title: "Reihenfolge nicht gespeichert" });
+      fetchPlanBlocks();
+    }
+  };
+
+  /** Ressourcen-Zeile verschieben (resources.sort_order). */
+  const moveResourceRow = async (rowIdx: number, direction: "up" | "down") => {
+    const ziel = direction === "up" ? rowIdx - 1 : rowIdx + 1;
+    if (ziel < 0 || ziel >= resources.length) return;
+
+    const neu = [...resources];
+    [neu[rowIdx], neu[ziel]] = [neu[ziel], neu[rowIdx]];
+    setResources(neu.map((r, idx) => ({ ...r, sort_order: idx })));
+
+    const results = await Promise.all(
+      neu.map((r, idx) =>
+        (supabase.from("resources") as any).update({ sort_order: idx }).eq("id", r.id)
+      )
+    );
+    if (results.some((r: any) => r.error)) {
+      toast({ variant: "destructive", title: "Reihenfolge nicht gespeichert" });
+      fetchResources();
+    }
   };
 
   // Helper: bekommt effektive start/end_week waehrend Drag
@@ -541,7 +622,7 @@ export function YearPlanningView({
       <div
         className="grid sticky top-0 z-20 bg-card border-b"
         style={{
-          gridTemplateColumns: `minmax(140px, 200px) ${monthGroups
+          gridTemplateColumns: `minmax(200px, 300px) ${monthGroups
             .map((g) => `repeat(${g.span}, minmax(24px, 1fr))`)
             .join(" ")}`,
         }}
@@ -562,7 +643,7 @@ export function YearPlanningView({
       <div
         className="grid sticky top-[28px] z-20 bg-card border-b"
         style={{
-          gridTemplateColumns: `minmax(140px, 200px) repeat(${weeks.length}, minmax(24px, 1fr))`,
+          gridTemplateColumns: `minmax(200px, 300px) repeat(${weeks.length}, minmax(24px, 1fr))`,
         }}
       >
         <div className="p-1 border-r text-xs text-muted-foreground sticky left-0 bg-card z-30">
@@ -593,7 +674,7 @@ export function YearPlanningView({
             key={project.id}
             className="grid border-b"
             style={{
-              gridTemplateColumns: `minmax(140px, 200px) repeat(${weeks.length}, minmax(24px, 1fr))`,
+              gridTemplateColumns: `minmax(200px, 300px) repeat(${weeks.length}, minmax(24px, 1fr))`,
             }}
           >
             <div className="p-1.5 border-r text-xs font-medium truncate sticky left-0 bg-card z-10">
@@ -654,68 +735,131 @@ export function YearPlanningView({
         </div>
       </div>
 
-      {/* Plan blocks */}
-      {planBlocks.map((block) => {
-        const { start: effStart, end: effEnd } = getEffectiveRange(block.id, "plan", block.start_week, block.end_week);
+      {/* Plan blocks: EINE Zeile je Projekt, darin beliebig viele zeitlich
+          getrennte Bloecke. Freie Bloecke ohne Projekt behalten je eine Zeile. */}
+      {planRows.map((row, rowIdx) => {
+        const stackLevels = assignStackLevels(row.blocks);
+        const zeilenHoehe = (Math.max(...row.blocks.map((b) => stackLevels.get(b.id) ?? 0)) + 1) * 24;
         return (
         <div
-          key={block.id}
+          key={row.key}
           data-yp-row="true"
-          className="grid border-b hover:bg-muted/20"
+          className="grid border-b hover:bg-muted/20 group"
           style={{
-            gridTemplateColumns: `minmax(140px, 200px) repeat(${weeks.length}, minmax(24px, 1fr))`,
+            gridTemplateColumns: `minmax(200px, 300px) repeat(${weeks.length}, minmax(24px, 1fr))`,
           }}
         >
-          <div
-            className="p-1.5 border-r text-xs font-medium truncate sticky left-0 bg-card z-10 flex items-center gap-1 cursor-pointer"
-            onClick={() => openEditBlock(block)}
-          >
-            <GripVertical className="h-3 w-3 text-muted-foreground flex-shrink-0" />
-            <span>{block.title}</span>
-            {block.individual_name && <span className="text-primary font-semibold"> · {block.individual_name}</span>}
-            {block.partie && <span className="text-muted-foreground">({block.partie})</span>}
+          <div className="p-1.5 border-r text-xs font-medium truncate sticky left-0 bg-card z-10 flex items-center gap-1">
+            {/* Reihenfolge aendern - gilt fuer alle Bloecke der Zeile */}
+            {canEdit && (
+              <span className="flex flex-col shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button
+                  type="button"
+                  className="h-3 leading-none text-muted-foreground hover:text-primary disabled:opacity-30"
+                  disabled={rowIdx === 0}
+                  onClick={() => movePlanRow(rowIdx, "up")}
+                  title="Nach oben"
+                >
+                  <ChevronUp className="h-3 w-3" />
+                </button>
+                <button
+                  type="button"
+                  className="h-3 leading-none text-muted-foreground hover:text-primary disabled:opacity-30"
+                  disabled={rowIdx === planRows.length - 1}
+                  onClick={() => movePlanRow(rowIdx, "down")}
+                  title="Nach unten"
+                >
+                  <ChevronDown className="h-3 w-3" />
+                </button>
+              </span>
+            )}
+            <span className="truncate">{row.label}</span>
+            {row.isProject && row.blocks.length > 1 && (
+              <span className="text-muted-foreground shrink-0">({row.blocks.length})</span>
+            )}
           </div>
           {weeks.map((w) => {
-            const inRange = w.weekNum >= effStart && w.weekNum <= effEnd;
             const holiday = isHolidayWeek(w.start);
-            const isStartWeek = w.weekNum === effStart;
-            const isEndWeek = w.weekNum === effEnd;
+            // Alle Bloecke dieser Zeile, die in dieser Woche liegen
+            const treffer = row.blocks
+              .map((block) => {
+                const { start, end } = getEffectiveRange(block.id, "plan", block.start_week, block.end_week);
+                return { block, start, end };
+              })
+              .filter(({ start, end }) => w.weekNum >= start && w.weekNum <= end);
+            const leer = treffer.length === 0;
+            const isCreateDragHere = createDrag?.kind === "plan"
+              && createDrag.rowKey === row.key
+              && w.weekNum >= Math.min(createDrag.startWeek, createDrag.endWeek)
+              && w.weekNum <= Math.max(createDrag.startWeek, createDrag.endWeek);
             return (
               <div
                 key={w.weekNum}
-                className={`border-r min-h-[24px] relative ${holiday ? "bg-gray-100" : ""}`}
+                className={`border-r relative ${holiday ? "bg-gray-100" : ""} ${
+                  isCreateDragHere ? "bg-primary/20" : leer && canEdit ? "hover:bg-primary/10 cursor-crosshair" : ""
+                }`}
+                style={{ minHeight: `${zeilenHoehe}px` }}
+                // Auf freier Flaeche derselben Zeile ziehen = weiterer Block
+                // fuer DIESES Projekt (6 Wochen Arbeit, Pause, wieder weiter)
+                onPointerDown={(e) => {
+                  if (leer && canEdit) startCreateDrag(e, "plan", w.weekNum, undefined, row);
+                }}
+                onPointerEnter={() => {
+                  if (createDrag?.kind === "plan" && createDrag.rowKey === row.key) updateCreateDrag(w.weekNum);
+                }}
+                title={leer && canEdit ? "Ziehen für weiteren Abschnitt" : undefined}
               >
-                {inRange && (
-                  <div
-                    className="absolute inset-0 border-y touch-none select-none flex items-stretch"
-                    style={{
-                      backgroundColor: block.color + "40",
-                      borderColor: block.color,
-                      cursor: dragState?.id === block.id ? "grabbing" : "grab",
-                    }}
-                    onPointerDown={(e) => startDrag(e, block.id, "plan", "move", block.start_week, block.end_week)}
-                    onClick={(e) => {
-                      if (dragState?.deltaWeeks === 0 || !dragState) openEditBlock(block);
-                    }}
-                    title={`${block.title}${block.partie ? ` (${block.partie})` : ""} – KW ${effStart}-${effEnd} · ziehen zum Verschieben`}
-                  >
-                    {isStartWeek && (
-                      <div
-                        className="w-1.5 cursor-ew-resize bg-white/30 hover:bg-white/60"
-                        onPointerDown={(e) => startDrag(e, block.id, "plan", "resize-start", block.start_week, block.end_week)}
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                    )}
-                    <div className="flex-1" />
-                    {isEndWeek && (
-                      <div
-                        className="w-1.5 cursor-ew-resize bg-white/30 hover:bg-white/60"
-                        onPointerDown={(e) => startDrag(e, block.id, "plan", "resize-end", block.start_week, block.end_week)}
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                    )}
-                  </div>
-                )}
+                {treffer.map(({ block, start: effStart, end: effEnd }) => {
+                  const ebene = stackLevels.get(block.id) ?? 0;
+                  const isStartWeek = w.weekNum === effStart;
+                  const isEndWeek = w.weekNum === effEnd;
+                  const beschriftung = blockLabel(block);
+                  return (
+                    <div
+                      key={block.id}
+                      className="absolute inset-x-0 border-y touch-none select-none flex items-stretch overflow-hidden"
+                      style={{
+                        top: `${ebene * 24}px`,
+                        height: "24px",
+                        backgroundColor: (block.color || "#3B82F6") + "40",
+                        borderColor: block.color || "#3B82F6",
+                        cursor: dragState?.id === block.id ? "grabbing" : "grab",
+                      }}
+                      onPointerDown={(e) => startDrag(e, block.id, "plan", "move", block.start_week, block.end_week)}
+                      onClick={() => {
+                        if (dragState?.deltaWeeks === 0 || !dragState) openEditBlock(block);
+                      }}
+                      title={`${beschriftung}${block.partie ? ` (${block.partie})` : ""} – KW ${effStart}-${effEnd} · ziehen zum Verschieben`}
+                    >
+                      {isStartWeek && (
+                        <div
+                          className="w-1.5 cursor-ew-resize bg-white/30 hover:bg-white/60 shrink-0"
+                          onPointerDown={(e) => startDrag(e, block.id, "plan", "resize-start", block.start_week, block.end_week)}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      )}
+                      {/* Beschriftung nur in der Startwoche - sie laeuft ueber
+                          die Zellgrenze hinaus, damit auch lange Texte lesbar
+                          sind (pointer-events aus, sonst blockiert sie das Ziehen) */}
+                      {isStartWeek && beschriftung && (
+                        <span
+                          className="absolute left-2.5 top-0 h-full flex items-center whitespace-nowrap text-[10px] font-medium pointer-events-none"
+                          style={{ color: block.color || "#3B82F6" }}
+                        >
+                          {beschriftung}
+                        </span>
+                      )}
+                      <div className="flex-1" />
+                      {isEndWeek && (
+                        <div
+                          className="w-1.5 cursor-ew-resize bg-white/30 hover:bg-white/60 shrink-0"
+                          onPointerDown={(e) => startDrag(e, block.id, "plan", "resize-end", block.start_week, block.end_week)}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             );
           })}
@@ -728,7 +872,7 @@ export function YearPlanningView({
         data-yp-row="true"
         className="grid border-b bg-primary/5"
         style={{
-          gridTemplateColumns: `minmax(140px, 200px) repeat(${weeks.length}, minmax(24px, 1fr))`,
+          gridTemplateColumns: `minmax(200px, 300px) repeat(${weeks.length}, minmax(24px, 1fr))`,
         }}
       >
         <div className="p-1.5 border-r text-xs text-muted-foreground truncate sticky left-0 bg-card z-10 flex items-center gap-1">
@@ -780,19 +924,41 @@ export function YearPlanningView({
       </div>
 
       {/* Ressourcen-Zeilen: eine Zeile pro Ressource */}
-      {resources.map((resource) => {
+      {resources.map((resource, resIdx) => {
         const blocks = resourceBlocks.filter((b) => b.resource_id === resource.id);
         const resColor = resource.farbe || "#F97316";
         return (
           <div
             key={resource.id}
             data-yp-row="true"
-            className="grid border-b"
+            className="grid border-b group"
             style={{
-              gridTemplateColumns: `minmax(140px, 200px) repeat(${weeks.length}, minmax(24px, 1fr))`,
+              gridTemplateColumns: `minmax(200px, 300px) repeat(${weeks.length}, minmax(24px, 1fr))`,
             }}
           >
             <div className="p-1.5 border-r text-xs font-medium truncate sticky left-0 bg-card z-10 flex items-center gap-1.5">
+              {canEdit && (
+                <span className="flex flex-col shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button
+                    type="button"
+                    className="h-3 leading-none text-muted-foreground hover:text-primary disabled:opacity-30"
+                    disabled={resIdx === 0}
+                    onClick={() => moveResourceRow(resIdx, "up")}
+                    title="Nach oben"
+                  >
+                    <ChevronUp className="h-3 w-3" />
+                  </button>
+                  <button
+                    type="button"
+                    className="h-3 leading-none text-muted-foreground hover:text-primary disabled:opacity-30"
+                    disabled={resIdx === resources.length - 1}
+                    onClick={() => moveResourceRow(resIdx, "down")}
+                    title="Nach unten"
+                  >
+                    <ChevronDown className="h-3 w-3" />
+                  </button>
+                </span>
+              )}
               <div className="w-3 h-3 rounded shrink-0" style={{ backgroundColor: resource.farbe || "#94A3B8" }} />
               <span className="truncate">{resource.name}</span>
             </div>
@@ -903,8 +1069,15 @@ export function YearPlanningView({
               <Input value={blockForm.partie} onChange={(e) => setBlockForm({ ...blockForm, partie: e.target.value })} placeholder="Partie 1, Partie 2..." />
             </div>
             <div>
-              <Label>Individueller Name</Label>
-              <Input value={blockForm.individualName} onChange={(e) => setBlockForm({ ...blockForm, individualName: e.target.value })} placeholder="z.B. SEPP, MAX" />
+              <Label>Bezeichnung des Abschnitts</Label>
+              <Input
+                value={blockForm.individualName}
+                onChange={(e) => setBlockForm({ ...blockForm, individualName: e.target.value })}
+                placeholder="z. B. Rohbau, Fertigstellung, SEPP"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Wird direkt im Farbblock angezeigt. Leer lassen: dann steht der Titel dort.
+              </p>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">

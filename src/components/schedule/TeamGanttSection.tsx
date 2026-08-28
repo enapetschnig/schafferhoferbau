@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { format, startOfISOWeek } from "date-fns";
-import { ChevronDown, ChevronRight, Users, Truck, Target } from "lucide-react";
+import { ChevronDown, ChevronRight, Users, Truck, Target, EyeOff } from "lucide-react";
 import { GanttBar } from "./GanttBar";
 import {
   getAssignmentForDay,
@@ -30,6 +30,8 @@ interface Props {
   canEditProject: (projectId: string) => boolean;
   onCellClick?: (userId: string, date: Date) => void;
   onRangeSelect?: (userId: string, days: Date[]) => void;
+  /** Nur fuer Admins gesetzt: blendet den Mitarbeiter aus der Plantafel aus */
+  onHideProfile?: (profile: Profile) => void;
 }
 
 export function TeamGanttSection({
@@ -43,6 +45,7 @@ export function TeamGanttSection({
   canEditProject,
   onCellClick,
   onRangeSelect,
+  onHideProfile,
 }: Props) {
   const [collapsed, setCollapsed] = useState(false);
   const [dragUserId, setDragUserId] = useState<string | null>(null);
@@ -123,8 +126,21 @@ export function TeamGanttSection({
             }}
           >
             {/* Label */}
-            <div className={`p-2 border-r text-sm sticky left-0 z-10 flex flex-col justify-center gap-0.5 ${empColor.bg} ${empColor.text}`}>
-              <span className="font-medium truncate">{profile.vorname} {profile.nachname}</span>
+            <div className={`group p-2 border-r text-sm sticky left-0 z-10 flex flex-col justify-center gap-0.5 ${empColor.bg} ${empColor.text}`}>
+              <div className="flex items-center gap-1 min-w-0">
+                <span className="font-medium truncate flex-1">{profile.vorname} {profile.nachname}</span>
+                {/* Admin: Mitarbeiter aus der Plantafel nehmen (gilt fuer alle) */}
+                {onHideProfile && (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); onHideProfile(profile); }}
+                    className="opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity shrink-0 p-0.5 hover:bg-black/10 rounded"
+                    title={`${profile.vorname} ${profile.nachname} in der Plantafel ausblenden`}
+                  >
+                    <EyeOff className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
               {wochenziel && (
                 <span
                   className="flex items-center gap-1 text-[10px] font-normal bg-amber-50 border border-amber-200 text-amber-900 rounded px-1 py-0.5 truncate"
