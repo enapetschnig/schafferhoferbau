@@ -962,13 +962,46 @@ const TimeTracking = ({ embedded }: TimeTrackingEmbeddedProps = {}) => {
       }
     }
 
+    // Ziel-User-Liste vorziehen: die Ueberschneidungspruefung muss gegen
+    // GENAU die Mitarbeiter laufen, fuer die gebucht wird.
+    // Frueher wurde hier immer nur (targetUserId || user.id) geprueft - beim
+    // Erfassen fuer Kollegen schlug damit die eigene Buchung des Erfassers an
+    // ("Zeitueberschneidung", obwohl er selbst gar nicht ausgewaehlt war).
+    const isMultiMode = showMultiSelect && !editMode;
+    const targetUserIds: string[] = isMultiMode
+      ? selectedAdditionalEmployees
+      : [targetUserId || user.id];
+
+    if (isMultiMode && targetUserIds.length === 0) {
+      toast({
+        variant: "destructive",
+        title: "Kein Arbeiter ausgewählt",
+        description: "Bitte mindestens einen Arbeiter auswählen oder dich selbst eintragen.",
+      });
+      setSaving(false);
+      return;
+    }
+
     // Check for overlaps with existing entries (skip entries being edited, skip for external)
     if (!editMode && !isExternalUser) {
       const { data: existingEntries } = await supabase
         .from("time_entries")
-        .select("id, start_time, end_time, taetigkeit")
-        .eq("user_id", targetUserId || user.id)
+        .select("id, user_id, start_time, end_time, taetigkeit")
+        .in("user_id", targetUserIds)
         .eq("datum", selectedDate);
+
+      // Namen nur nachschlagen, wenn mehrere Personen betroffen sind
+      let namen: Record<string, string> = {};
+      if (targetUserIds.length > 1) {
+        const { data: emps } = await supabase
+          .from("employees")
+          .select("user_id, vorname, nachname")
+          .in("user_id", targetUserIds);
+        namen = Object.fromEntries(
+          (emps || []).map((e: any) => [e.user_id, `${e.vorname} ${e.nachname}`.trim()])
+        );
+      }
+      const nameVon = (uid: string) => (namen[uid] ? `${namen[uid]}: ` : "");
 
       if (existingEntries && existingEntries.length > 0) {
         for (const entry of existingEntries) {
@@ -976,7 +1009,7 @@ const TimeTracking = ({ embedded }: TimeTrackingEmbeddedProps = {}) => {
             toast({
               variant: "destructive",
               title: "Tag bereits blockiert",
-              description: `Für diesen Tag ist bereits ${entry.taetigkeit} eingetragen.`
+              description: `${nameVon(entry.user_id)}Für diesen Tag ist bereits ${entry.taetigkeit} eingetragen.`
             });
             setSaving(false);
             return;
@@ -994,7 +1027,7 @@ const TimeTracking = ({ embedded }: TimeTrackingEmbeddedProps = {}) => {
               toast({
                 variant: "destructive",
                 title: "Zeitüberschneidung",
-                description: `Block ${i + 1} überschneidet mit bestehendem Eintrag (${entry.start_time.substring(0, 5)} - ${entry.end_time.substring(0, 5)})`
+                description: `${nameVon(entry.user_id)}Block ${i + 1} überschneidet mit bestehendem Eintrag (${entry.start_time.substring(0, 5)} - ${entry.end_time.substring(0, 5)})`
               });
               setSaving(false);
               return;
@@ -1029,24 +1062,8 @@ const TimeTracking = ({ embedded }: TimeTrackingEmbeddedProps = {}) => {
     const dateObj = new Date(selectedDate);
     const daySplit = splitHours(dayTotalHours, dateObj, employeeSchedule, employeeSchwellenwert);
 
-    // Ziel-User-Liste: im Multi-Modus sind das genau die ausgewaehlten
-    // Arbeiter (inkl. Erfasser, falls er nicht abgewaehlt hat). Sonst
-    // bleibt es beim klassischen Single-User-Pfad (Admin-edit fuer
-    // anderen / external / editMode).
-    const isMultiMode = showMultiSelect && !editMode;
-    const targetUserIds: string[] = isMultiMode
-      ? selectedAdditionalEmployees
-      : [targetUserId || user.id];
-
-    if (isMultiMode && targetUserIds.length === 0) {
-      toast({
-        variant: "destructive",
-        title: "Kein Arbeiter ausgewählt",
-        description: "Bitte mindestens einen Arbeiter auswählen oder dich selbst eintragen.",
-      });
-      setSaving(false);
-      return;
-    }
+    // isMultiMode und targetUserIds stehen bereits oben fest (vor der
+    // Ueberschneidungspruefung) - dieselbe Liste wird hier geschrieben.
 
     // Ein Block-Insert-Loop pro User in der Ziel-Liste. Identisch fuer alle.
     for (const targetUid of targetUserIds) {
