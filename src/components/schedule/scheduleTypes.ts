@@ -1,5 +1,20 @@
-export type Profile = { id: string; vorname: string; nachname: string };
-export type Project = { id: string; name: string };
+export type Profile = {
+  id: string;
+  vorname: string;
+  nachname: string;
+  /** Prioritaet in der Plantafel (Admin-Reihenfolge), NULL = ans Ende */
+  sort_order?: number | null;
+  /** false = in der Plantafel ausgeblendet */
+  plantafel_sichtbar?: boolean | null;
+};
+export type Project = {
+  id: string;
+  name: string;
+  /** Prioritaet, NULL = ans Ende */
+  sort_order?: number | null;
+  /** false = ueberall ausgeblendet (auch am Handy der Mitarbeiter) */
+  in_app_sichtbar?: boolean | null;
+};
 
 export type Assignment = {
   id: string;

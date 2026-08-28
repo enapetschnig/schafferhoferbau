@@ -13,6 +13,7 @@ import type {
   WorkerGoal,
   ScheduleMode,
 } from "./scheduleTypes";
+import { visibleSortedProfiles, visibleSortedProjects } from "@/lib/projectOrdering";
 
 export function useScheduleData() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -55,14 +56,14 @@ export function useScheduleData() {
         { data: dayGoals },
         { data: weekGoals },
       ] = await Promise.all([
-        supabase
-          .from("profiles")
-          .select("id, vorname, nachname")
+        // sort_order + Sichtbarkeit: Admin-Einstellung, gilt fuer alle.
+        // Cast noetig: generierte Types kennen plantafel_sichtbar/in_app_sichtbar noch nicht.
+        (supabase.from("profiles") as any)
+          .select("id, vorname, nachname, sort_order, plantafel_sichtbar")
           .eq("is_active", true)
           .order("nachname"),
-        supabase
-          .from("projects")
-          .select("id, name")
+        (supabase.from("projects") as any)
+          .select("id, name, sort_order, in_app_sichtbar")
           .eq("status", "aktiv")
           .order("name"),
         supabase
@@ -110,8 +111,10 @@ export function useScheduleData() {
           .lte("week_start", toDate),
       ]);
 
-      if (profs) setProfiles(profs);
-      if (projs) setProjects(projs);
+      // Ausgeblendete raus, Rest nach Prioritaet - einmal zentral, damit
+      // Zeilen UND Zuweisungs-Dropdown dieselbe Reihenfolge zeigen
+      if (profs) setProfiles(visibleSortedProfiles(profs as Profile[]));
+      if (projs) setProjects(visibleSortedProjects(projs as Project[]));
       if (assigns) setAssignments(assigns as Assignment[]);
       if (res) setResourceBlocks(res as ResourceBlock[]);
       if (masterRes) setMasterResources(masterRes as MasterResource[]);

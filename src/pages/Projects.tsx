@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from "react";
-import { ArrowLeft, FolderOpen, Plus, FileText, Image, Lock, Search, Upload, Camera, Trash2, ChevronDown, Home, MapPin, Star, X, Download, MessageCircle, Package, Shield, Truck, Receipt } from "lucide-react";
+import { ArrowLeft, FolderOpen, Plus, FileText, Image, Lock, Search, Upload, Camera, Trash2, ChevronDown, ChevronUp, ChevronRight, Eye, EyeOff, Home, MapPin, Star, X, Download, MessageCircle, Package, Shield, Truck, Receipt } from "lucide-react";
+import { visibleSortedProjects, isProjectVisible, moveItem } from "@/lib/projectOrdering";
 import * as XLSX from "xlsx-js-style";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -79,6 +80,17 @@ const Projects = () => {
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [showStatusDialog, setShowStatusDialog] = useState(false);
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
+  // Eingeklappte Projekte (nur Ueberschrift sichtbar) - je Geraet gemerkt
+  const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(() => {
+    try {
+      const gespeichert = localStorage.getItem("projekte_eingeklappt");
+      return new Set<string>(gespeichert ? JSON.parse(gespeichert) : []);
+    } catch {
+      return new Set<string>();
+    }
+  });
+  // Admin: ausgeblendete Projekte zur Kontrolle mit anzeigen
+  const [showHiddenProjects, setShowHiddenProjects] = useState(false);
 
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [accessEmployeeIds, setAccessEmployeeIds] = useState<string[]>([]);
@@ -149,6 +161,69 @@ const Projects = () => {
       }
       await supabase.from("project_favorites").insert({ user_id: currentUserId, project_id: projectId });
       setFavoriteIds(prev => new Set(prev).add(projectId));
+    }
+  };
+
+  // Ein-/Ausklappen merkt sich der Browser je Geraet - reine Ansichtssache,
+  // gehoert nicht in die Datenbank.
+  const toggleCollapsed = (projectId: string) => {
+    setCollapsedProjects((prev) => {
+      const next = new Set(prev);
+      if (next.has(projectId)) next.delete(projectId);
+      else next.add(projectId);
+      try {
+        localStorage.setItem("projekte_eingeklappt", JSON.stringify([...next]));
+      } catch {
+        // Privates Fenster o. ae. - dann eben nur fuer diese Sitzung
+      }
+      return next;
+    });
+  };
+
+  /** Projekt fuer alle aus-/einblenden (Admin). Wirkt auch am Handy der Mitarbeiter. */
+  const toggleProjectVisible = async (project: Project) => {
+    const neu = !isProjectVisible(project);
+    const { error } = await (supabase.from("projects") as any)
+      .update({ in_app_sichtbar: neu })
+      .eq("id", project.id);
+    if (error) {
+      toast({ variant: "destructive", title: "Fehler", description: error.message });
+      return;
+    }
+    setProjects((prev) =>
+      prev.map((p) => (p.id === project.id ? { ...p, in_app_sichtbar: neu } : p))
+    );
+    toast({
+      title: neu ? "Projekt eingeblendet" : "Projekt ausgeblendet",
+      description: neu
+        ? undefined
+        : "Es erscheint nicht mehr in den Listen — auch nicht bei den Mitarbeitern.",
+    });
+  };
+
+  /** Prioritaet um eine Position verschieben; nummeriert die Liste neu durch. */
+  const moveProjectPriority = async (
+    liste: Project[],
+    projectId: string,
+    direction: "up" | "down"
+  ) => {
+    const updates = moveItem(liste, projectId, direction);
+    // Optimistisch anzeigen, danach speichern
+    const byId = new Map(updates.map((u) => [u.id, u.sort_order]));
+    setProjects((prev) =>
+      prev.map((p) => (byId.has(p.id) ? { ...p, sort_order: byId.get(p.id)! } : p))
+    );
+    const results = await Promise.all(
+      updates.map((u) =>
+        (supabase.from("projects") as any)
+          .update({ sort_order: u.sort_order })
+          .eq("id", u.id)
+      )
+    );
+    const fehler = results.find((r: any) => r.error);
+    if (fehler) {
+      toast({ variant: "destructive", title: "Reihenfolge nicht gespeichert", description: (fehler as any).error.message });
+      fetchProjects();
     }
   };
 
@@ -836,11 +911,37 @@ const Projects = () => {
 
         {/* Aktive Projekte Section */}
         <div className="mb-6">
-          <div className="flex items-center gap-2 mb-4">
+          <div className="flex items-center gap-2 mb-4 flex-wrap">
             <h2 className="text-xl font-semibold">Aktive Projekte</h2>
             <Badge variant="secondary">
-              {projects.filter(p => p.status === 'aktiv').length}
+              {projects.filter(p => p.status === 'aktiv' && (isProjectVisible(p) || (isAdmin && showHiddenProjects))).length}
             </Badge>
+            <div className="ml-auto flex items-center gap-2">
+              {collapsedProjects.size > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs"
+                  onClick={() => {
+                    setCollapsedProjects(new Set());
+                    try { localStorage.removeItem("projekte_eingeklappt"); } catch { /* egal */ }
+                  }}
+                >
+                  Alle aufklappen
+                </Button>
+              )}
+              {isAdmin && (
+                <Button
+                  variant={showHiddenProjects ? "secondary" : "ghost"}
+                  size="sm"
+                  className="text-xs"
+                  onClick={() => setShowHiddenProjects((v) => !v)}
+                >
+                  {showHiddenProjects ? <EyeOff className="h-3.5 w-3.5 mr-1" /> : <Eye className="h-3.5 w-3.5 mr-1" />}
+                  Ausgeblendete
+                </Button>
+              )}
+            </div>
           </div>
 
           <div className="mb-4">
@@ -857,8 +958,8 @@ const Projects = () => {
           </div>
 
           <div className="grid gap-3 sm:gap-4 lg:gap-6">
-            {projects
-              .filter((project) => {
+            {(() => {
+              const gefiltert = projects.filter((project) => {
                 if (project.status !== 'aktiv') return false;
                 const query = searchQuery.toLowerCase();
                 return (
@@ -868,32 +969,61 @@ const Projects = () => {
                   project.bauherr?.toLowerCase().includes(query) ||
                   project.bauleiter?.toLowerCase().includes(query)
                 );
-              })
-              .sort((a, b) => {
-                const aFav = favoriteIds.has(a.id) ? 0 : 1;
-                const bFav = favoriteIds.has(b.id) ? 0 : 1;
-                return aFav - bFav;
-              })
-              .map((project) => (
+              });
+              // Ausgeblendete raus (Admin kann sie einblenden), dann nach
+              // Prioritaet - dieselbe Reihenfolge wie in der Plantafel.
+              const sortiert = visibleSortedProjects(
+                gefiltert,
+                isAdmin && showHiddenProjects
+              );
+              // Favoriten bleiben oben angepinnt (persoenlich, max. 3),
+              // darunter greift die vom Admin gesetzte Prioritaet.
+              const liste = [
+                ...sortiert.filter((p) => favoriteIds.has(p.id)),
+                ...sortiert.filter((p) => !favoriteIds.has(p.id)),
+              ];
+              return liste.map((project, index) => {
+                const eingeklappt = collapsedProjects.has(project.id);
+                const versteckt = !isProjectVisible(project);
+                return (
             <Card
               key={project.id}
-              className={`border-2 hover:shadow-lg transition-all cursor-pointer ${favoriteIds.has(project.id) ? "border-red-500 bg-red-50 dark:bg-red-950/20" : ""}`}
-              onClick={() => navigate(`/projects/${project.id}`)}
-
+              className={`border-2 hover:shadow-lg transition-all ${favoriteIds.has(project.id) ? "border-red-500 bg-red-50 dark:bg-red-950/20" : ""} ${versteckt ? "opacity-60" : ""}`}
             >
-              <CardHeader className={`pb-3 sm:pb-4 ${favoriteIds.has(project.id) ? "bg-red-100/50 dark:bg-red-950/30" : "bg-primary/5"}`}>
+              <CardHeader
+                className={`py-2.5 sm:py-3 cursor-pointer ${favoriteIds.has(project.id) ? "bg-red-100/50 dark:bg-red-950/30" : "bg-primary/5"}`}
+                onClick={() => toggleCollapsed(project.id)}
+              >
                 <div className="flex flex-col sm:flex-row sm:justify-between gap-3">
-                  <div className="flex gap-2 sm:gap-3">
-                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
-                      {project.status === "geschlossen" ? (
-                        <Lock className="w-5 h-5 sm:w-6 sm:h-6" />
+                  <div className="flex gap-2 sm:gap-3 items-start">
+                    {/* Pfeil klappt auf/zu, das Ordner-Symbol oeffnet das Projekt */}
+                    <div className="flex items-center gap-1 shrink-0">
+                      {eingeklappt ? (
+                        <ChevronRight className="w-4 h-4 text-muted-foreground" />
                       ) : (
-                        <FolderOpen className="w-5 h-5 sm:w-6 sm:h-6" />
+                        <ChevronDown className="w-4 h-4 text-muted-foreground" />
                       )}
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); navigate(`/projects/${project.id}`); }}
+                        className="w-9 h-9 sm:w-10 sm:h-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center hover:bg-primary/20 transition-colors"
+                        title="Projekt öffnen"
+                      >
+                        {project.status === "geschlossen" ? (
+                          <Lock className="w-4 h-4 sm:w-5 sm:h-5" />
+                        ) : (
+                          <FolderOpen className="w-4 h-4 sm:w-5 sm:h-5" />
+                        )}
+                      </button>
                     </div>
                     <div className="flex-1 min-w-0">
-                      <CardTitle className="text-base sm:text-xl truncate">{project.name}</CardTitle>
-                      {project.adresse && (
+                      <CardTitle
+                        className="text-base sm:text-lg truncate hover:text-primary"
+                        onClick={(e) => { e.stopPropagation(); navigate(`/projects/${project.id}`); }}
+                      >
+                        {project.name}
+                      </CardTitle>
+                      {!eingeklappt && project.adresse && (
                         <CardDescription className="text-xs sm:text-sm">
                           <a
                             href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(project.adresse)}`}
@@ -907,7 +1037,7 @@ const Projects = () => {
                           </a>
                         </CardDescription>
                       )}
-                      {(project.bauherr || project.bauleiter) && (
+                      {!eingeklappt && (project.bauherr || project.bauleiter) && (
                         <div className="text-xs text-muted-foreground mt-0.5 flex gap-3">
                           {project.bauherr && <span>Bauherr: {project.bauherr}</span>}
                           {project.bauleiter && <span>Bauleiter: {project.bauleiter}</span>}
@@ -915,31 +1045,60 @@ const Projects = () => {
                       )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 self-start sm:self-center">
+                  <div
+                    className="flex items-center gap-1 self-start sm:self-center"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {isAdmin && (
+                      <>
+                        {/* Prioritaet verschieben - gilt fuer alle */}
+                        <button
+                          onClick={() => moveProjectPriority(liste, project.id, "up")}
+                          disabled={index === 0}
+                          className="p-1 text-muted-foreground hover:text-primary disabled:opacity-30"
+                          title="Höhere Priorität"
+                        >
+                          <ChevronUp className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => moveProjectPriority(liste, project.id, "down")}
+                          disabled={index === liste.length - 1}
+                          className="p-1 text-muted-foreground hover:text-primary disabled:opacity-30"
+                          title="Niedrigere Priorität"
+                        >
+                          <ChevronDown className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => toggleProjectVisible(project)}
+                          className="p-1 text-muted-foreground hover:text-primary"
+                          title={versteckt ? "Wieder für alle einblenden" : "Für alle ausblenden"}
+                        >
+                          {versteckt ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
+                      </>
+                    )}
                     <button
-                      onClick={(e) => { e.stopPropagation(); toggleFavorite(project.id); }}
+                      onClick={() => toggleFavorite(project.id)}
                       className="p-1 hover:scale-110 transition-transform"
                       title={favoriteIds.has(project.id) ? "Favorit entfernen" : "Als Favorit markieren"}
                     >
                       <Star className={`h-5 w-5 ${favoriteIds.has(project.id) ? "fill-red-500 text-red-500" : "text-muted-foreground"}`} />
                     </button>
-                    <Badge
-                      variant={project.status === "aktiv" ? "default" : "secondary"}
-                      className="whitespace-nowrap"
-                    >
-                      {project.status === "aktiv" ? "Aktiv" : "Geschlossen"}
-                    </Badge>
+                    {versteckt && (
+                      <Badge variant="secondary" className="whitespace-nowrap">Ausgeblendet</Badge>
+                    )}
                   </div>
                 </div>
               </CardHeader>
-              <CardContent className="pt-4 sm:pt-6">
+              {!eingeklappt && (
+              <CardContent className="pt-3 sm:pt-4">
                 {project.beschreibung && (
-                  <p className="text-xs sm:text-sm text-muted-foreground mb-4 line-clamp-2">
+                  <p className="text-xs sm:text-sm text-muted-foreground mb-3 line-clamp-2">
                     {project.beschreibung}
                   </p>
                 )}
-                
-                <div className="grid grid-cols-4 sm:grid-cols-5 gap-1.5 sm:gap-2 mb-4">
+
+                <div className="grid grid-cols-4 sm:grid-cols-5 gap-1.5 sm:gap-2">
                   {[
                     { key: "chat", label: "Chat", icon: <MessageCircle className="w-5 h-5 text-primary" />, path: `/projects/${project.id}/chat`, count: null },
                     { key: "plans", label: "Pläne", icon: <FileText className="w-5 h-5 text-primary" />, path: `/projects/${project.id}/plans`, count: project.fileCount?.plans },
@@ -965,50 +1124,8 @@ const Projects = () => {
                   ))}
                 </div>
 
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="w-full gap-2 mt-3"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <Upload className="w-4 h-4" />
-                      + Dateien hochladen
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="w-56 bg-background z-50">
-                    <DropdownMenuItem onClick={(e) => {
-                      e.stopPropagation();
-                      setQuickUploadProject({ projectId: project.id, documentType: 'photos' });
-                      setShowCameraDialog(true);
-                    }}>
-                      <Camera className="w-4 h-4 mr-2" />
-                      📸 Foto aufnehmen
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={(e) => {
-                      e.stopPropagation();
-                      setQuickUploadProject({ projectId: project.id, documentType: 'photos' });
-                    }}>
-                      <Camera className="w-4 h-4 mr-2" />
-                      📷 Fotos hochladen
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={(e) => {
-                      e.stopPropagation();
-                      setQuickUploadProject({ projectId: project.id, documentType: 'plans' });
-                    }}>
-                      <FileText className="w-4 h-4 mr-2" />
-                      📋 Pläne hochladen
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={(e) => {
-                      e.stopPropagation();
-                      setQuickUploadProject({ projectId: project.id, documentType: 'reports' });
-                    }}>
-                      <FileText className="w-4 h-4 mr-2" />
-                      📄 Regieberichte hochladen
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                {/* Der "Dateien hochladen"-Knopf ist hier bewusst entfernt -
+                    hochgeladen wird direkt im jeweiligen Unterordner. */}
 
                 <div
                   className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t mt-3"
@@ -1029,8 +1146,11 @@ const Projects = () => {
                   )}
                 </div>
               </CardContent>
+              )}
             </Card>
-          ))}
+                );
+              });
+            })()}
 
           {projects.filter(p => p.status === 'aktiv').length === 0 && (
             <Card>
