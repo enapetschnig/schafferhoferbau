@@ -18,6 +18,7 @@ import { ZettelUploadDialog } from "@/components/ZettelUploadDialog";
 import { Upload } from "lucide-react";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
+import { applySortOrder, type SortOrder } from "@/lib/reportSorting";
 
 type DailyReport = {
   id: string;
@@ -50,7 +51,8 @@ export default function DailyReports() {
   const projectFilter = searchParams.get("project");
   const [reports, setReports] = useState<DailyReport[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
+  // ?neu=1 oeffnet das Formular sofort - fuer den Schnellzugriff vom Dashboard
+  const [showForm, setShowForm] = useState(searchParams.get("neu") === "1");
   const [showZettelUpload, setShowZettelUpload] = useState(false);
   const [filterType, setFilterType] = useState<string>("alle");
   const [filterStatus, setFilterStatus] = useState<string>("alle");
@@ -58,7 +60,7 @@ export default function DailyReports() {
   const [filterDateFrom, setFilterDateFrom] = useState<string>("");
   const [filterDateTo, setFilterDateTo] = useState<string>("");
   const [filterSignature, setFilterSignature] = useState<"alle" | "ja" | "nein">("alle");
-  const [sortOrder, setSortOrder] = useState<"desc" | "asc">("desc");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
   const [showFilters, setShowFilters] = useState(false);
   const [selectedReports, setSelectedReports] = useState<Set<string>>(new Set());
   const [showBulkDownloadDialog, setShowBulkDownloadDialog] = useState(false);
@@ -69,10 +71,14 @@ export default function DailyReports() {
 
   const fetchReports = useCallback(async () => {
     setLoading(true);
+    // Bei Sortierung nach Baustelle wird serverseitig nach Datum vorsortiert und
+    // anschliessend im Client nach Projektname gruppiert - der Name steckt in
+    // der Join-Tabelle und laesst sich hier nicht zuverlaessig mitsortieren.
+    const byBaustelle = sortOrder === "baustelle" || sortOrder === "baustelle_desc";
     let query = supabase
       .from("daily_reports")
       .select("*, projects(name, plz)")
-      .order("datum", { ascending: sortOrder === "asc" });
+      .order("datum", { ascending: byBaustelle ? false : sortOrder === "asc" });
 
     if (projectFilter) {
       query = query.eq("project_id", projectFilter);
@@ -108,7 +114,8 @@ export default function DailyReports() {
           ? !!r.unterschrift_kunde
           : !r.unterschrift_kunde);
       }
-      setReports(filtered);
+      // Nach Baustelle erst hier - der Name steckt in der Join-Tabelle
+      setReports(applySortOrder(filtered, sortOrder));
     }
     setLoading(false);
   }, [filterType, filterStatus, filterGeschoss, projectFilter, filterDateFrom, filterDateTo, filterSignature, sortOrder]);
@@ -305,6 +312,8 @@ export default function DailyReports() {
                 <SelectContent>
                   <SelectItem value="desc">Zuletzt zuerst</SelectItem>
                   <SelectItem value="asc">Zuerst zuerst</SelectItem>
+                  <SelectItem value="baustelle">Baustelle (A–Z)</SelectItem>
+                  <SelectItem value="baustelle_desc">Baustelle (Z–A)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -376,8 +385,12 @@ export default function DailyReports() {
                       <Badge className={`text-xs ${STATUS_COLORS[report.status] || ""}`}>
                         {report.status === "offen" ? "Offen" : report.status === "gesendet" ? "Gesendet" : "Abgeschlossen"}
                       </Badge>
-                      {report.unterschrift_kunde ? (
+                      {/* Gruen erst, wenn der KUNDE unterschrieben hat. Hat nur
+                          der Mitarbeiter bestaetigt, steht die Kundenunterschrift aus. */}
+                      {(report as any).unterschrift_kunde ? (
                         <Badge className="text-xs bg-green-100 text-green-800">Kunde unterschrieben</Badge>
+                      ) : (report as any).unterschrift_mitarbeiter ? (
+                        <Badge className="text-xs bg-amber-100 text-amber-900">Kundenunterschrift ausständig</Badge>
                       ) : report.status === "gesendet" ? (
                         <Badge className="text-xs bg-red-100 text-red-800">Keine Unterschrift</Badge>
                       ) : null}

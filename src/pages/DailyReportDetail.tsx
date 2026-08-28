@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Camera, Upload, Trash2, Pencil, CheckCircle2, Download } from "lucide-react";
+import { ArrowLeft, Camera, Upload, Trash2, Pencil, CheckCircle2, Download, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -89,6 +89,10 @@ export default function DailyReportDetail() {
   const [safetyItems, setSafetyItems] = useState<SafetyItem[]>(DEFAULT_SAFETY_ITEMS);
   const [signatureName, setSignatureName] = useState("");
   const [signatureData, setSignatureData] = useState<string | null>(null);
+  // Kundenunterschrift - wird erst NACH der Mitarbeiter-Bestaetigung erfasst
+  const [showCustomerSignDialog, setShowCustomerSignDialog] = useState(false);
+  const [customerSignatureName, setCustomerSignatureName] = useState("");
+  const [customerSignatureData, setCustomerSignatureData] = useState<string | null>(null);
 
   const handleDelete = async () => {
     if (!id || !window.confirm("Bericht wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.")) return;
@@ -104,21 +108,8 @@ export default function DailyReportDetail() {
     navigate("/daily-reports");
   };
 
+  /** Hier unterschreibt der MITARBEITER - daher den angemeldeten Benutzer vorbelegen. */
   const openSignDialog = async () => {
-    // Bauherr 1 oder 2 als Standard-Unterzeichner vorauswählen
-    if (report?.project_id) {
-      const { data: proj } = await supabase
-        .from("projects")
-        .select("bauherr, bauherr2")
-        .eq("id", report.project_id)
-        .maybeSingle();
-      if (proj?.bauherr) {
-        setSignatureName(proj.bauherr);
-      } else if (proj?.bauherr2) {
-        setSignatureName(proj.bauherr2);
-      }
-    }
-    // Fallback: eingeloggter Mitarbeiter
     if (!signatureName) {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
@@ -131,6 +122,20 @@ export default function DailyReportDetail() {
       }
     }
     setShowSignDialog(true);
+  };
+
+  /** Kundendialog: Bauherr 1 oder 2 aus dem Projekt vorbelegen. */
+  const openCustomerSignDialog = async () => {
+    if (!customerSignatureName && report?.project_id) {
+      const { data: proj } = await supabase
+        .from("projects")
+        .select("bauherr, bauherr2")
+        .eq("id", report.project_id)
+        .maybeSingle();
+      if (proj?.bauherr) setCustomerSignatureName(proj.bauherr);
+      else if (proj?.bauherr2) setCustomerSignatureName(proj.bauherr2);
+    }
+    setShowCustomerSignDialog(true);
   };
 
   const fetchReport = useCallback(async () => {
@@ -374,12 +379,14 @@ export default function DailyReportDetail() {
       return;
     }
 
-    const { error } = await supabase
-      .from("daily_reports")
+    // Der Mitarbeiter unterschreibt und bestaetigt den Bericht. Die
+    // Kundenunterschrift kommt danach separat dazu - bis dahin bleibt der
+    // Bericht "gesendet" mit dem Hinweis "Kundenunterschrift ausstaendig".
+    const { error } = await (supabase.from("daily_reports") as any)
       .update({
-        unterschrift_kunde: signatureData,
-        unterschrift_am: new Date().toISOString(),
-        unterschrift_name: signatureName.trim() || null,
+        unterschrift_mitarbeiter: signatureData,
+        unterschrift_mitarbeiter_am: new Date().toISOString(),
+        unterschrift_mitarbeiter_name: signatureName.trim() || null,
         sicherheitscheckliste: safetyItems,
         sicherheit_bestaetigt: true,
         status: "gesendet",
@@ -389,10 +396,40 @@ export default function DailyReportDetail() {
     if (error) {
       toast({ variant: "destructive", title: "Fehler", description: error.message });
     } else {
-      toast({ title: "Unterschrieben", description: "Bericht wurde erfolgreich unterschrieben." });
+      toast({
+        title: "Bericht bestätigt",
+        description: "Die Kundenunterschrift kann jetzt über „+ Kundenunterschrift“ ergänzt werden.",
+      });
       setShowSignDialog(false);
       fetchReport();
     }
+  };
+
+  /** Kundenunterschrift nachtraeglich ergaenzen - schliesst den Bericht ab. */
+  const handleCustomerSign = async () => {
+    if (!customerSignatureData) {
+      toast({ variant: "destructive", title: "Unterschrift fehlt", description: "Bitte lassen Sie den Kunden unterschreiben." });
+      return;
+    }
+
+    const { error } = await (supabase.from("daily_reports") as any)
+      .update({
+        unterschrift_kunde: customerSignatureData,
+        unterschrift_am: new Date().toISOString(),
+        unterschrift_name: customerSignatureName.trim() || null,
+        status: "abgeschlossen",
+      })
+      .eq("id", id);
+
+    if (error) {
+      toast({ variant: "destructive", title: "Fehler", description: error.message });
+      return;
+    }
+    toast({ title: "Kunde hat unterschrieben", description: "Der Bericht ist damit abgeschlossen." });
+    setShowCustomerSignDialog(false);
+    setCustomerSignatureData(null);
+    setCustomerSignatureName("");
+    fetchReport();
   };
 
   const handleDownloadPDF = async () => {
@@ -412,6 +449,9 @@ export default function DailyReportDetail() {
         unterschrift_kunde: report.unterschrift_kunde,
         unterschrift_am: report.unterschrift_am,
         unterschrift_name: report.unterschrift_name,
+        unterschrift_mitarbeiter: (report as any).unterschrift_mitarbeiter,
+        unterschrift_mitarbeiter_am: (report as any).unterschrift_mitarbeiter_am,
+        unterschrift_mitarbeiter_name: (report as any).unterschrift_mitarbeiter_name,
         zeit_auf_pdf: report.zeit_auf_pdf,
         project: report.projects ? { name: report.projects.name, adresse: report.projects.adresse, plz: report.projects.plz } : null,
       },
@@ -425,7 +465,18 @@ export default function DailyReportDetail() {
   if (loading) return <div className="flex items-center justify-center min-h-screen"><p>Lade...</p></div>;
   if (!report) return <div className="flex items-center justify-center min-h-screen"><p>Bericht nicht gefunden</p></div>;
 
-  const isSigned = !!report.unterschrift_kunde;
+  // Altberichte kennen nur unterschrift_kunde - dort gilt diese weiterhin als
+  // die vorhandene Unterschrift, damit nichts rueckwirkend umgedeutet wird.
+  const r = report as any;
+  const istAltbericht = !r.unterschrift_mitarbeiter && !!report.unterschrift_kunde;
+  const anzeigeUnterschrift =
+    r.unterschrift_mitarbeiter || (istAltbericht ? report.unterschrift_kunde : null);
+  const mitarbeiterName = r.unterschrift_mitarbeiter_name || (istAltbericht ? report.unterschrift_name : null);
+  const mitarbeiterAm = r.unterschrift_mitarbeiter_am || (istAltbericht ? report.unterschrift_am : null);
+  // Bei Altberichten steckt die einzige Unterschrift bereits in unterschrift_kunde,
+  // deshalb dort keine zusaetzliche Kundenunterschrift mehr verlangen.
+  const kundeHatUnterschrieben = istAltbericht || !!report.unterschrift_kunde;
+  const isSigned = !!anzeigeUnterschrift;
 
   return (
     <div className="container mx-auto p-4 max-w-4xl">
@@ -669,28 +720,66 @@ export default function DailyReportDetail() {
           </CardContent>
         </Card>
 
-        {/* Signature section */}
+        {/* Unterschriften: erst Mitarbeiter, danach optional der Kunde */}
         {isSigned ? (
           <Card>
-            <CardHeader><CardTitle className="text-lg">Unterschrift</CardTitle></CardHeader>
-            <CardContent className="space-y-2">
-              <img src={report.unterschrift_kunde!} alt="Unterschrift" className="max-w-xs border rounded" />
-              {report.unterschrift_name && (
-                <p className="text-sm">{report.unterschrift_name}</p>
-              )}
-              {report.unterschrift_am && (
-                <p className="text-xs text-muted-foreground">
-                  {format(new Date(report.unterschrift_am), "dd.MM.yyyy HH:mm", { locale: de })}
-                </p>
-              )}
+            <CardHeader><CardTitle className="text-lg">Unterschriften</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Mitarbeiter</p>
+                <img
+                  src={anzeigeUnterschrift!}
+                  alt="Unterschrift Mitarbeiter"
+                  className="max-w-xs border rounded"
+                />
+                {mitarbeiterName && <p className="text-sm">{mitarbeiterName}</p>}
+                {mitarbeiterAm && (
+                  <p className="text-xs text-muted-foreground">
+                    {format(new Date(mitarbeiterAm), "dd.MM.yyyy HH:mm", { locale: de })}
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-2 pt-3 border-t">
+                <p className="text-sm font-medium">Kunde</p>
+                {kundeHatUnterschrieben ? (
+                  <>
+                    <img
+                      src={report.unterschrift_kunde!}
+                      alt="Unterschrift Kunde"
+                      className="max-w-xs border rounded"
+                    />
+                    {report.unterschrift_name && (
+                      <p className="text-sm">{report.unterschrift_name}</p>
+                    )}
+                    {report.unterschrift_am && (
+                      <p className="text-xs text-muted-foreground">
+                        {format(new Date(report.unterschrift_am), "dd.MM.yyyy HH:mm", { locale: de })}
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <Badge className="bg-amber-100 text-amber-900 hover:bg-amber-100">
+                      Kundenunterschrift ausständig
+                    </Badge>
+                    <Button size="sm" onClick={openCustomerSignDialog}>
+                      <Plus className="w-4 h-4 mr-1" /> Kundenunterschrift
+                    </Button>
+                  </div>
+                )}
+              </div>
+
               {report.sicherheit_bestaetigt && (
                 <Badge variant="default" className="bg-green-600">
                   <CheckCircle2 className="w-3 h-3 mr-1" /> Sicherheitscheckliste bestätigt
                 </Badge>
               )}
-              <Button variant="outline" size="sm" onClick={handleDownloadPDF} className="mt-3">
-                <Download className="w-4 h-4 mr-2" /> PDF herunterladen
-              </Button>
+              <div>
+                <Button variant="outline" size="sm" onClick={handleDownloadPDF} className="mt-1">
+                  <Download className="w-4 h-4 mr-2" /> PDF herunterladen
+                </Button>
+              </div>
             </CardContent>
           </Card>
         ) : (
@@ -699,7 +788,7 @@ export default function DailyReportDetail() {
               <Pencil className="w-4 h-4 mr-2" /> Bearbeiten
             </Button>
             <Button onClick={openSignDialog}>
-              Unterschreiben & Absenden
+              Unterschreiben & Bestätigen
             </Button>
             <Button variant="destructive" onClick={handleDelete}>
               <Trash2 className="w-4 h-4 mr-2" /> Löschen
@@ -727,11 +816,48 @@ export default function DailyReportDetail() {
         } : null}
       />
 
+      {/* Kundenunterschrift nachtraeglich ergaenzen */}
+      <Dialog open={showCustomerSignDialog} onOpenChange={setShowCustomerSignDialog}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Kundenunterschrift</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-6">
+            <p className="text-sm text-muted-foreground">
+              Bitte vom Kunden unterschreiben lassen. Danach gilt der Bericht als
+              abgeschlossen.
+            </p>
+            <div>
+              <Label>Name des Kunden</Label>
+              <Input
+                value={customerSignatureName}
+                onChange={(e) => setCustomerSignatureName(e.target.value)}
+                placeholder="Vor- und Nachname"
+              />
+            </div>
+            <div>
+              <Label>Unterschrift des Kunden</Label>
+              <SignaturePad
+                onSignatureChange={(data) => setCustomerSignatureData(data)}
+                width={400}
+                height={200}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowCustomerSignDialog(false)}>
+                Abbrechen
+              </Button>
+              <Button onClick={handleCustomerSign}>Kundenunterschrift speichern</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Signature Dialog */}
       <Dialog open={showSignDialog} onOpenChange={setShowSignDialog}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Bericht unterschreiben</DialogTitle>
+            <DialogTitle>Bericht bestätigen</DialogTitle>
           </DialogHeader>
 
           <div className="space-y-6">
@@ -744,7 +870,7 @@ export default function DailyReportDetail() {
             )}
 
             <div>
-              <Label>Name des Unterzeichners</Label>
+              <Label>Name des Mitarbeiters</Label>
               <Input
                 value={signatureName}
                 onChange={(e) => setSignatureName(e.target.value)}
@@ -753,7 +879,7 @@ export default function DailyReportDetail() {
             </div>
 
             <div>
-              <Label>Unterschrift</Label>
+              <Label>Unterschrift des Mitarbeiters</Label>
               <SignaturePad
                 onSignatureChange={(data) => setSignatureData(data)}
                 width={400}
@@ -761,12 +887,17 @@ export default function DailyReportDetail() {
               />
             </div>
 
+            <p className="text-xs text-muted-foreground">
+              Die Kundenunterschrift wird danach separat ergänzt. Ohne sie bleibt
+              der Bericht als „Kundenunterschrift ausständig“ offen.
+            </p>
+
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setShowSignDialog(false)}>
                 Abbrechen
               </Button>
               <Button onClick={handleSign}>
-                Unterschreiben & Absenden
+                Unterschreiben & Bestätigen
               </Button>
             </div>
           </div>

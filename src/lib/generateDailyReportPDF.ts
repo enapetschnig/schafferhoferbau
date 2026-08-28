@@ -14,6 +14,9 @@ export interface DailyReportForPDF {
   unterschrift_kunde: string | null;
   unterschrift_am: string | null;
   unterschrift_name: string | null;
+  unterschrift_mitarbeiter?: string | null;
+  unterschrift_mitarbeiter_am?: string | null;
+  unterschrift_mitarbeiter_name?: string | null;
   zeit_auf_pdf?: boolean;
   project: { name: string; adresse: string | null; plz: string | null } | null;
 }
@@ -317,16 +320,23 @@ export async function generateDailyReportPDF(
     }
   }
 
-  // Signature
-  if (report.unterschrift_kunde) {
+  // Unterschriften: Mitarbeiter und - sofern vorhanden - Kunde.
+  // Fehlt die Kundenunterschrift, wird das im PDF ausdruecklich vermerkt.
+  const unterschriftBlock = (
+    titel: string,
+    bild: string | null | undefined,
+    name: string | null | undefined,
+    am: string | null | undefined
+  ) => {
+    if (!bild) return;
     checkPageBreak(50);
     doc.setFontSize(12);
     doc.setFont("helvetica", "bold");
-    doc.text("Unterschrift", margin, y);
+    doc.text(titel, margin, y);
     y += 5;
 
     try {
-      doc.addImage(report.unterschrift_kunde, "PNG", margin, y, 60, 25);
+      doc.addImage(bild, "PNG", margin, y, 60, 25);
       y += 28;
     } catch {
       doc.setFont("helvetica", "italic");
@@ -337,14 +347,45 @@ export async function generateDailyReportPDF(
 
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
-    if (report.unterschrift_name) {
-      doc.text(report.unterschrift_name, margin, y);
+    if (name) {
+      doc.text(name, margin, y);
       y += 4;
     }
-    if (report.unterschrift_am) {
+    if (am) {
       doc.setTextColor(100, 100, 100);
-      doc.text(new Date(report.unterschrift_am).toLocaleDateString("de-AT", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }), margin, y);
+      doc.text(new Date(am).toLocaleDateString("de-AT", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }), margin, y);
       doc.setTextColor(0, 0, 0);
+      y += 6;
+    }
+  };
+
+  const r = report as any;
+  // Altberichte haben nur unterschrift_kunde - dort bleibt es beim alten Titel
+  const istAltbericht = !r.unterschrift_mitarbeiter && !!report.unterschrift_kunde;
+
+  if (istAltbericht) {
+    unterschriftBlock("Unterschrift", report.unterschrift_kunde, report.unterschrift_name, report.unterschrift_am);
+  } else {
+    unterschriftBlock(
+      "Unterschrift Mitarbeiter",
+      r.unterschrift_mitarbeiter,
+      r.unterschrift_mitarbeiter_name,
+      r.unterschrift_mitarbeiter_am
+    );
+    if (report.unterschrift_kunde) {
+      unterschriftBlock("Unterschrift Kunde", report.unterschrift_kunde, report.unterschrift_name, report.unterschrift_am);
+    } else if (r.unterschrift_mitarbeiter) {
+      checkPageBreak(16);
+      doc.setFontSize(12);
+      doc.setFont("helvetica", "bold");
+      doc.text("Unterschrift Kunde", margin, y);
+      y += 5;
+      doc.setFont("helvetica", "italic");
+      doc.setFontSize(9);
+      doc.setTextColor(150, 60, 0);
+      doc.text("Kundenunterschrift ausstaendig", margin, y);
+      doc.setTextColor(0, 0, 0);
+      y += 6;
     }
   }
 
