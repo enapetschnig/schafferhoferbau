@@ -68,6 +68,8 @@ export function PayslipBulkUploadDialog({ open, onOpenChange }: Props) {
   const [step, setStep] = useState(1);
   const [releaseDate, setReleaseDate] = useState<string>("");
   const [pdfFile, setPdfFile] = useState<File | null>(null);
+  // Hervorhebung, solange eine Datei ueber der Ablageflaeche schwebt
+  const [dragOver, setDragOver] = useState(false);
   const [pdfBytes, setPdfBytes] = useState<ArrayBuffer | null>(null);
   const [totalPages, setTotalPages] = useState(0);
   const [analyzing, setAnalyzing] = useState(false);
@@ -153,16 +155,49 @@ export function PayslipBulkUploadDialog({ open, onOpenChange }: Props) {
     setUnassignedPages((prev) => prev.filter((p) => p !== pageIdx));
   };
 
+  // Gemeinsamer Weg fuer Dateiauswahl UND Drag & Drop
+  const loadPdfFile = async (file: File) => {
+    const isPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name);
+    if (!isPdf) {
+      toast({
+        variant: "destructive",
+        title: "Keine PDF-Datei",
+        description: `"${file.name}" ist keine PDF. Bitte das Sammel-PDF mit den Lohnzetteln verwenden.`,
+      });
+      return;
+    }
+
+    try {
+      const buffer = await file.arrayBuffer();
+      // Seitenzahl ermitteln, bevor die Datei uebernommen wird - so bleibt bei
+      // einer kaputten PDF der vorherige Zustand erhalten
+      const pdfDoc = await pdfjsLib.getDocument({ data: new Uint8Array(buffer.slice(0)) }).promise;
+      setPdfFile(file);
+      setPdfBytes(buffer);
+      setTotalPages(pdfDoc.numPages);
+    } catch (err: any) {
+      toast({
+        variant: "destructive",
+        title: "PDF konnte nicht gelesen werden",
+        description: err?.message || "Die Datei ist möglicherweise beschädigt oder passwortgeschützt.",
+      });
+    }
+  };
+
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    // Wert zuruecksetzen, damit dieselbe Datei erneut waehlbar ist
+    e.target.value = "";
     if (!file) return;
-    setPdfFile(file);
-    const buffer = await file.arrayBuffer();
-    setPdfBytes(buffer);
+    await loadPdfFile(file);
+  };
 
-    // Get page count
-    const pdfDoc = await pdfjsLib.getDocument({ data: new Uint8Array(buffer.slice(0)) }).promise;
-    setTotalPages(pdfDoc.numPages);
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (!file) return;
+    await loadPdfFile(file);
   };
 
   const handleAnalyze = async () => {
@@ -469,11 +504,23 @@ export function PayslipBulkUploadDialog({ open, onOpenChange }: Props) {
 
               {!pdfFile ? (
                 <div
-                  className="border-2 border-dashed rounded-lg p-8 text-center cursor-pointer hover:bg-muted/50"
+                  className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${
+                    dragOver ? "border-primary bg-primary/10" : "hover:bg-muted/50"
+                  }`}
                   onClick={() => fileRef.current?.click()}
+                  onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                  onDragEnter={(e) => { e.preventDefault(); setDragOver(true); }}
+                  onDragLeave={(e) => {
+                    // Nur zuruecksetzen, wenn die Zone wirklich verlassen wird -
+                    // sonst flackert es beim Ueberfahren der Kindelemente
+                    if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(false);
+                  }}
+                  onDrop={handleDrop}
                 >
                   <Upload className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
-                  <p className="text-sm font-medium">PDF-Datei auswählen</p>
+                  <p className="text-sm font-medium">
+                    {dragOver ? "PDF hier loslassen" : "PDF hierher ziehen oder auswählen"}
+                  </p>
                   <p className="text-xs text-muted-foreground">Sammel-PDF mit allen Lohnzetteln</p>
                 </div>
               ) : (
