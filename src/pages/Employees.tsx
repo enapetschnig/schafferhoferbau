@@ -1061,7 +1061,8 @@ export default function Employees() {
               {selectedEmployee && (
                 <EmployeeDocumentsManager
                   employeeId={selectedEmployee.id}
-                  userId={selectedEmployee.user_id || selectedEmployee.id}
+                  userId={selectedEmployee.user_id || undefined}
+                  employeeName={`${selectedEmployee.vorname} ${selectedEmployee.nachname}`.trim()}
                 />
               )}
             </TabsContent>

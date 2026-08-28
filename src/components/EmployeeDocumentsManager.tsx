@@ -7,8 +7,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
-import { FileText, Upload, Download, Trash2, Receipt, FileX, FileCheck, File } from "lucide-react";
+import { FileText, Upload, Download, Trash2, Receipt, FileX, FileCheck, File, ClipboardList, FileSignature, Award, Files } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import EmployeePersonalDocuments from "@/components/EmployeePersonalDocuments";
+import type { PersonalDocumentCategory } from "@/lib/employeeDocuments";
 
 interface Document {
   name: string;
@@ -19,8 +21,10 @@ interface Document {
 interface Props {
   employeeId: string;
   userId?: string;
+  employeeName?: string;
 }
 
+/** Reine Storage-Ordner (ohne Metadaten-Tabelle) */
 type DocumentType = "lohnzettel" | "krankmeldung";
 
 const documentTypes = [
@@ -28,9 +32,17 @@ const documentTypes = [
   { id: "krankmeldung" as DocumentType, label: "Krankmeldungen", icon: FileX },
 ];
 
+/** Personalunterlagen - eigene Tabelle mit Bezeichnung/Datum/Notiz/Sichtbarkeit */
+const personalTypes: { id: PersonalDocumentCategory; label: string; icon: typeof Receipt }[] = [
+  { id: "anmeldung", label: "Anmeldungen", icon: ClipboardList },
+  { id: "dienstvertrag", label: "Dienstverträge", icon: FileSignature },
+  { id: "zeugnis", label: "Zeugnisse", icon: Award },
+  { id: "sonstiges", label: "Sonstiges", icon: Files },
+];
+
 const MONTH_NAMES = ["Jänner","Februar","März","April","Mai","Juni","Juli","August","September","Oktober","November","Dezember"];
 
-export default function EmployeeDocumentsManager({ employeeId, userId }: Props) {
+export default function EmployeeDocumentsManager({ employeeId, userId, employeeName }: Props) {
   const [freigabeTag, setFreigabeTag] = useState(10);
   const [freigabeMonat, setFreigabeMonat] = useState(new Date().getMonth() + 1);
   const [freigabeJahr, setFreigabeJahr] = useState(new Date().getFullYear());
@@ -219,12 +231,12 @@ export default function EmployeeDocumentsManager({ employeeId, userId }: Props) 
   return (
     <div className="space-y-4">
       <Tabs defaultValue="lohnzettel" className="w-full">
-        <TabsList className="grid w-full grid-cols-2 h-auto">
-          {documentTypes.map((type) => {
+        <TabsList className="grid w-full grid-cols-3 sm:grid-cols-6 h-auto">
+          {[...documentTypes, ...personalTypes].map((type) => {
             const Icon = type.icon;
             return (
-              <TabsTrigger 
-                key={type.id} 
+              <TabsTrigger
+                key={type.id}
                 value={type.id}
                 className="flex items-center gap-1 sm:gap-2 py-2 px-2 sm:px-4 text-xs sm:text-sm"
               >
@@ -234,6 +246,17 @@ export default function EmployeeDocumentsManager({ employeeId, userId }: Props) 
             );
           })}
         </TabsList>
+
+        {personalTypes.map((type) => (
+          <TabsContent key={type.id} value={type.id}>
+            <EmployeePersonalDocuments
+              employeeId={employeeId}
+              userId={userId ?? null}
+              kategorie={type.id}
+              employeeName={employeeName}
+            />
+          </TabsContent>
+        ))}
 
         {documentTypes.map((type) => (
           <TabsContent key={type.id} value={type.id}>

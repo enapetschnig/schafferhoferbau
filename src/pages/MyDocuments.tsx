@@ -7,7 +7,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { FileText, Camera, Upload, Download, Eye, Trash2, Archive, Users } from "lucide-react";
+import { FileText, Camera, Upload, Download, Eye, Trash2, Archive, Users, FolderOpen } from "lucide-react";
+import {
+  PERSONAL_DOCUMENT_CATEGORIES,
+  personalCategoryLabel,
+  groupDocumentsByFolder,
+  UNFILED_LABEL,
+  type EmployeeDocumentFolder,
+} from "@/lib/employeeDocuments";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
@@ -21,9 +28,24 @@ interface Document {
 
 type EmployeeOption = { user_id: string; name: string };
 
+/** Personalunterlage aus employee_documents. RLS liefert dem Mitarbeiter
+ *  ausschliesslich seine eigenen, freigegebenen Zeilen. */
+interface PersonalDocument {
+  id: string;
+  kategorie: string;
+  bezeichnung: string;
+  dokument_datum: string | null;
+  notizen: string | null;
+  file_path: string;
+  folder_id: string | null;
+  created_at: string;
+}
+
 export default function MyDocuments() {
   const [payslips, setPayslips] = useState<Document[]>([]);
   const [sickNotes, setSickNotes] = useState<Document[]>([]);
+  const [personalDocs, setPersonalDocs] = useState<PersonalDocument[]>([]);
+  const [personalFolders, setPersonalFolders] = useState<EmployeeDocumentFolder[]>([]);
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [userId, setUserId] = useState<string>("");
@@ -77,8 +99,57 @@ export default function MyDocuments() {
     await Promise.all([
       fetchDocuments(user.id, "lohnzettel", setPayslips, admin),
       fetchDocuments(user.id, "krankmeldung", setSickNotes, admin),
+      fetchPersonalDocuments(user.id),
     ]);
     setLoading(false);
+  };
+
+  // Personalunterlagen (Anmeldungen, Dienstvertraege, Zeugnisse, Sonstiges).
+  // Filter auf user_id ist noetig, weil ein Admin sonst alle Zeilen saehe.
+  const fetchPersonalDocuments = async (targetUserId: string) => {
+    // Cast noetig: generierte Supabase-Types kennen die neuen Tabellen noch nicht
+    const [docsRes, foldersRes] = await Promise.all([
+      (supabase as any).from("employee_documents")
+        .select(
+          "id, kategorie, bezeichnung, dokument_datum, notizen, file_path, folder_id, created_at"
+        )
+        .eq("user_id", targetUserId)
+        .eq("sichtbar_fuer_mitarbeiter", true)
+        .order("dokument_datum", { ascending: false, nullsFirst: false })
+        .order("created_at", { ascending: false }),
+      (supabase as any).from("employee_document_folders").select(
+        "id, kategorie, name, sort_order"
+      ),
+    ]);
+
+    if (docsRes.error) {
+      console.error("Fehler beim Laden der Personalunterlagen:", docsRes.error);
+      return;
+    }
+    setPersonalDocs((docsRes.data || []) as PersonalDocument[]);
+    if (!foldersRes.error) {
+      setPersonalFolders((foldersRes.data || []) as EmployeeDocumentFolder[]);
+    }
+  };
+
+  const handlePersonalDownload = async (doc: PersonalDocument) => {
+    const { data, error } = await supabase.storage
+      .from("employee-documents")
+      .download(doc.file_path);
+
+    if (error || !data) {
+      toast({ variant: "destructive", title: "Fehler", description: "Download fehlgeschlagen" });
+      return;
+    }
+
+    const url = URL.createObjectURL(data);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = doc.file_path.split("/").pop() || doc.bezeichnung;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   const fetchDocuments = async (
@@ -281,6 +352,60 @@ export default function MyDocuments() {
     }
   };
 
+  /** Einzelne Datei herunterladen (ohne Umweg ueber die Auswahl). */
+  const handleSingleDownload = async (doc: Document) => {
+    const { data, error } = await supabase.storage
+      .from("employee-documents")
+      .download(doc.path);
+
+    if (error || !data) {
+      toast({ variant: "destructive", title: "Fehler", description: "Download fehlgeschlagen" });
+      return;
+    }
+
+    const url = URL.createObjectURL(data);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = doc.name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  /**
+   * Lohnzettel loeschen - nur fuer Administratoren. Entfernt die Datei UND den
+   * zugehoerigen payslip_metadata-Eintrag; sonst bliebe ein verwaister Datensatz
+   * mit dem (eindeutigen) file_path zurueck und blockierte einen Neu-Upload
+   * unter demselben Pfad.
+   */
+  const handleDeletePayslips = async (docs: Document[]) => {
+    if (!isAdmin || docs.length === 0) return;
+
+    const frage =
+      docs.length === 1
+        ? `Lohnzettel "${docs[0].name}" wirklich löschen?`
+        : `${docs.length} Lohnzettel wirklich löschen?`;
+    if (!confirm(`${frage}\n\nDas lässt sich nicht rückgängig machen.`)) return;
+
+    const paths = docs.map((d) => d.path);
+    const { error } = await supabase.storage.from("employee-documents").remove(paths);
+    if (error) {
+      toast({ variant: "destructive", title: "Fehler", description: "Löschen fehlgeschlagen" });
+      return;
+    }
+
+    await supabase.from("payslip_metadata").delete().in("file_path", paths);
+
+    toast({
+      title: "Erfolg",
+      description: docs.length === 1 ? "Lohnzettel gelöscht" : `${docs.length} Lohnzettel gelöscht`,
+    });
+    setSelectedPayslips(new Set());
+    // Ansicht des gerade gewaehlten Mitarbeiters neu laden, nicht die eigene
+    await fetchDocuments(viewUserId || userId, "lohnzettel", setPayslips, isAdmin);
+  };
+
   const handleDelete = async (doc: Document, type: "lohnzettel" | "krankmeldung") => {
     if (!confirm(`Möchten Sie "${doc.name}" wirklich löschen?`)) return;
 
@@ -306,7 +431,7 @@ export default function MyDocuments() {
 
       <div className="container mx-auto p-4 max-w-4xl">
         <Tabs defaultValue="payslips" className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="payslips">
               <FileText className="w-4 h-4 mr-2" />
               Meine Lohnzettel
@@ -314,6 +439,10 @@ export default function MyDocuments() {
             <TabsTrigger value="sicknotes">
               <FileText className="w-4 h-4 mr-2" />
               Krankmeldungen
+            </TabsTrigger>
+            <TabsTrigger value="personal">
+              <FolderOpen className="w-4 h-4 mr-2" />
+              Meine Unterlagen
             </TabsTrigger>
           </TabsList>
 
@@ -370,18 +499,38 @@ export default function MyDocuments() {
                       >
                         {selectedPayslips.size === payslips.length ? "Auswahl leeren" : "Alle auswählen"}
                       </Button>
-                      <Button
-                        size="sm"
-                        disabled={selectedPayslips.size === 0 || downloadingZip}
-                        onClick={() => handleBulkDownload("lohnzettel")}
-                      >
-                        <Archive className="w-4 h-4 mr-1" />
-                        {selectedPayslips.size > 1
-                          ? `${selectedPayslips.size} als ZIP laden`
-                          : selectedPayslips.size === 1
-                          ? "1 Datei laden"
-                          : "Auswahl laden"}
-                      </Button>
+                      <div className="flex gap-2 flex-wrap">
+                        {/* Loeschen nur fuer Administratoren */}
+                        {isAdmin && (
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            disabled={selectedPayslips.size === 0}
+                            onClick={() =>
+                              handleDeletePayslips(
+                                payslips.filter((d) => selectedPayslips.has(d.path))
+                              )
+                            }
+                          >
+                            <Trash2 className="w-4 h-4 mr-1" />
+                            {selectedPayslips.size > 1
+                              ? `${selectedPayslips.size} löschen`
+                              : "Löschen"}
+                          </Button>
+                        )}
+                        <Button
+                          size="sm"
+                          disabled={selectedPayslips.size === 0 || downloadingZip}
+                          onClick={() => handleBulkDownload("lohnzettel")}
+                        >
+                          <Archive className="w-4 h-4 mr-1" />
+                          {selectedPayslips.size > 1
+                            ? `${selectedPayslips.size} als ZIP herunterladen`
+                            : selectedPayslips.size === 1
+                            ? "1 Datei herunterladen"
+                            : "Auswahl herunterladen"}
+                        </Button>
+                      </div>
                     </div>
                     <div className="space-y-2">
                       {payslips.map((doc) => (
@@ -404,9 +553,28 @@ export default function MyDocuments() {
                               size="sm"
                               variant="outline"
                               onClick={() => handleView(doc, "lohnzettel")}
+                              title="Ansehen"
                             >
                               <Eye className="w-4 h-4" />
                             </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleSingleDownload(doc)}
+                              title="Herunterladen"
+                            >
+                              <Download className="w-4 h-4" />
+                            </Button>
+                            {isAdmin && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleDeletePayslips([doc])}
+                                title="Löschen"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            )}
                           </div>
                         </div>
                       ))}
@@ -529,6 +697,104 @@ export default function MyDocuments() {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="personal" className="space-y-4">
+            {personalDocs.length === 0 ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Meine Unterlagen</CardTitle>
+                  <CardDescription>
+                    Vom Administrator hinterlegte Unterlagen wie Anmeldungen,
+                    Dienstverträge oder Zeugnisse
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-muted-foreground">
+                    Keine Unterlagen vorhanden
+                  </p>
+                </CardContent>
+              </Card>
+            ) : (
+              PERSONAL_DOCUMENT_CATEGORIES.map((cat) => {
+                const docs = personalDocs.filter((d) => d.kategorie === cat.id);
+                if (docs.length === 0) return null;
+                return (
+                  <Card key={cat.id}>
+                    <CardHeader>
+                      <CardTitle>{personalCategoryLabel(cat.id)}</CardTitle>
+                      <CardDescription>{docs.length} Dokument(e)</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      {groupDocumentsByFolder(
+                        docs,
+                        personalFolders.filter((f) => f.kategorie === cat.id)
+                      ).map(({ folder, documents: folderDocs }) => (
+                      <div key={folder?.id ?? "unfiled"} className="space-y-2">
+                        {/* Ordnerzeile nur zeigen, wenn es ueberhaupt Ordner gibt */}
+                        {folder && (
+                          <p className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                            <FolderOpen className="w-3.5 h-3.5" />
+                            {folder.name}
+                          </p>
+                        )}
+                        {!folder && personalFolders.some((f) => f.kategorie === cat.id) && (
+                          <p className="text-xs font-medium text-muted-foreground">
+                            {UNFILED_LABEL}
+                          </p>
+                        )}
+                        {folderDocs.map((doc) => (
+                          <div
+                            key={doc.id}
+                            className="flex items-center justify-between gap-3 p-3 border rounded-md hover:bg-accent"
+                          >
+                            <div className="flex items-center gap-3 flex-1 min-w-0">
+                              <FileText className="w-5 h-5 text-primary shrink-0" />
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm font-medium truncate">
+                                  {doc.bezeichnung}
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                  {doc.dokument_datum
+                                    ? new Date(doc.dokument_datum).toLocaleDateString("de-DE")
+                                    : new Date(doc.created_at).toLocaleDateString("de-DE")}
+                                  {doc.notizen ? ` · ${doc.notizen}` : ""}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex gap-2 shrink-0">
+                              {/\.(pdf|jpe?g|png|heic|heif)$/i.test(doc.file_path) && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() =>
+                                    setViewingFile({
+                                      name: doc.bezeichnung,
+                                      path: doc.file_path,
+                                      bucketName: "employee-documents",
+                                    })
+                                  }
+                                >
+                                  <Eye className="w-4 h-4" />
+                                </Button>
+                              )}
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handlePersonalDownload(doc)}
+                              >
+                                <Download className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      ))}
+                    </CardContent>
+                  </Card>
+                );
+              })
+            )}
           </TabsContent>
         </Tabs>
       </div>
