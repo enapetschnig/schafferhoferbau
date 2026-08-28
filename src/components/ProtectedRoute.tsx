@@ -2,22 +2,11 @@ import { useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 
+// Rollenlogik liegt zentral in lib/employeeRoles - sonst driften die Stellen
+// auseinander (siehe Fehler "Vorarbeiter wird als Mitarbeiter angezeigt").
+import { ROLE_LEVEL, getEffectiveRole } from "@/lib/employeeRoles";
+
 type MinRole = "extern" | "lehrling" | "facharbeiter" | "vorarbeiter" | "admin";
-
-const ROLE_LEVEL: Record<string, number> = {
-  extern: 0,
-  lehrling: 1,
-  facharbeiter: 2,
-  vorarbeiter: 3,
-  admin: 4,
-};
-
-function getEffectiveRole(isAdmin: boolean, kategorie: string | null): string {
-  if (isAdmin) return "admin";
-  if (!kategorie) return "facharbeiter";
-  if (kategorie === "extern") return "extern";
-  return kategorie; // lehrling, facharbeiter, vorarbeiter
-}
 
 export function ProtectedRoute({
   children,

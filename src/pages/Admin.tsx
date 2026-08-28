@@ -28,6 +28,7 @@ import { ContactTemplatesManager } from "@/components/admin/ContactTemplatesMana
 import { YearPlanningRolesPanel } from "@/components/admin/YearPlanningRolesPanel";
 import { WarehouseCategoriesManager } from "@/components/admin/WarehouseCategoriesManager";
 import { BatchEmployeeSettings } from "@/components/BatchEmployeeSettings";
+import { getEffectiveRole } from "@/lib/employeeRoles";
 
 type Profile = {
   id: string;
@@ -1479,7 +1480,12 @@ export default function Admin() {
                     user_id: e.user_id,
                     vorname: e.vorname,
                     nachname: e.nachname,
-                    app_role: e.user_id ? userRoles[e.user_id] || null : null,
+                    // user_roles kennt nur administrator|mitarbeiter - die
+                    // Vorarbeiter-Eigenschaft steckt in employees.kategorie
+                    app_role: getEffectiveRole(
+                      !!e.user_id && userRoles[e.user_id] === "administrator",
+                      e.kategorie
+                    ),
                   }))}
                   onSaved={fetchEmployees}
                 />

@@ -12,21 +12,19 @@ import { Users, Save, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { DEFAULT_SCHEDULE, LEHRLING_SCHEDULE, DEFAULT_SCHWELLENWERT, type WeekSchedule, type DaySchedule, type Schwellenwert } from "@/lib/workingHours";
+import { roleLabel, isInRoleGroup } from "@/lib/employeeRoles";
 
 type EmployeeLite = {
   id: string;
   user_id?: string | null;
   vorname: string | null;
   nachname: string | null;
-  /** App-Rolle aus user_roles: administrator | vorarbeiter | mitarbeiter | extern */
+  /**
+   * Tatsaechliche Rolle aus Admin-Flag UND employees.kategorie
+   * (admin | vorarbeiter | facharbeiter | lehrling | extern | bauherr).
+   * NICHT der rohe user_roles-Wert - der kennt keine Vorarbeiter.
+   */
   app_role?: string | null;
-};
-
-const APP_ROLE_LABELS: Record<string, string> = {
-  administrator: "Administrator",
-  vorarbeiter: "Vorarbeiter",
-  mitarbeiter: "Mitarbeiter",
-  extern: "Extern",
 };
 
 const DAY_KEYS = ["mo", "di", "mi", "do", "fr", "sa", "so"] as const;
@@ -91,8 +89,11 @@ export function BatchEmployeeSettings({ employees, onSaved }: Props) {
     else setSelected(new Set(employees.map((e) => e.id)));
   };
 
-  const selectByRole = (role: string) => {
-    setSelected(new Set(employees.filter((e) => e.app_role === role).map((e) => e.id)));
+  // Gruppe statt exakter Rolle: "Mitarbeiter" umfasst Facharbeiter UND Lehrlinge
+  const selectByRole = (group: string) => {
+    setSelected(
+      new Set(employees.filter((e) => isInRoleGroup(e.app_role, group)).map((e) => e.id))
+    );
   };
 
   const presetSchedule = (preset: WeekSchedule) => {
@@ -337,9 +338,7 @@ export function BatchEmployeeSettings({ employees, onSaved }: Props) {
                       <span className="text-sm">
                         {emp.vorname || ""} {emp.nachname || ""}
                       </span>
-                      {emp.app_role && (
-                        <span className="text-xs text-muted-foreground">({APP_ROLE_LABELS[emp.app_role] || emp.app_role})</span>
-                      )}
+                      <span className="text-xs text-muted-foreground">({roleLabel(emp.app_role)})</span>
                     </label>
                   ))}
                 </div>
