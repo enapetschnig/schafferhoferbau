@@ -13,6 +13,13 @@ import { ZoomableImage } from "@/components/ZoomableImage";
 import { PdfPreview } from "@/components/PdfPreview";
 import { useToast } from "@/hooks/use-toast";
 import { normalizeImageOrientation } from "@/lib/imageOrientation";
+import {
+  CHAT_FILE_ACCEPT,
+  attachmentKindFromFile,
+  attachmentKindFromUrl,
+  attachmentSummary,
+  validateChatFiles,
+} from "@/lib/chatAttachments";
 import { ReadReceipt, type Recipient } from "@/components/chat/ReadReceipt";
 
 type ChatMessage = {
@@ -39,6 +46,8 @@ export function ProjectChat({ projectId, projectName, isAdmin }: { projectId: st
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState("");
   const [sending, setSending] = useState(false);
+  // Fortschritt nur bei Mehrfachauswahl ("3 von 5")
+  const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [profileCache, setProfileCache] = useState<Record<string, string>>({});
   const [hasMore, setHasMore] = useState(true);
@@ -432,60 +441,98 @@ export function ProjectChat({ projectId, projectName, isAdmin }: { projectId: st
     setPreviewImage(null);
   };
 
-  // Send photo or PDF. `image_url` haelt beide Typen (Bilder + PDFs) -
-  // beim Rendern wird anhand der Dateiendung unterschieden.
-  const uploadAndSendFile = async (rawFile: File) => {
-    if (!currentUserId) return;
+  // Send photos, videos or PDFs. `image_url` haelt alle Typen - beim Rendern
+  // wird anhand der Dateiendung unterschieden (siehe lib/chatAttachments).
+  // Je Datei entsteht eine eigene Nachricht, wie man es aus WhatsApp kennt.
+  const uploadAndSendFiles = async (rawFiles: File[]) => {
+    if (!currentUserId || rawFiles.length === 0) return;
+
+    const { accepted, rejected } = validateChatFiles(rawFiles);
+    if (rejected.length > 0) {
+      toast({
+        variant: "destructive",
+        title: rejected.length === 1 ? "Datei übersprungen" : `${rejected.length} Dateien übersprungen`,
+        description: rejected.map((r) => `${r.name}: ${r.reason}`).join("\n"),
+      });
+    }
+    if (accepted.length === 0) return;
+
     setSending(true);
-    const isPdf = rawFile.type === "application/pdf" || rawFile.name.toLowerCase().endsWith(".pdf");
-    // Nur Bilder durch die EXIF-Rotation schicken - PDFs unveraendert
-    const file = isPdf ? rawFile : await normalizeImageOrientation(rawFile);
-    const safeName = sanitizeStorageFileName(file.name);
-    const filePath = `${projectId}/${Date.now()}_${safeName}`;
+    setUploadProgress(accepted.length > 1 ? { done: 0, total: accepted.length } : null);
 
-    const { error: uploadError } = await supabase.storage
-      .from("project-chat")
-      .upload(filePath, file, { cacheControl: "3600", upsert: false });
+    const sent: File[] = [];
+    const failed: string[] = [];
 
-    if (uploadError) {
-      toast({ variant: "destructive", title: "Upload fehlgeschlagen", description: uploadError.message });
-      setSending(false);
-      return;
+    // Bewusst nacheinander: so bleibt die Reihenfolge im Chat erhalten und
+    // ein Handy-Upload ueber Mobilfunk wird nicht von 10 Parallel-Uploads erschlagen.
+    for (const rawFile of accepted) {
+      const kind = attachmentKindFromFile(rawFile);
+      // Nur Bilder durch die EXIF-Rotation schicken - PDFs/Videos unveraendert
+      const file = kind === "image" ? await normalizeImageOrientation(rawFile) : rawFile;
+      const safeName = sanitizeStorageFileName(file.name);
+      const filePath = `${projectId}/${Date.now()}_${Math.random().toString(36).slice(2, 8)}_${safeName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("project-chat")
+        .upload(filePath, file, {
+          cacheControl: "3600",
+          upsert: false,
+          contentType: file.type || undefined,
+        });
+
+      if (uploadError) {
+        failed.push(rawFile.name);
+        setUploadProgress((p) => (p ? { ...p, done: p.done + 1 } : null));
+        continue;
+      }
+
+      // Nur Fotos zusaetzlich in den Projekt-Fotoordner spiegeln
+      if (kind === "image") {
+        const photosPath = `${projectId}/${Date.now()}_${Math.random().toString(36).slice(2, 8)}_${safeName}`;
+        await supabase.storage
+          .from("project-photos")
+          .upload(photosPath, file, { cacheControl: "3600", upsert: false });
+      }
+
+      const { data: urlData } = supabase.storage
+        .from("project-chat")
+        .getPublicUrl(filePath);
+
+      const { error } = await supabase.from("project_messages").insert({
+        project_id: projectId,
+        user_id: currentUserId,
+        image_url: urlData.publicUrl,
+        // Bei PDF/Video den Dateinamen mitschicken - er wird als Titel angezeigt
+        message: kind === "image" ? null : rawFile.name,
+      });
+
+      if (error) failed.push(rawFile.name);
+      else sent.push(rawFile);
+
+      setUploadProgress((p) => (p ? { ...p, done: p.done + 1 } : null));
     }
 
-    // Bilder zusaetzlich in den Projekt-Fotoordner spiegeln (PDFs nicht)
-    if (!isPdf) {
-      const photosPath = `${projectId}/${Date.now()}_${safeName}`;
-      await supabase.storage
-        .from("project-photos")
-        .upload(photosPath, file, { cacheControl: "3600", upsert: false });
+    if (failed.length > 0) {
+      toast({
+        variant: "destructive",
+        title: "Nicht gesendet",
+        description: failed.join(", "),
+      });
     }
+    // Eine Sammel-Benachrichtigung statt einer je Datei
+    if (sent.length > 0) sendNotifications(attachmentSummary(sent));
 
-    const { data: urlData } = supabase.storage
-      .from("project-chat")
-      .getPublicUrl(filePath);
-
-    const { error } = await supabase.from("project_messages").insert({
-      project_id: projectId,
-      user_id: currentUserId,
-      image_url: urlData.publicUrl,
-      message: isPdf ? rawFile.name : null,
-    });
-
-    if (error) {
-      toast({ variant: "destructive", title: "Fehler", description: "Datei konnte nicht gesendet werden" });
-    } else {
-      sendNotifications(isPdf ? "📎 PDF gesendet" : "📷 Foto gesendet");
-    }
+    setUploadProgress(null);
     setSending(false);
   };
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const rawFile = e.target.files?.[0];
-    if (!rawFile) return;
-    await uploadAndSendFile(rawFile);
-    if (fileInputRef.current) fileInputRef.current.value = "";
-    if (pdfInputRef.current) pdfInputRef.current.value = "";
+    const files = Array.from(e.target.files || []);
+    // Wert vor dem await zuruecksetzen - sonst laesst sich dieselbe Datei
+    // nicht direkt noch einmal auswaehlen
+    e.target.value = "";
+    if (files.length === 0) return;
+    await uploadAndSendFiles(files);
   };
 
   // Strg+V: Bilder aus Zwischenablage einfuegen (Screenshots, Excel-Auszuege)
@@ -493,7 +540,7 @@ export function ProjectChat({ projectId, projectName, isAdmin }: { projectId: st
     // File aus Clipboard hat oft generischen Namen ('image.png'). Mit Timestamp
     // sicherstellen, dass jeder Paste einen neuen Upload-Pfad bekommt.
     const renamed = new File([file], `clipboard_${Date.now()}.${(file.type.split("/")[1] || "png")}`, { type: file.type });
-    await uploadAndSendFile(renamed);
+    await uploadAndSendFiles([renamed]);
   };
 
   const formatTime = (dateStr: string) => {
@@ -608,12 +655,9 @@ export function ProjectChat({ projectId, projectName, isAdmin }: { projectId: st
                   )}
 
                   {(() => {
-                    const isPdf = msg.image_url
-                      ? (() => {
-                          try { return new URL(msg.image_url).pathname.toLowerCase().endsWith(".pdf"); }
-                          catch { return msg.image_url.toLowerCase().endsWith(".pdf"); }
-                        })()
-                      : false;
+                    const kind = msg.image_url ? attachmentKindFromUrl(msg.image_url) : null;
+                    const isPdf = kind === "pdf";
+                    const isVideo = kind === "video";
                     const hasAttachment = !!msg.image_url;
                     // Reaktions-Leiste fuer diese Message - direkt am Anhang, wenn einer da ist
                     const msgReactions = reactions.filter(r => r.message_id === msg.id);
@@ -692,6 +736,17 @@ export function ProjectChat({ projectId, projectName, isAdmin }: { projectId: st
                                   <p className="text-xs text-muted-foreground">Zum Anzeigen tippen</p>
                                 </div>
                               </button>
+                            ) : isVideo ? (
+                              /* preload="metadata": laedt nur das erste Bild, nicht das
+                                 ganze Video - wichtig bei Mobilfunk auf der Baustelle */
+                              <video
+                                src={msg.image_url!}
+                                controls
+                                playsInline
+                                preload="metadata"
+                                className="rounded-lg max-w-full max-h-64 bg-black"
+                                onClick={(e) => e.stopPropagation()}
+                              />
                             ) : (
                               <img
                                 src={msg.image_url!}
@@ -705,8 +760,8 @@ export function ProjectChat({ projectId, projectName, isAdmin }: { projectId: st
                           </div>
                         )}
 
-                        {/* Text - bei PDF steht Dateiname bereits im Attachment-Block */}
-                        {msg.message && !(hasAttachment && isPdf) && (
+                        {/* Text - bei PDF/Video ist der Dateiname keine echte Nachricht */}
+                        {msg.message && !(hasAttachment && (isPdf || isVideo)) && (
                           <p className="text-sm whitespace-pre-wrap break-words">{formatChatText(msg.message)}</p>
                         )}
 
@@ -746,18 +801,28 @@ export function ProjectChat({ projectId, projectName, isAdmin }: { projectId: st
 
       {/* Input area */}
       <div className="border-t bg-card p-3">
+        {uploadProgress && (
+          <p className="text-xs text-muted-foreground mb-2 text-center">
+            Sende Datei {Math.min(uploadProgress.done + 1, uploadProgress.total)} von{" "}
+            {uploadProgress.total}...
+          </p>
+        )}
         <div className="flex items-center gap-2">
+          {/* Kamera-Knopf: Fotos und Videos, mehrere auf einmal */}
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*"
+            accept="image/*,video/*"
+            multiple
             className="hidden"
             onChange={handlePhotoUpload}
           />
+          {/* Bueroklammer: alles - Bilder, Videos, PDFs, mehrere auf einmal */}
           <input
             ref={pdfInputRef}
             type="file"
-            accept="application/pdf"
+            accept={CHAT_FILE_ACCEPT}
+            multiple
             className="hidden"
             onChange={handlePhotoUpload}
           />
@@ -767,7 +832,7 @@ export function ProjectChat({ projectId, projectName, isAdmin }: { projectId: st
             className="shrink-0"
             onClick={() => fileInputRef.current?.click()}
             disabled={sending}
-            title="Foto senden"
+            title="Fotos oder Videos senden"
           >
             <Camera className="h-5 w-5" />
           </Button>
@@ -777,7 +842,7 @@ export function ProjectChat({ projectId, projectName, isAdmin }: { projectId: st
             className="shrink-0"
             onClick={() => pdfInputRef.current?.click()}
             disabled={sending}
-            title="PDF senden"
+            title="Dateien senden (Bilder, Videos, PDF)"
           >
             <Paperclip className="h-5 w-5" />
           </Button>
@@ -810,18 +875,11 @@ export function ProjectChat({ projectId, projectName, isAdmin }: { projectId: st
       <Dialog open={!!previewImage} onOpenChange={() => setPreviewImage(null)}>
         <DialogContent className="max-w-4xl h-[90vh] flex flex-col p-0 bg-black/95" hideClose>
           {(() => {
-            const isPdfPreview = (() => {
-              if (!previewImage) return false;
-              try { return new URL(previewImage).pathname.toLowerCase().endsWith(".pdf"); }
-              catch { return previewImage.toLowerCase().endsWith(".pdf"); }
-            })();
-            // Swipe nur zwischen Bildern (ohne PDFs), sonst fremde Formate im Bild-Lightbox
+            const isPdfPreview = previewImage ? attachmentKindFromUrl(previewImage) === "pdf" : false;
+            // Swipe nur zwischen echten Bildern - PDFs und Videos gehoeren nicht
+            // in die Bild-Lightbox (Videos spielen direkt in der Nachricht)
             const allImages = messages
-              .filter(m => {
-                if (!m.image_url) return false;
-                try { return !new URL(m.image_url).pathname.toLowerCase().endsWith(".pdf"); }
-                catch { return !m.image_url.toLowerCase().endsWith(".pdf"); }
-              })
+              .filter(m => m.image_url && attachmentKindFromUrl(m.image_url) === "image")
               .map(m => m.image_url!);
             const currentIdx = previewImage && !isPdfPreview ? allImages.indexOf(previewImage) : -1;
             const goPrev = () => { if (currentIdx > 0) setPreviewImage(allImages[currentIdx - 1]); };

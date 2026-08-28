@@ -1,12 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Camera, Send, ChevronUp, Trash2 } from "lucide-react";
+import { Camera, Send, ChevronUp, Trash2, FileText } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { sanitizeStorageFileName } from "@/lib/storageFileName";
 import { formatChatText } from "@/lib/formatChatText";
 import { handleChatInputKeyDown } from "@/lib/chatInputKeyHandler";
 import { useToast } from "@/hooks/use-toast";
 import { normalizeImageOrientation } from "@/lib/imageOrientation";
+import {
+  CHAT_FILE_ACCEPT,
+  attachmentKindFromFile,
+  attachmentKindFromUrl,
+  attachmentSummary,
+  validateChatFiles,
+} from "@/lib/chatAttachments";
 import { VoiceAIInput } from "@/components/VoiceAIInput";
 import { ReadReceipt, type Recipient } from "@/components/chat/ReadReceipt";
 
@@ -47,6 +54,8 @@ export function CompanyChat({
   const [messages, setMessages] = useState<BroadcastMessage[]>([]);
   const [newMessage, setNewMessage] = useState("");
   const [sending, setSending] = useState(false);
+  // Fortschritt nur bei Mehrfachauswahl ("3 von 5")
+  const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [profileCache, setProfileCache] = useState<Record<string, string>>({});
   const [hasMore, setHasMore] = useState(true);
@@ -339,52 +348,91 @@ export function CompanyChat({
     }
   };
 
-  // Send photo
-  const uploadAndSendImage = async (rawFile: File) => {
-    if (!currentUserId || !channelId || !channel) return;
+  // Send photos, videos or PDFs - je Datei eine eigene Nachricht
+  const uploadAndSendFiles = async (rawFiles: File[]) => {
+    if (!currentUserId || !channelId || !channel || rawFiles.length === 0) return;
+
+    const { accepted, rejected } = validateChatFiles(rawFiles);
+    if (rejected.length > 0) {
+      toast({
+        variant: "destructive",
+        title: rejected.length === 1 ? "Datei übersprungen" : `${rejected.length} Dateien übersprungen`,
+        description: rejected.map((r) => `${r.name}: ${r.reason}`).join("\n"),
+      });
+    }
+    if (accepted.length === 0) return;
+
     setSending(true);
-    const file = await normalizeImageOrientation(rawFile);
-    const filePath = `${Date.now()}_${sanitizeStorageFileName(file.name)}`;
+    setUploadProgress(accepted.length > 1 ? { done: 0, total: accepted.length } : null);
 
-    const { error: uploadError } = await supabase.storage
-      .from("broadcast-chat")
-      .upload(filePath, file, { cacheControl: "3600", upsert: false });
-
-    if (uploadError) {
-      toast({ variant: "destructive", title: "Upload fehlgeschlagen", description: uploadError.message });
-      setSending(false);
-      return;
-    }
-
-    const { data: urlData } = supabase.storage.from("broadcast-chat").getPublicUrl(filePath);
     const roles = channel.target_roles.length > 0 ? channel.target_roles : ["alle"];
-    const { error } = await supabase.from("broadcast_messages").insert({
-      user_id: currentUserId,
-      image_url: urlData.publicUrl,
-      target_roles: roles,
-      channel_id: channelId,
-    });
+    const sent: File[] = [];
+    const failed: string[] = [];
 
-    if (error) {
-      toast({ variant: "destructive", title: "Fehler", description: "Foto konnte nicht gesendet werden" });
-    } else {
-      sendNotifications("📷 Foto gesendet", roles, channel);
-      sendPush("📷 Foto gesendet", roles, channel);
+    // Nacheinander, damit die Reihenfolge im Chat erhalten bleibt
+    for (const rawFile of accepted) {
+      const kind = attachmentKindFromFile(rawFile);
+      // Nur Bilder durch die EXIF-Rotation schicken
+      const file = kind === "image" ? await normalizeImageOrientation(rawFile) : rawFile;
+      const filePath = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}_${sanitizeStorageFileName(file.name)}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("broadcast-chat")
+        .upload(filePath, file, {
+          cacheControl: "3600",
+          upsert: false,
+          contentType: file.type || undefined,
+        });
+
+      if (uploadError) {
+        failed.push(rawFile.name);
+        setUploadProgress((p) => (p ? { ...p, done: p.done + 1 } : null));
+        continue;
+      }
+
+      const { data: urlData } = supabase.storage.from("broadcast-chat").getPublicUrl(filePath);
+      const { error } = await supabase.from("broadcast_messages").insert({
+        user_id: currentUserId,
+        image_url: urlData.publicUrl,
+        // Bei PDF/Video den Dateinamen als Titel mitschicken
+        message: kind === "image" ? null : rawFile.name,
+        target_roles: roles,
+        channel_id: channelId,
+      });
+
+      if (error) failed.push(rawFile.name);
+      else sent.push(rawFile);
+
+      setUploadProgress((p) => (p ? { ...p, done: p.done + 1 } : null));
     }
+
+    if (failed.length > 0) {
+      toast({ variant: "destructive", title: "Nicht gesendet", description: failed.join(", ") });
+    }
+    // Eine Sammel-Benachrichtigung statt einer je Datei
+    if (sent.length > 0) {
+      const summary = attachmentSummary(sent);
+      sendNotifications(summary, roles, channel);
+      sendPush(summary, roles, channel);
+    }
+
+    setUploadProgress(null);
     setSending(false);
   };
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const rawFile = e.target.files?.[0];
-    if (!rawFile) return;
-    await uploadAndSendImage(rawFile);
-    if (fileInputRef.current) fileInputRef.current.value = "";
+    const files = Array.from(e.target.files || []);
+    // Vor dem await zuruecksetzen, sonst laesst sich dieselbe Datei nicht
+    // direkt noch einmal auswaehlen
+    e.target.value = "";
+    if (files.length === 0) return;
+    await uploadAndSendFiles(files);
   };
 
   // Strg+V: Bilder aus Zwischenablage einfuegen (Screenshots, Excel-Auszuege)
   const handlePasteImage = async (file: File) => {
     const renamed = new File([file], `clipboard_${Date.now()}.${(file.type.split("/")[1] || "png")}`, { type: file.type });
-    await uploadAndSendImage(renamed);
+    await uploadAndSendFiles([renamed]);
   };
 
   // Send in-app notifications
@@ -546,19 +594,54 @@ export function CompanyChat({
                     <p className="text-xs font-semibold mb-0.5 opacity-80">{msg.sender_name}</p>
                   )}
 
-                  {/* Image */}
-                  {msg.image_url && (
-                    <a href={msg.image_url} target="_blank" rel="noopener noreferrer">
-                      <img
-                        src={msg.image_url}
-                        alt="Foto"
-                        className="rounded-lg max-w-full max-h-64 object-cover mb-1 cursor-pointer hover:opacity-90"
-                      />
-                    </a>
-                  )}
+                  {/* Anhang: Bild, Video oder PDF */}
+                  {msg.image_url && (() => {
+                    const kind = attachmentKindFromUrl(msg.image_url);
+                    if (kind === "video") {
+                      // preload="metadata": nur das Vorschaubild laden, nicht das
+                      // ganze Video - wichtig bei Mobilfunk auf der Baustelle
+                      return (
+                        <video
+                          src={msg.image_url}
+                          controls
+                          playsInline
+                          preload="metadata"
+                          className="rounded-lg max-w-full max-h-64 mb-1 bg-black"
+                        />
+                      );
+                    }
+                    if (kind === "pdf") {
+                      return (
+                        <a
+                          href={msg.image_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-2 p-2 mb-1 rounded-lg bg-background/50 border border-border hover:bg-background/80 transition-colors"
+                        >
+                          <FileText className="h-8 w-8 shrink-0 text-red-600" />
+                          <div className="text-left min-w-0 flex-1">
+                            <p className="text-sm font-medium truncate">{msg.message || "PDF-Dokument"}</p>
+                            <p className="text-xs text-muted-foreground">Zum Anzeigen tippen</p>
+                          </div>
+                        </a>
+                      );
+                    }
+                    return (
+                      <a href={msg.image_url} target="_blank" rel="noopener noreferrer">
+                        <img
+                          src={msg.image_url}
+                          alt="Foto"
+                          className="rounded-lg max-w-full max-h-64 object-cover mb-1 cursor-pointer hover:opacity-90"
+                        />
+                      </a>
+                    );
+                  })()}
 
-                  {/* Text */}
-                  {msg.message && <p className="text-sm whitespace-pre-wrap break-words">{formatChatText(msg.message)}</p>}
+                  {/* Text - bei PDF/Video ist der Dateiname keine echte Nachricht */}
+                  {msg.message &&
+                    !(msg.image_url && attachmentKindFromUrl(msg.image_url) !== "image") && (
+                      <p className="text-sm whitespace-pre-wrap break-words">{formatChatText(msg.message)}</p>
+                    )}
 
                   {/* Timestamp + Lesebestaetigung (nur Absender und Admins) */}
                   <p className={`text-[10px] mt-0.5 text-right flex items-center justify-end gap-1 ${isOwn ? "opacity-70" : "text-muted-foreground"}`}>
@@ -590,11 +673,18 @@ export function CompanyChat({
 
       {/* Input area */}
       <div className="border-t bg-card p-3">
+        {uploadProgress && (
+          <p className="text-xs text-muted-foreground mb-2 text-center">
+            Sende Datei {Math.min(uploadProgress.done + 1, uploadProgress.total)} von{" "}
+            {uploadProgress.total}...
+          </p>
+        )}
         <div className="flex items-center gap-2">
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*"
+            accept={CHAT_FILE_ACCEPT}
+            multiple
             className="hidden"
             onChange={handlePhotoUpload}
           />
@@ -604,6 +694,7 @@ export function CompanyChat({
             className="shrink-0"
             onClick={() => fileInputRef.current?.click()}
             disabled={sending}
+            title="Dateien senden (Bilder, Videos, PDF)"
           >
             <Camera className="h-5 w-5" />
           </Button>
