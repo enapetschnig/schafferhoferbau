@@ -14,3 +14,8 @@ verify_jwt = false
 # Admin-Role-Check muss die Function trotzdem selbst machen.
 [functions.create-employee-account]
 verify_jwt = true
+
+# Wird vom CRM ohne Supabase-Schluessel aufgerufen; die Funktion prueft
+# stattdessen selbst das gemeinsame Geheimnis (x-cockpit-secret).
+[functions.wunsch-datei]
+verify_jwt = false

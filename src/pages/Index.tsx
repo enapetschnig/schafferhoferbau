@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { AenderungswunschKnopf, ErledigteWuensche } from "@/components/aenderungswunsch";
+import { NeuerungenBanner } from "@/components/neuerungen/NeuerungenBanner";
 import { Session, User } from "@supabase/supabase-js";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -930,8 +932,9 @@ export default function Index() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b bg-card sticky top-0 z-50 shadow-sm">
+      {/* Header — baut die Startseite selbst. data-seitenkopf verhindert, dass
+          der schwebende Melde-Knopf hier zusaetzlich erscheint. */}
+      <header data-seitenkopf className="border-b bg-card sticky top-0 z-50 shadow-sm">
         <div className="container mx-auto px-3 sm:px-4 lg:px-6 py-3 sm:py-4">
           <div className="flex justify-between items-center gap-3">
             <div className="flex items-center gap-2 sm:gap-3">
@@ -944,6 +947,8 @@ export default function Index() {
                 </span>
               </div>
             </div>
+            <div className="flex items-center gap-2">
+            <AenderungswunschKnopf gestalt="kopf" />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm">
@@ -989,12 +994,19 @@ export default function Index() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+            </div>
           </div>
         </div>
       </header>
 
       {/* Main Content */}
       <main className="px-3 sm:px-4 lg:px-6 py-4 sm:py-6 lg:py-8 max-w-7xl mx-auto">
+
+        {/* Rueckmeldung an den Melder - sehen ALLE angemeldeten Benutzer */}
+        <ErledigteWuensche />
+
+        {/* "Das ist neu" - Kundenentscheid 28.08.2026: nur Administratoren */}
+        {user && isAdmin && <NeuerungenBanner userId={user.id} />}
 
         {/* Arbeitszeitaufzeichnung — offene Unterschriften (Mitarbeiter) */}
         {!isExternal && user && (

@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, Shield, User as UserIcon, UserPlus, Send, Mail, Phone, MapPin, Shirt, FileText, Clock, Trash2, Settings, Save, Calendar, Menu, Plus, Upload, GripVertical } from "lucide-react";
+import { ArrowLeft, Shield, User as UserIcon, UserPlus, Send, Mail, Phone, MapPin, Shirt, FileText, Clock, Trash2, Settings, Save, Calendar, Menu, Plus, Upload, GripVertical, MessageSquare } from "lucide-react";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -29,6 +29,8 @@ import { YearPlanningRolesPanel } from "@/components/admin/YearPlanningRolesPane
 import { WarehouseCategoriesManager } from "@/components/admin/WarehouseCategoriesManager";
 import { BatchEmployeeSettings } from "@/components/BatchEmployeeSettings";
 import { getEffectiveRole } from "@/lib/employeeRoles";
+import { AenderungswuenscheListe } from "@/components/aenderungswunsch";
+import { NeuerungenPflege } from "@/components/neuerungen/NeuerungenPflege";
 
 type Profile = {
   id: string;
@@ -1638,6 +1640,17 @@ export default function Admin() {
           </Card>
         </section>
 
+        {/* Aenderungswuensche: Neuerungen pflegen und Meldungen bearbeiten */}
+        <section className="mb-8">
+          <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
+            <MessageSquare className="h-6 w-6" />
+            Änderungswünsche
+          </h2>
+          <div className="space-y-6">
+            <NeuerungenPflege />
+            <AenderungswuenscheListe />
+          </div>
+        </section>
 
       </main>
 

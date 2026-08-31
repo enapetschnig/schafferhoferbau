@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { Outlet, useNavigate } from "react-router-dom";
+import { AenderungswunschKnopf } from "@/components/aenderungswunsch";
 import { supabase } from "@/integrations/supabase/client";
 import { DesktopSidebar } from "./DesktopSidebar";
 
@@ -96,6 +97,9 @@ export function AppLayout() {
       <DesktopSidebar isAdmin={isAdmin} menuVisible={menuVisible} userName={userName} />
       <div className="flex-1 min-w-0">
         <Outlet />
+        {/* Auffangnetz fuer Seiten ohne PageHeader - blendet sich selbst aus,
+            sobald ein [data-seitenkopf] auf der Seite steht. */}
+        <AenderungswunschKnopf gestalt="schwebend" />
       </div>
     </div>
   );
