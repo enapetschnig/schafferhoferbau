@@ -17,7 +17,7 @@ import {
 } from "date-fns";
 import { de } from "date-fns/locale";
 import { Plus, Trash2, GripVertical, Package, ChevronUp, ChevronDown } from "lucide-react";
-import { groupPlanBlocksByRow, assignStackLevels, blockLabel } from "@/lib/yearPlanning";
+import { groupPlanBlocksByRow, assignStackLevels, blockLabel, planRowKey } from "@/lib/yearPlanning";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -120,9 +120,11 @@ export function YearPlanningView({
   const [createDrag, setCreateDrag] = useState<{
     kind: "plan" | "resource";
     resourceId?: string;
-    /** Zeile, in der gezogen wird - so landet der neue Abschnitt beim richtigen Projekt */
+    /** Zeile, in der gezogen wird - so landet der neue Abschnitt in derselben Zeile */
     rowKey?: string;
     rowProjectId?: string | null;
+    /** Titel der Zeile - bei freien Bloecken haengt die Gruppierung daran */
+    rowTitle?: string;
     startWeek: number;
     endWeek: number;
     active: boolean;
@@ -305,6 +307,7 @@ export function YearPlanningView({
       resourceId,
       rowKey: row?.key,
       rowProjectId: row?.blocks[0]?.project_id ?? null,
+      rowTitle: row?.blocks[0]?.title ?? undefined,
       startWeek: weekNum,
       endWeek: weekNum,
       active: true,
@@ -324,13 +327,15 @@ export function YearPlanningView({
     const ew = Math.max(createDrag.startWeek, createDrag.endWeek);
     if (createDrag.kind === "plan") {
       setEditingBlock(null);
-      // Wurde in einer Projektzeile gezogen, ist das Projekt schon klar -
-      // dann entsteht ein weiterer Abschnitt fuer dasselbe Projekt.
-      const vorlage = createDrag.rowProjectId
-        ? planBlocks.find((b) => b.project_id === createDrag.rowProjectId)
+      // Wurde in einer bestehenden Zeile gezogen, ist klar, wohin der neue
+      // Abschnitt gehoert. Bei Projektzeilen haengt das am Projekt, bei freien
+      // Zeilen am TITEL - deshalb wird er mit uebernommen, sonst entstuende
+      // wieder eine eigene Zeile.
+      const vorlage = createDrag.rowKey
+        ? planBlocks.find((b) => planRowKey(b) === createDrag.rowKey)
         : undefined;
       setBlockForm({
-        title: vorlage?.title || "",
+        title: createDrag.rowTitle || vorlage?.title || "",
         projectId: createDrag.rowProjectId || "__none__",
         color: vorlage?.color || BLOCK_COLORS[0],
         startWeek: String(sw),
@@ -1052,6 +1057,10 @@ export function YearPlanningView({
           <div>
             <Label>Titel *</Label>
             <Input value={blockForm.title} onChange={(e) => setBlockForm({ ...blockForm, title: e.target.value })} placeholder="z.B. Rohbau Graz Nord" />
+            <p className="text-xs text-muted-foreground mt-1">
+              Gleicher Titel = gleiche Zeile. So lassen sich mehrere Zeiträume
+              (z. B. KW 18–20 und KW 26–28) unter einem Namen zusammenfassen.
+            </p>
           </div>
           <div>
             <Label>Projekt (optional)</Label>

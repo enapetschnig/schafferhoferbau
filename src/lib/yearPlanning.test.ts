@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  planRowKey,
   blockLabel,
   blockWeekSpan,
   blocksOverlap,
@@ -167,5 +168,66 @@ describe("groupPlanBlocksByRow", () => {
 
   it("kommt mit leerer Liste zurecht", () => {
     expect(groupPlanBlocksByRow([], nameVon)).toEqual([]);
+  });
+});
+
+describe("planRowKey", () => {
+  it("nimmt das Projekt, wenn eines gesetzt ist", () => {
+    expect(planRowKey(b("1", "p1", 1, 4))).toBe("projekt:p1");
+  });
+
+  it("gruppiert freie Bloecke ueber den Titel", () => {
+    const a = b("1", null, 18, 20, { title: "Derler" });
+    const c = b("2", null, 26, 28, { title: "Derler" });
+    expect(planRowKey(a)).toBe(planRowKey(c));
+  });
+
+  it("ignoriert Gross-/Kleinschreibung und Leerzeichen", () => {
+    expect(planRowKey(b("1", null, 1, 2, { title: "  Derler " })))
+      .toBe(planRowKey(b("2", null, 5, 6, { title: "DERLER" })));
+  });
+
+  it("trennt verschiedene Titel", () => {
+    expect(planRowKey(b("1", null, 1, 2, { title: "Derler" })))
+      .not.toBe(planRowKey(b("2", null, 1, 2, { title: "Feistl" })));
+  });
+
+  it("ohne Titel bleibt es bei einer eigenen Zeile", () => {
+    expect(planRowKey(b("1", null, 1, 2, { title: "" }))).toBe("block:1");
+    expect(planRowKey(b("2", null, 1, 2, { title: "   " }))).toBe("block:2");
+  });
+
+  it("Projekt sticht den Titel", () => {
+    // Gleicher Titel, aber eines mit Projekt -> getrennte Zeilen
+    expect(planRowKey(b("1", "p1", 1, 2, { title: "Derler" })))
+      .not.toBe(planRowKey(b("2", null, 1, 2, { title: "Derler" })));
+  });
+});
+
+describe("groupPlanBlocksByRow - freie Bloecke (Fall Franz)", () => {
+  it("Derler KW18-20 und KW26-28 landen in EINER Zeile", () => {
+    const rows = groupPlanBlocksByRow(
+      [
+        b("a", null, 18, 20, { title: "Derler" }),
+        b("b", null, 26, 28, { title: "Derler" }),
+        b("c", null, 40, 42, { title: "Feistl" }),
+      ],
+      nameVon
+    );
+    expect(rows).toHaveLength(2);
+    const derler = rows.find((r) => r.label === "Derler")!;
+    expect(derler.blocks.map((x) => x.start_week)).toEqual([18, 26]);
+    expect(derler.isProject).toBe(false);
+  });
+
+  it("verliert auch hier keinen Block", () => {
+    const blocks = [
+      b("a", null, 18, 20, { title: "Derler" }),
+      b("b", null, 26, 28, { title: "derler" }),
+      b("c", null, 40, 42, { title: "Feistl" }),
+      b("d", "p1", 1, 6),
+    ];
+    const ids = groupPlanBlocksByRow(blocks, nameVon).flatMap((r) => r.blocks.map((x) => x.id));
+    expect(ids.sort()).toEqual(["a", "b", "c", "d"]);
   });
 });

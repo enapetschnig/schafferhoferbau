@@ -21,7 +21,7 @@ export interface PlanBlockLike {
 }
 
 export interface PlanRow<T extends PlanBlockLike> {
-  /** project_id, oder bei freien Bloecken die Block-ID */
+  /** Siehe planRowKey */
   key: string;
   /** Projektname bzw. Blocktitel */
   label: string;
@@ -29,6 +29,24 @@ export interface PlanRow<T extends PlanBlockLike> {
   isProject: boolean;
   blocks: T[];
   sortOrder: number;
+}
+
+/**
+ * Woran haengt eine Zeile?
+ *
+ * In der Praxis wird die Jahresgrobplanung ueberwiegend mit FREIEN Titeln
+ * gefuellt ("Derler", "Krandemontage", "Putzarbeiten") - das sind keine
+ * Projekte im System, und sie sollen auch keine werden. Deshalb gruppiert
+ * die Zeile nach Projekt ODER, wenn keines gesetzt ist, nach dem Titel.
+ *
+ * So landen "Derler KW 18-20" und "Derler KW 26-28" in einer Zeile, ohne dass
+ * jemand ein Projekt anlegen muss. Gross-/Kleinschreibung und Leerzeichen am
+ * Rand spielen keine Rolle. Ohne Titel bleibt es bei einer eigenen Zeile.
+ */
+export function planRowKey(block: PlanBlockLike): string {
+  if (block.project_id) return `projekt:${block.project_id}`;
+  const titel = (block.title || "").trim().toLowerCase();
+  return titel ? `titel:${titel}` : `block:${block.id}`;
 }
 
 /** Beschriftung, die direkt IM Farbblock steht. */
@@ -90,7 +108,7 @@ export function groupPlanBlocksByRow<T extends PlanBlockLike>(
   const rows = new Map<string, PlanRow<T>>();
 
   for (const block of blocks) {
-    const key = block.project_id || block.id;
+    const key = planRowKey(block);
     const isProject = !!block.project_id;
     const label = isProject
       ? projectName(block.project_id as string) || block.title || "Unbekanntes Projekt"
