@@ -17,6 +17,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { sanitizeStorageFileName } from "@/lib/storageFileName";
+import { gruppiereNachPerson, zeigeTagesuebersicht } from "@/lib/dayEntriesOverview";
 import { toast as sonnerToast } from "sonner";
 import {
   getNormalWorkingHours,
@@ -196,6 +197,9 @@ const TimeTracking = ({ embedded }: TimeTrackingEmbeddedProps = {}) => {
   // erstellt wird. Der eingeloggte Erfasser ist nach Auto-Initial-Select
   // hier drin und kann sich abwaehlen.
   const [selectedAdditionalEmployees, setSelectedAdditionalEmployees] = useState<string[]>([]);
+  // Bereits gebuchte Zeiten der ausgewaehlten Arbeiter (nur Mehrfach-Modus)
+  const [selectedDayEntries, setSelectedDayEntries] = useState<any[]>([]);
+  const [selectedNames, setSelectedNames] = useState<Record<string, string>>({});
   // Ref-Flag, damit Auto-Initial-Select genau einmal pro Erfass-Session
   // wirkt — nach Save reset, dann beim naechsten Anzeigen wieder vorauswaehlen.
   const autoSelectAppliedRef = useRef(false);
@@ -487,6 +491,46 @@ const TimeTracking = ({ embedded }: TimeTrackingEmbeddedProps = {}) => {
     setEditingEntryIds([]);
     fetchExistingDayEntries(selectedDate);
   }, [selectedDate]);
+
+  // Tageseintraege der AUSGEWAEHLTEN Arbeiter - nur im Mehrfach-Modus.
+  // Gemeldet von Franz: Der Kasten "Bereits gebuchte Zeiten" zeigte immer die
+  // eigenen Stunden, auch wenn niemand ausgewaehlt war. Er gehoert aber zur
+  // Auswahl, sonst sieht man beim Erfassen fuer Kollegen die falschen Zeiten.
+  useEffect(() => {
+    if (!showMultiSelect || selectedAdditionalEmployees.length === 0) {
+      setSelectedDayEntries([]);
+      setSelectedNames({});
+      return;
+    }
+    let abgebrochen = false;
+    (async () => {
+      const [eintraege, leute] = await Promise.all([
+        supabase
+          .from("time_entries")
+          .select("id, user_id, start_time, end_time, stunden, taetigkeit, project_id, projects (name)")
+          .in("user_id", selectedAdditionalEmployees)
+          .eq("datum", selectedDate)
+          .order("start_time"),
+        supabase
+          .from("employees")
+          .select("user_id, vorname, nachname")
+          .in("user_id", selectedAdditionalEmployees),
+      ]);
+      if (abgebrochen) return;
+      setSelectedDayEntries((eintraege.data as any[]) || []);
+      setSelectedNames(
+        Object.fromEntries(
+          ((leute.data as any[]) || []).map((p) => [
+            p.user_id,
+            `${p.vorname} ${p.nachname}`.trim(),
+          ])
+        )
+      );
+    })();
+    return () => {
+      abgebrochen = true;
+    };
+  }, [showMultiSelect, selectedAdditionalEmployees, selectedDate]);
 
   // Auto-enter edit mode when navigated with ?date= and entries exist (oder im embedded-Modus)
   useEffect(() => {
@@ -1412,8 +1456,76 @@ const TimeTracking = ({ embedded }: TimeTrackingEmbeddedProps = {}) => {
                 </div>
               )}
 
+              {/* Bereits gebuchte Zeiten der AUSGEWAEHLTEN Arbeiter.
+                  Nur im Mehrfach-Modus - dort gehoert der Kasten zur Auswahl
+                  und nicht zum angemeldeten Benutzer. */}
+              {!editMode && showMultiSelect && (() => {
+                const gruppen = gruppiereNachPerson(
+                  selectedDayEntries,
+                  selectedAdditionalEmployees,
+                  (id) => selectedNames[id],
+                  authUserId
+                );
+                if (!zeigeTagesuebersicht(true, selectedAdditionalEmployees, gruppen)) {
+                  return null;
+                }
+                return (
+                  <div className="rounded-lg p-4 space-y-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
+                    <div className="flex items-center gap-2 font-medium text-sm">
+                      <Calendar className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                      <span className="text-amber-700 dark:text-amber-300">
+                        Bereits gebuchte Zeiten
+                      </span>
+                    </div>
+                    {gruppen.map((g) => (
+                      <div key={g.userId} className="space-y-1.5">
+                        <p className="text-xs font-medium text-amber-800 dark:text-amber-200">
+                          {g.istIchSelbst ? `${g.name} (du)` : g.name}
+                          <span className="font-normal"> · {g.summe.toFixed(2)} h</span>
+                        </p>
+                        {g.entries.map((entry: any) => (
+                          <div
+                            key={entry.id}
+                            className="flex items-center justify-between text-sm bg-background/60 rounded px-2 py-1.5"
+                          >
+                            <div className="flex items-center gap-2 min-w-0 flex-1">
+                              <Badge variant="outline" className="font-mono text-xs shrink-0">
+                                {entry.start_time?.substring(0, 5)} - {entry.end_time?.substring(0, 5)}
+                              </Badge>
+                              <span className="truncate">
+                                {entry.projects?.name || entry.taetigkeit}
+                              </span>
+                            </div>
+                            <span className="font-medium shrink-0">
+                              {Number(entry.stunden).toFixed(2)}h
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                    <div className="pt-2 border-t border-amber-200 dark:border-amber-700 space-y-2">
+                      <p className="text-xs text-muted-foreground">
+                        Neue Buchungen dürfen sich mit diesen Zeiten nicht überschneiden.
+                      </p>
+                      {/* Eigene Eintraege bleiben von hier aus bearbeitbar */}
+                      {gruppen.some((g) => g.istIchSelbst) && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-full gap-2"
+                          onClick={enterEditMode}
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                          Eigene Einträge bearbeiten
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Existing entries info box */}
-              {!editMode && (loadingDayEntries ? (
+              {!editMode && !showMultiSelect && (loadingDayEntries ? (
                 <div className="bg-muted/50 rounded-lg p-3 text-sm text-muted-foreground flex items-center gap-2">
                   <Calendar className="w-4 h-4 animate-pulse" />
                   Lade Tageseinträge...
@@ -1501,8 +1613,11 @@ const TimeTracking = ({ embedded }: TimeTrackingEmbeddedProps = {}) => {
                 </div>
               ))}
 
-              {/* Remaining hours banner */}
-              {!isDayBlocked && existingDayEntries.length > 0 && (() => {
+              {/* Restzeit-Banner: bezieht sich auf das eigene Tagessoll.
+                  Im Mehrfach-Modus nur, wenn man sich selbst ausgewaehlt hat -
+                  sonst stuende hier ein Wert, der zur Buchung nicht passt. */}
+              {!isDayBlocked && existingDayEntries.length > 0 &&
+               (!showMultiSelect || (authUserId && selectedAdditionalEmployees.includes(authUserId))) && (() => {
                 const dateObj = new Date(selectedDate);
                 const target = getNormalWorkingHours(dateObj, employeeSchedule);
                 const booked = existingDayEntries.reduce((sum, e) => sum + Number(e.stunden), 0);
