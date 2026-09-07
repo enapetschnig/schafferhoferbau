@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { AenderungswunschKnopf, ErledigteWuensche } from "@/components/aenderungswunsch";
+import { AenderungswunschKnopf, MeineWuensche } from "@/components/aenderungswunsch";
 import { NeuerungenBanner } from "@/components/neuerungen/NeuerungenBanner";
 import { Session, User } from "@supabase/supabase-js";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -1002,8 +1002,9 @@ export default function Index() {
       {/* Main Content */}
       <main className="px-3 sm:px-4 lg:px-6 py-4 sm:py-6 lg:py-8 max-w-7xl mx-auto">
 
-        {/* Rueckmeldung an den Melder - sehen ALLE angemeldeten Benutzer */}
-        <ErledigteWuensche />
+        {/* Eigene Aenderungswuensche mit Status - sehen ALLE angemeldeten
+            Benutzer. Bleiben sichtbar, bis sie umgesetzt sind. */}
+        <MeineWuensche />
 
         {/* "Das ist neu" - Kundenentscheid 28.08.2026: nur Administratoren */}
         {user && isAdmin && <NeuerungenBanner userId={user.id} />}

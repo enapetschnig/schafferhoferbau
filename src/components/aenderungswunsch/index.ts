@@ -9,4 +9,4 @@ export { AenderungswunschKnopf } from "./AenderungswunschKnopf";
 export { AenderungswunschDialog } from "./AenderungswunschDialog";
 export { BildMarkierenDialog } from "./BildMarkierenDialog";
 export { AenderungswuenscheListe } from "./AenderungswuenscheListe";
-export { ErledigteWuensche } from "./ErledigteWuensche";
+export { MeineWuensche } from "./MeineWuensche";
