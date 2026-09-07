@@ -19,6 +19,13 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
 import { FileViewer } from "@/components/FileViewer";
+import {
+  filterPayslips,
+  verfuegbareJahre,
+  zeitraumLabel,
+  MONATE,
+  ALLE,
+} from "@/lib/payslipFilter";
 
 interface Document {
   name: string;
@@ -51,6 +58,13 @@ export default function MyDocuments() {
   const [userId, setUserId] = useState<string>("");
   const [viewingFile, setViewingFile] = useState<{ name: string; path: string; bucketName: string } | null>(null);
   const [selectedPayslips, setSelectedPayslips] = useState<Set<string>>(new Set());
+  // Lohnzettel-Filter: standardmaessig nur das laufende Jahr, sonst wird die
+  // Liste mit den Jahren unuebersichtlich (Kundenwunsch 07.09.2026).
+  const [payslipFilter, setPayslipFilter] = useState({
+    jahr: String(new Date().getFullYear()),
+    monat: ALLE,
+    suche: "",
+  });
   const [selectedSickNotes, setSelectedSickNotes] = useState<Set<string>>(new Set());
   const [downloadingZip, setDownloadingZip] = useState(false);
   // Admin-Ansicht: Lohnzettel aller Mitarbeiter einsehbar, getrennt nach MA.
@@ -58,6 +72,10 @@ export default function MyDocuments() {
   const [employeeOptions, setEmployeeOptions] = useState<EmployeeOption[]>([]);
   // Wessen Lohnzettel gerade angezeigt werden (Admin kann wechseln).
   const [viewUserId, setViewUserId] = useState<string>("");
+
+  // Gefilterte Lohnzettel - Grundlage fuer Liste, Auswahl und Sammel-Aktionen
+  const sichtbarePayslips = filterPayslips(payslips, payslipFilter);
+  const payslipJahre = verfuegbareJahre(payslips);
 
   useEffect(() => {
     fetchUserAndDocuments();
@@ -293,7 +311,8 @@ export default function MyDocuments() {
   };
 
   const selectAll = (type: "lohnzettel" | "krankmeldung") => {
-    const docs = type === "lohnzettel" ? payslips : sickNotes;
+    // "Alle auswaehlen" meint die gerade sichtbaren, nicht die gefilterten
+    const docs = type === "lohnzettel" ? sichtbarePayslips : sickNotes;
     const selected = type === "lohnzettel" ? selectedPayslips : selectedSickNotes;
     const setter = type === "lohnzettel" ? setSelectedPayslips : setSelectedSickNotes;
     if (selected.size === docs.length) setter(new Set());
@@ -301,7 +320,7 @@ export default function MyDocuments() {
   };
 
   const handleBulkDownload = async (type: "lohnzettel" | "krankmeldung") => {
-    const docs = type === "lohnzettel" ? payslips : sickNotes;
+    const docs = type === "lohnzettel" ? sichtbarePayslips : sickNotes;
     const selected = type === "lohnzettel" ? selectedPayslips : selectedSickNotes;
     const setter = type === "lohnzettel" ? setSelectedPayslips : setSelectedSickNotes;
     const chosen = docs.filter((d) => selected.has(d.path));
@@ -491,13 +510,59 @@ export default function MyDocuments() {
                   <p className="text-sm text-muted-foreground">Keine Lohnzettel vorhanden</p>
                 ) : (
                   <>
+                    {/* Zeitraum-Filter: Standard ist das laufende Jahr */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-3">
+                      <Select
+                        value={payslipFilter.jahr}
+                        onValueChange={(v) => { setPayslipFilter((f) => ({ ...f, jahr: v })); setSelectedPayslips(new Set()); }}
+                      >
+                        <SelectTrigger><SelectValue placeholder="Jahr" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={ALLE}>Alle Jahre</SelectItem>
+                          {payslipJahre.map((j) => (
+                            <SelectItem key={j} value={String(j)}>{j}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Select
+                        value={payslipFilter.monat}
+                        onValueChange={(v) => { setPayslipFilter((f) => ({ ...f, monat: v })); setSelectedPayslips(new Set()); }}
+                      >
+                        <SelectTrigger><SelectValue placeholder="Monat" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={ALLE}>Alle Monate</SelectItem>
+                          {MONATE.map((m, i) => (
+                            <SelectItem key={m} value={String(i + 1)}>{m}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Input
+                        placeholder="Suchen..."
+                        value={payslipFilter.suche}
+                        onChange={(e) => setPayslipFilter((f) => ({ ...f, suche: e.target.value }))}
+                      />
+                    </div>
+
+                    {sichtbarePayslips.length === 0 ? (
+                      <div className="text-sm text-muted-foreground space-y-2">
+                        <p>Keine Lohnzettel für diese Auswahl.</p>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setPayslipFilter({ jahr: ALLE, monat: ALLE, suche: "" })}
+                        >
+                          Alle {payslips.length} anzeigen
+                        </Button>
+                      </div>
+                    ) : (
+                    <>
                     <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
                       <Button
                         size="sm"
                         variant="outline"
                         onClick={() => selectAll("lohnzettel")}
                       >
-                        {selectedPayslips.size === payslips.length ? "Auswahl leeren" : "Alle auswählen"}
+                        {selectedPayslips.size === sichtbarePayslips.length ? "Auswahl leeren" : "Alle auswählen"}
                       </Button>
                       <div className="flex gap-2 flex-wrap">
                         {/* Loeschen nur fuer Administratoren */}
@@ -508,7 +573,7 @@ export default function MyDocuments() {
                             disabled={selectedPayslips.size === 0}
                             onClick={() =>
                               handleDeletePayslips(
-                                payslips.filter((d) => selectedPayslips.has(d.path))
+                                sichtbarePayslips.filter((d) => selectedPayslips.has(d.path))
                               )
                             }
                           >
@@ -533,7 +598,7 @@ export default function MyDocuments() {
                       </div>
                     </div>
                     <div className="space-y-2">
-                      {payslips.map((doc) => (
+                      {sichtbarePayslips.map((doc) => (
                         <div
                           key={doc.path}
                           className={`flex items-center justify-between p-3 border rounded-md transition-colors ${
@@ -546,7 +611,10 @@ export default function MyDocuments() {
                               onCheckedChange={() => toggleSelection("lohnzettel", doc.path)}
                             />
                             <FileText className="w-5 h-5 text-primary shrink-0" />
-                            <span className="text-sm truncate">{doc.name}</span>
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium truncate">{zeitraumLabel(doc)}</p>
+                              <p className="text-xs text-muted-foreground truncate">{doc.name}</p>
+                            </div>
                           </div>
                           <div className="flex gap-2 shrink-0">
                             <Button
@@ -579,6 +647,8 @@ export default function MyDocuments() {
                         </div>
                       ))}
                     </div>
+                    </>
+                    )}
                   </>
                 )}
               </CardContent>

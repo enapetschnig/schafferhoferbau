@@ -4,8 +4,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { CalendarDays } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import {
-  startOfISOWeek,
-  addDays,
   format,
   isSameDay,
   parseISO,
@@ -14,6 +12,7 @@ import {
 } from "date-fns";
 import { de } from "date-fns/locale";
 import { getProjectColor } from "@/components/schedule/scheduleUtils";
+import { dashboardWeekWindow } from "@/lib/datumHelfer";
 
 type WeekAssignment = {
   datum: string;
@@ -44,11 +43,15 @@ export function WeeklyAssignmentWidget({ userId }: Props) {
   const [leaves, setLeaves] = useState<LeaveDay[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const weekStart = startOfISOWeek(new Date());
-  const weekEnd = addDays(weekStart, 6); // Include weekend
-  const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
-  const row1Days = weekDays.slice(0, 4); // Mo-Do
-  const row2Days = weekDays.slice(4, 7); // Fr-So
+  // Fenster: Sonntag bis einschliesslich des folgenden Sonntags (8 Tage).
+  // Springt in der Nacht Sa->So um 00:00 auf die kommende Woche um, damit man
+  // schon am Sonntag sieht, was ansteht (Kundenwunsch 06.09.2026).
+  const fenster = dashboardWeekWindow(new Date());
+  const weekStart = fenster.start;
+  const weekEnd = fenster.end;
+  const weekDays = fenster.days;
+  const row1Days = weekDays.slice(0, 4); // So-Mi
+  const row2Days = weekDays.slice(4, 8); // Do-So
   // Map: datum (yyyy-MM-dd) -> Ziel
   const [projectDayTargets, setProjectDayTargets] = useState<Record<string, string>>({});
   const [userDayGoals, setUserDayGoals] = useState<Record<string, string>>({});
@@ -97,6 +100,10 @@ export function WeeklyAssignmentWidget({ userId }: Props) {
 
       // Projekt-Tagesziele fuer alle Tage der Woche laden (pro Projekt+Datum)
       const weekStartStr = format(weekStart, "yyyy-MM-dd");
+      // Wochenziele haengen am MONTAG der ISO-Woche (so speichert sie die
+      // Plantafel). Das Anzeigefenster beginnt aber am Sonntag - deshalb hier
+      // ausdruecklich der Montag, sonst findet die Abfrage nichts.
+      const wochenzielStart = format(fenster.arbeitswocheStart, "yyyy-MM-dd");
       const weekEndStr = format(weekEnd, "yyyy-MM-dd");
       if (assignData && assignData.length > 0) {
         const projectIds = Array.from(new Set(assignData.map((a: any) => a.project_id)));
@@ -129,7 +136,7 @@ export function WeeklyAssignmentWidget({ userId }: Props) {
           .select("ziel")
           .eq("user_id", userId)
           .eq("scope", "week")
-          .eq("week_start", weekStartStr)
+          .eq("week_start", wochenzielStart)
           .maybeSingle(),
       ]);
       if (dayGoals) {
@@ -212,7 +219,7 @@ export function WeeklyAssignmentWidget({ userId }: Props) {
     <div className="mb-6 space-y-3">
       <h2 className="text-lg font-semibold flex items-center gap-2">
         <CalendarDays className="h-5 w-5 text-primary" />
-        Meine Einteilung – KW {getISOWeek(weekStart)}
+        Meine Einteilung – KW {getISOWeek(fenster.arbeitswocheStart)}
       </h2>
 
       {/* Wochenziel als prominenter Banner ueber der Plantafel-Card */}
@@ -231,14 +238,13 @@ export function WeeklyAssignmentWidget({ userId }: Props) {
         onKeyDown={(e) => { if (e.key === "Enter") navigate("/schedule"); }}
       >
         <CardContent className="p-3 space-y-2">
-          {/* Zeile 1: Mo-Do */}
+          {/* Zeile 1: So-Mi */}
           <div className="grid grid-cols-4 gap-1.5">
             {row1Days.map((day) => renderDay(day))}
           </div>
-          {/* Zeile 2: Fr-So */}
+          {/* Zeile 2: Do-So */}
           <div className="grid grid-cols-4 gap-1.5">
             {row2Days.map((day) => renderDay(day))}
-            <div /> {/* Leere 4. Spalte fuer Alignment */}
           </div>
           {/* Tagesziele werden direkt unter dem jeweiligen Projekt im Tag gezeigt;
               das Wochenziel erscheint als Banner ueber dieser Card. */}

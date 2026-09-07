@@ -4,6 +4,7 @@ import { isSameDay, parseISO } from "date-fns";
 import { GanttBar } from "./GanttBar";
 import { getProjectDayRanges, isCompanyHoliday } from "./scheduleUtils";
 import type { Assignment, Project, CompanyHoliday } from "./scheduleTypes";
+import { localDateString } from "@/lib/datumHelfer";
 
 interface Props {
   projects: Project[];
@@ -93,7 +94,9 @@ export function ProjectGanttSection({
                             ? () =>
                                 onProjectDayClick(
                                   project.id,
-                                  day.toISOString().split("T")[0]
+                                  // NICHT toISOString: das rechnet nach UTC um
+                                  // und liefert in Oesterreich den Vortag.
+                                  localDateString(day)
                                 )
                             : undefined
                         }

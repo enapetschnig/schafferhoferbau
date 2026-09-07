@@ -97,6 +97,20 @@ const Projects = () => {
 
   const [adminChecked, setAdminChecked] = useState(false);
 
+  // Realtime-Handler ueber eine Ref: Die Subscription wird nur einmal
+  // aufgebaut, ruft aber immer die AKTUELLE fetchProjects auf.
+  //
+  // Vorher lag hier direkt fetchProjects aus dem ersten Render - da war isAdmin
+  // noch false und currentUserId noch null (der Admin-Check laeuft asynchron).
+  // Beim Loeschen eines Projekts feuerte die Subscription, nahm den
+  // Nicht-Admin-Zweig, fand keine project_access-Zeilen und leerte die Liste:
+  // "Keine aktiven Projekte", bis man neu geladen hat.
+  // Leer initialisiert - fetchProjects wird weiter unten definiert.
+  const fetchProjectsRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    fetchProjectsRef.current = fetchProjects;
+  });
+
   useEffect(() => {
     const init = async () => {
       await checkAdminStatus();
@@ -109,7 +123,7 @@ const Projects = () => {
     const channel = supabase
       .channel('projects-list-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'projects' }, () => {
-        fetchProjects();
+        fetchProjectsRef.current();
       })
       .subscribe();
 
@@ -239,11 +253,17 @@ const Projects = () => {
       if (error) { setLoading(false); return; }
       projectData = data || [];
     } else {
-      // Non-admins: only projects they have access to
+      // Non-admins: only projects they have access to.
+      // Ohne bekannten Benutzer NICHT die Liste leeren - sonst verschwinden
+      // die Projekte kurzzeitig, obwohl nur der Auth-Check noch laeuft.
+      if (!currentUserId) {
+        setLoading(false);
+        return;
+      }
       const { data: accessData } = await supabase
         .from("project_access")
         .select("project_id")
-        .eq("user_id", currentUserId!);
+        .eq("user_id", currentUserId);
       const accessIds = (accessData || []).map(a => (a as any).project_id);
       if (accessIds.length === 0) {
         setProjects([]);
