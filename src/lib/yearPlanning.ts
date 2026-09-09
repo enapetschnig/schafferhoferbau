@@ -140,3 +140,22 @@ export function groupPlanBlocksByRow<T extends PlanBlockLike>(
       a.label.localeCompare(b.label, "de", { sensitivity: "base" })
   );
 }
+
+/**
+ * Ist die Spalte die laufende Kalenderwoche?
+ *
+ * Kundenwunsch (Franz, 08.09.2026): Die aktuelle Woche soll in der
+ * Jahresgrobplanung dezent hervorgehoben sein.
+ *
+ * Verglichen wird gegen das ISO-Wochenjahr, nicht gegen das Kalenderjahr:
+ * Der 01.01. kann noch zur KW 52/53 des Vorjahres gehoeren - ohne diesen
+ * Vergleich waere in der Jahresansicht 2027 faelschlich die KW 53 markiert.
+ */
+export function istAktuelleKalenderwoche(
+  weekNum: number,
+  ansichtsJahr: number,
+  heuteKw: number,
+  heuteKwJahr: number
+): boolean {
+  return weekNum === heuteKw && ansichtsJahr === heuteKwJahr;
+}

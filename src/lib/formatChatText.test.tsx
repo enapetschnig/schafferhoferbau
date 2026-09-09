@@ -87,3 +87,79 @@ describe("formatChatText", () => {
     });
   });
 });
+
+describe("Aufzaehlungslisten", () => {
+  it("erkennt Bindestrich-Listen", () => {
+    const out = html("- Ziegel\n- Mörtel");
+    expect(out).toContain("<ul");
+    expect(out).toContain("<li>Ziegel</li>");
+    expect(out).toContain("<li>Mörtel</li>");
+  });
+
+  it("erkennt Stern-Listen (Stern + Leerzeichen)", () => {
+    expect(html("* Ziegel\n* Mörtel")).toContain("<li>Ziegel</li>");
+  });
+
+  it("erkennt Aufzaehlungspunkte", () => {
+    expect(html("• Ziegel")).toContain("<li>Ziegel</li>");
+  });
+
+  it("verwechselt Fettschrift NICHT mit einer Liste", () => {
+    // *fett* hat kein Leerzeichen nach dem Stern
+    const out = html("*wichtig*");
+    expect(out).toContain("<strong>wichtig</strong>");
+    expect(out).not.toContain("<ul");
+  });
+
+  it("formatiert innerhalb der Listenpunkte weiter", () => {
+    expect(html("- *Ziegel* holen")).toContain("<strong>Ziegel</strong>");
+  });
+
+  it("fasst nur zusammenhaengende Zeilen zusammen", () => {
+    const out = html("- A\nText\n- B");
+    expect((out.match(/<ul/g) || []).length).toBe(2);
+  });
+});
+
+describe("Nummerierte Listen", () => {
+  it("erkennt 1. 2. 3.", () => {
+    const out = html("1. Erstens\n2. Zweitens");
+    expect(out).toContain("<ol");
+    expect(out).toContain("<li>Erstens</li>");
+    expect(out).toContain("<li>Zweitens</li>");
+  });
+
+  it("erkennt auch 1) 2)", () => {
+    expect(html("1) Erstens")).toContain("<li>Erstens</li>");
+  });
+
+  it("uebernimmt die Startnummer", () => {
+    expect(html("3. Drittens")).toContain('start="3"');
+  });
+
+  it("verwechselt Datum/Betrag nicht mit einer Liste", () => {
+    // "12.09." hat kein Leerzeichen nach dem Punkt
+    expect(html("12.09. Baustelle")).not.toContain("<ol");
+    expect(html("Kosten 1.500 Euro")).not.toContain("<ol");
+  });
+
+  it("trennt Aufzaehlung und Nummerierung", () => {
+    const out = html("- A\n1. B");
+    expect(out).toContain("<ul");
+    expect(out).toContain("<ol");
+  });
+});
+
+describe("Kein Rueckschritt bei einfachem Text", () => {
+  it("normale Zeilenumbrueche bleiben br", () => {
+    expect(html("Zeile 1\nZeile 2")).toBe("Zeile 1<br/>Zeile 2");
+  });
+
+  it("einzelne Zeile bleibt unveraendert", () => {
+    expect(html("Hallo Welt")).toBe("Hallo Welt");
+  });
+
+  it("leerer Text ergibt nichts", () => {
+    expect(html("")).toBe("");
+  });
+});

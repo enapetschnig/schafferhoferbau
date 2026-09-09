@@ -4,6 +4,7 @@ import { ArrowLeft, MessageCircle, ShieldX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { ProjectChat } from "@/components/ProjectChat";
+import { AenderungswunschKnopf } from "@/components/aenderungswunsch";
 
 export default function ProjectChatPage() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -99,10 +100,12 @@ export default function ProjectChatPage() {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      <header className="border-b bg-card sticky top-0 z-50 shadow-sm">
+      {/* data-seitenkopf: der schwebende Melde-Knopf saesse sonst unten rechts
+          direkt auf dem Senden-Knopf. Hier oben stoert er nicht. */}
+      <header data-seitenkopf className="border-b bg-card sticky top-0 z-50 shadow-sm">
         <div className="container mx-auto px-3 sm:px-4 lg:px-6 py-3 sm:py-4">
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={() => navigate("/")}>
+            <Button variant="ghost" size="sm" onClick={() => navigate("/")} data-bildschirmfoto="aus">
               <ArrowLeft className="h-4 w-4 mr-2" />
               <span className="hidden sm:inline">Zurück</span>
             </Button>
@@ -112,6 +115,7 @@ export default function ProjectChatPage() {
                 Chat: {projectName}
               </h1>
             </div>
+            <AenderungswunschKnopf gestalt="kopf" />
           </div>
         </div>
       </header>

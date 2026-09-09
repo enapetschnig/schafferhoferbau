@@ -333,6 +333,26 @@ export default function DailyReportDetail() {
         file_path: filePath,
         file_name: file.name,
       });
+
+      // Auch Serienaufnahmen im Projekt-Foto-Ordner spiegeln. Ueber den
+      // Dateiwaehler passierte das schon, ueber die Serienkamera nicht -
+      // gemeldet von Franz (08.09.2026).
+      if (report?.project_id && file.type.startsWith("image/")) {
+        const photoPath = `${report.project_id}/${Date.now()}_${sanitizeStorageFileName(file.name)}`;
+        const { error: mirrorErr } = await supabase.storage
+          .from("project-photos")
+          .upload(photoPath, rotatedBlob, { upsert: false });
+        if (!mirrorErr) {
+          await supabase.from("documents").insert({
+            name: file.name,
+            project_id: report.project_id,
+            typ: "photos",
+            file_url: photoPath,
+            user_id: user.id,
+            archived: false,
+          });
+        }
+      }
       uploaded++;
     }
 

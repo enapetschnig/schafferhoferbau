@@ -5,6 +5,8 @@ import React from "react";
 //   _kursiv_         -> <em>
 //   ~durchgestrichen~-> <s>
 //   `code`           -> <code>
+//   "- " / "* " / "• "-> Aufzaehlungsliste <ul>
+//   "1. " / "1) "     -> nummerierte Liste <ol>
 // Plus: Zeilenumbruechen werden zu <br>.
 // Wort-Marker (*, _, ~) werden nur an Wort-Grenzen erkannt; `code` darf
 // auch mitten im Wort vorkommen.
@@ -59,11 +61,9 @@ function tokenizeLine(line: string): Token[] {
   return tokens;
 }
 
-export function formatChatText(text: string): React.ReactNode {
-  if (!text) return null;
-  const lines = text.split(/\r?\n/);
-  return lines.map((line, lineIdx) => (
-    <React.Fragment key={lineIdx}>
+function renderLine(line: string, key: React.Key): React.ReactNode {
+  return (
+    <React.Fragment key={key}>
       {tokenizeLine(line).map((t, i) => {
         if (t.type === "text") return <React.Fragment key={i}>{t.text}</React.Fragment>;
         if (t.tag === "strong") return <strong key={i}>{t.text}</strong>;
@@ -72,7 +72,75 @@ export function formatChatText(text: string): React.ReactNode {
         if (t.tag === "code") return <code key={i} className="px-1 py-0.5 rounded bg-muted/60 text-[0.9em]">{t.text}</code>;
         return <React.Fragment key={i}>{t.text}</React.Fragment>;
       })}
-      {lineIdx < lines.length - 1 && <br />}
     </React.Fragment>
-  ));
+  );
+}
+
+// Aufzaehlung: "- ", "* " oder "• " am Zeilenanfang. Das Leerzeichen ist
+// entscheidend - "*fett*" hat keines und bleibt damit Fettschrift.
+const AUFZAEHLUNG = /^[ \t]*[-*•][ \t]+(.*)$/;
+// Nummerierung: "1. " oder "1) " am Zeilenanfang.
+const NUMMERIERUNG = /^[ \t]*(\d{1,3})[.)][ \t]+(.*)$/;
+
+type Block =
+  | { art: "ul"; zeilen: string[] }
+  | { art: "ol"; zeilen: string[]; start: number }
+  | { art: "text"; zeilen: string[] };
+
+/** Fasst aufeinanderfolgende Listenzeilen zu Bloecken zusammen. */
+function inBloecke(lines: string[]): Block[] {
+  const bloecke: Block[] = [];
+
+  for (const line of lines) {
+    const auf = line.match(AUFZAEHLUNG);
+    const num = line.match(NUMMERIERUNG);
+    const letzter = bloecke[bloecke.length - 1];
+
+    if (auf) {
+      if (letzter?.art === "ul") letzter.zeilen.push(auf[1]);
+      else bloecke.push({ art: "ul", zeilen: [auf[1]] });
+    } else if (num) {
+      if (letzter?.art === "ol") letzter.zeilen.push(num[2]);
+      else bloecke.push({ art: "ol", zeilen: [num[2]], start: Number(num[1]) });
+    } else {
+      if (letzter?.art === "text") letzter.zeilen.push(line);
+      else bloecke.push({ art: "text", zeilen: [line] });
+    }
+  }
+
+  return bloecke;
+}
+
+export function formatChatText(text: string): React.ReactNode {
+  if (!text) return null;
+  const bloecke = inBloecke(text.split(/\r?\n/));
+
+  return bloecke.map((block, bi) => {
+    if (block.art === "ul") {
+      return (
+        <ul key={bi} className="list-disc pl-5 my-0.5 space-y-0.5">
+          {block.zeilen.map((z, i) => <li key={i}>{renderLine(z, i)}</li>)}
+        </ul>
+      );
+    }
+    if (block.art === "ol") {
+      return (
+        <ol key={bi} start={block.start} className="list-decimal pl-5 my-0.5 space-y-0.5">
+          {block.zeilen.map((z, i) => <li key={i}>{renderLine(z, i)}</li>)}
+        </ol>
+      );
+    }
+    // Reiner Text: Zeilenumbrueche wie bisher als <br>, aber keiner am Ende
+    // eines Blocks, der von einer Liste gefolgt wird.
+    return (
+      <React.Fragment key={bi}>
+        {block.zeilen.map((z, i) => (
+          <React.Fragment key={i}>
+            {renderLine(z, i)}
+            {i < block.zeilen.length - 1 && <br />}
+          </React.Fragment>
+        ))}
+      </React.Fragment>
+    );
+  });
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { localDateString, dashboardWeekWindow } from "./datumHelfer";
+import { localDateString, dashboardWeekWindow, datumMitUhrzeit } from "./datumHelfer";
 
 describe("localDateString", () => {
   it("liefert den lokalen Kalendertag", () => {
@@ -68,5 +68,27 @@ describe("dashboardWeekWindow", () => {
       const diff = (w.days[i].getTime() - w.days[i - 1].getTime()) / 86400000;
       expect(Math.round(diff)).toBe(1);
     }
+  });
+});
+
+describe("datumMitUhrzeit", () => {
+  it("zeigt Datum und Uhrzeit", () => {
+    const t = datumMitUhrzeit(new Date(2026, 8, 8, 14, 23));
+    expect(t).toContain("08.09.2026");
+    expect(t).toContain("14:23");
+  });
+
+  it("fuellt zweistellig auf", () => {
+    expect(datumMitUhrzeit(new Date(2026, 0, 5, 9, 5))).toContain("05.01.2026");
+  });
+
+  it("nimmt auch einen ISO-Text", () => {
+    expect(datumMitUhrzeit("2026-09-08T12:00:00")).toContain("08.09.2026");
+  });
+
+  it("liefert bei Unsinn einen leeren Text statt Invalid Date", () => {
+    expect(datumMitUhrzeit(null)).toBe("");
+    expect(datumMitUhrzeit("")).toBe("");
+    expect(datumMitUhrzeit("kaputt")).toBe("");
   });
 });

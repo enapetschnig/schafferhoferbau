@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { CompanyChat } from "@/components/CompanyChat";
+import { AenderungswunschKnopf } from "@/components/aenderungswunsch";
 
 type ChatChannel = {
   id: string;
@@ -341,15 +342,18 @@ export default function CompanyChatPage() {
   return (
     <div className="min-h-screen bg-background flex flex-col">
       {/* Header */}
-      <header className="border-b bg-card sticky top-0 z-50 shadow-sm">
+      {/* data-seitenkopf: der schwebende Melde-Knopf saesse sonst unten rechts
+          direkt auf dem Senden-Knopf. */}
+      <header data-seitenkopf className="border-b bg-card sticky top-0 z-50 shadow-sm">
         <div className="container mx-auto px-3 sm:px-4 lg:px-6 py-3 sm:py-4">
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={() => navigate("/")}>
+            <Button variant="ghost" size="sm" onClick={() => navigate("/")} data-bildschirmfoto="aus">
               <ArrowLeft className="h-4 w-4 mr-2" />
               <span className="hidden sm:inline">Zurück</span>
             </Button>
             <MessageSquare className="h-5 w-5 text-primary" />
             <h1 className="text-sm sm:text-base font-semibold flex-1 truncate">Firmen-Chat</h1>
+            <AenderungswunschKnopf gestalt="kopf" />
             {isAdmin && (
               <Button
                 size="sm"

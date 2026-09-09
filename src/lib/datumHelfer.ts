@@ -50,3 +50,23 @@ export function dashboardWeekWindow(now: Date): {
 
   return { start, end: days[days.length - 1], days, arbeitswocheStart };
 }
+
+/**
+ * Datum mit Uhrzeit, oesterreichisches Format: "08.09.2026, 14:23".
+ *
+ * Kundenwunsch (Franz, 08.09.2026): Bei hochgeladenen Dateien stand nur das
+ * Datum - bei mehreren Fotos am selben Tag half das nicht weiter.
+ * Ungueltige Werte ergeben einen leeren Text statt "Invalid Date".
+ */
+export function datumMitUhrzeit(wert: string | Date | null | undefined): string {
+  if (!wert) return "";
+  const d = wert instanceof Date ? wert : new Date(wert);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleString("de-AT", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}

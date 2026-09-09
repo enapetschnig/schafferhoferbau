@@ -16,6 +16,7 @@ import {
 } from "@/lib/chatAttachments";
 import { VoiceAIInput } from "@/components/VoiceAIInput";
 import { ReadReceipt, type Recipient } from "@/components/chat/ReadReceipt";
+import { ChatFormatHilfe } from "@/components/ChatFormatHilfe";
 
 /** Ein Lese-Eintrag aus broadcast_message_reads. */
 type ReadRow = { message_id: string; user_id: string; read_at: string };
@@ -698,6 +699,7 @@ export function CompanyChat({
           >
             <Camera className="h-5 w-5" />
           </Button>
+          <ChatFormatHilfe />
           <VoiceAIInput
             buttonsPosition="inline"
             context="notiz"

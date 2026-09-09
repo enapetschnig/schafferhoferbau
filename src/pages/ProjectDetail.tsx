@@ -19,6 +19,7 @@ import { Nachkalkulation } from "@/components/Nachkalkulation";
 import { ZoomableImage } from "@/components/ZoomableImage";
 import { normalizeImageOrientation } from "@/lib/imageOrientation";
 import { sanitizeStorageFileName } from "@/lib/storageFileName";
+import { datumMitUhrzeit } from "@/lib/datumHelfer";
 
 type DocumentType = "plans" | "reports" | "photos" | "chef" | "polier";
 
@@ -1040,7 +1041,7 @@ const ProjectDetail = () => {
                                 <Badge variant="outline" className="text-[10px] h-5">Text</Badge>
                               </div>
                               <p className="text-xs text-muted-foreground">
-                                {new Date(doc.created_at).toLocaleDateString("de-DE")}
+                                {datumMitUhrzeit(doc.created_at)}
                               </p>
                               <p className="text-sm mt-1 whitespace-pre-wrap line-clamp-3">
                                 {doc.text_content}
@@ -1147,7 +1148,7 @@ const ProjectDetail = () => {
                                     <p className="text-[11px] text-muted-foreground/70 truncate">{file.name}</p>
                                   )}
                                   <p className="text-xs text-muted-foreground">
-                                    {new Date(file.created_at).toLocaleDateString("de-DE")}
+                                    {datumMitUhrzeit(file.created_at)}
                                   </p>
                                   {note && (
                                     <p className="text-xs text-foreground/80 mt-0.5 italic line-clamp-2 whitespace-pre-wrap">{note}</p>

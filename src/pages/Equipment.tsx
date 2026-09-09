@@ -100,6 +100,8 @@ export default function EquipmentPage() {
   const [docs, setDocs] = useState<EquipmentDoc[]>([]);
   const [docsToDelete, setDocsToDelete] = useState<{ id: string; storage_path: string }[]>([]);
   const docInputRef = useRef<HTMLInputElement>(null);
+  // Verhindert, dass der Bearbeiten-Dialog nach dem Speichern erneut aufgeht
+  const editIdVerarbeitet = useRef(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -114,13 +116,21 @@ export default function EquipmentPage() {
     const { data } = await supabase.from("equipment").select("*").order("name");
     if (data) {
       setItems(data as any);
-      // Auto-open edit dialog if navigated from detail page
+      // Aus der Detailseite kommend den Bearbeiten-Dialog einmalig oeffnen.
+      //
+      // GEMELDET (Franz, 08.09.2026): Nach dem Aktualisieren stand man wieder
+      // in derselben Maske. Grund: handleSave ruft fetchData erneut auf, und
+      // location.state.editId war immer noch gesetzt. Das bisherige
+      // window.history.replaceState raeumt nur die Browser-History auf - der
+      // location.state von React Router bleibt davon unberuehrt.
+      // Der Merker sorgt dafuer, dass der Dialog wirklich nur einmal aufgeht.
       const editId = (location.state as any)?.editId;
-      if (editId) {
+      if (editId && !editIdVerarbeitet.current) {
+        editIdVerarbeitet.current = true;
         const target = (data as Equipment[]).find((i) => i.id === editId);
         if (target) openEdit(target);
-        // Clear the state so refreshes don't re-open
-        window.history.replaceState({}, "");
+        // Zusaetzlich den Router-State leeren, damit ein Neuladen nichts oeffnet
+        navigate(location.pathname, { replace: true, state: null });
       }
     }
 

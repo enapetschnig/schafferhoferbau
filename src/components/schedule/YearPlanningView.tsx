@@ -17,7 +17,7 @@ import {
 } from "date-fns";
 import { de } from "date-fns/locale";
 import { Plus, Trash2, GripVertical, Package, ChevronUp, ChevronDown } from "lucide-react";
-import { groupPlanBlocksByRow, assignStackLevels, blockLabel, planRowKey } from "@/lib/yearPlanning";
+import { groupPlanBlocksByRow, assignStackLevels, blockLabel, planRowKey, istAktuelleKalenderwoche } from "@/lib/yearPlanning";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -605,6 +605,13 @@ export function YearPlanningView({
     }).length;
   };
 
+  // Laufende Kalenderwoche - wird dezent hellorange hinterlegt (Franz, 08.09.2026)
+  const heute = new Date();
+  const heuteKw = getISOWeek(heute);
+  const heuteKwJahr = getISOWeekYear(heute);
+  const istJetztWoche = (weekNum: number) =>
+    istAktuelleKalenderwoche(weekNum, year, heuteKw, heuteKwJahr);
+
   const isHolidayWeek = (weekStart: Date): boolean => {
     const weekEnd = new Date(weekStart);
     weekEnd.setDate(weekEnd.getDate() + 4);
@@ -662,6 +669,8 @@ export function YearPlanningView({
             className={`text-[10px] text-center py-0.5 border-r ${
               isHolidayWeek(w.start)
                 ? "bg-gray-200 text-gray-400"
+                : istJetztWoche(w.weekNum)
+                ? "bg-orange-200/80 text-orange-900 font-semibold"
                 : "text-muted-foreground"
             } ${onSelectWeek ? "hover:bg-primary/20 hover:text-primary cursor-pointer" : ""}`}
             title={onSelectWeek ? `Zur Wochenansicht KW ${w.weekNum}` : undefined}
@@ -692,7 +701,7 @@ export function YearPlanningView({
                 <div
                   key={w.weekNum}
                   className={`border-r min-h-[24px] ${
-                    holiday ? "bg-gray-100" : ""
+                    holiday ? "bg-gray-100" : istJetztWoche(w.weekNum) ? "bg-orange-100/60" : ""
                   }`}
                 >
                   {count > 0 && (
@@ -800,7 +809,7 @@ export function YearPlanningView({
             return (
               <div
                 key={w.weekNum}
-                className={`border-r relative ${holiday ? "bg-gray-100" : ""} ${
+                className={`border-r relative ${holiday ? "bg-gray-100" : istJetztWoche(w.weekNum) ? "bg-orange-100/60" : ""} ${
                   isCreateDragHere ? "bg-primary/20" : leer && canEdit ? "hover:bg-primary/10 cursor-crosshair" : ""
                 }`}
                 style={{ minHeight: `${zeilenHoehe}px` }}
@@ -981,7 +990,7 @@ export function YearPlanningView({
               return (
                 <div
                   key={w.weekNum}
-                  className={`border-r min-h-[24px] relative ${holiday ? "bg-gray-100" : ""} ${isCreateDragHere ? "bg-orange-200/50" : isEmpty ? "hover:bg-orange-100/40 cursor-crosshair" : ""}`}
+                  className={`border-r min-h-[24px] relative ${holiday ? "bg-gray-100" : istJetztWoche(w.weekNum) ? "bg-orange-100/60" : ""} ${isCreateDragHere ? "bg-orange-200/50" : isEmpty ? "hover:bg-orange-100/40 cursor-crosshair" : ""}`}
                   onPointerDown={(e) => { if (isEmpty) startCreateDrag(e, "resource", w.weekNum, resource.id); }}
                   onPointerEnter={() => { if (createDrag?.resourceId === resource.id) updateCreateDrag(w.weekNum); }}
                   title={isEmpty ? "Ziehen zum Einplanen" : undefined}

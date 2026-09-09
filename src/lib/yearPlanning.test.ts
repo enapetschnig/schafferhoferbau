@@ -6,6 +6,7 @@ import {
   blocksOverlap,
   assignStackLevels,
   groupPlanBlocksByRow,
+  istAktuelleKalenderwoche,
   type PlanBlockLike,
 } from "./yearPlanning";
 
@@ -229,5 +230,26 @@ describe("groupPlanBlocksByRow - freie Bloecke (Fall Franz)", () => {
     ];
     const ids = groupPlanBlocksByRow(blocks, nameVon).flatMap((r) => r.blocks.map((x) => x.id));
     expect(ids.sort()).toEqual(["a", "b", "c", "d"]);
+  });
+});
+
+describe("istAktuelleKalenderwoche", () => {
+  it("markiert die laufende Woche im passenden Jahr", () => {
+    expect(istAktuelleKalenderwoche(37, 2026, 37, 2026)).toBe(true);
+  });
+
+  it("markiert andere Wochen nicht", () => {
+    expect(istAktuelleKalenderwoche(36, 2026, 37, 2026)).toBe(false);
+  });
+
+  it("markiert dieselbe Wochennummer im falschen Jahr nicht", () => {
+    expect(istAktuelleKalenderwoche(37, 2027, 37, 2026)).toBe(false);
+  });
+
+  it("beachtet die Jahresgrenze ueber das ISO-Wochenjahr", () => {
+    // 01.01.2027 liegt noch in KW 53 des ISO-Jahres 2026. In der Ansicht 2027
+    // darf die KW 53 deshalb NICHT markiert sein.
+    expect(istAktuelleKalenderwoche(53, 2027, 53, 2026)).toBe(false);
+    expect(istAktuelleKalenderwoche(53, 2026, 53, 2026)).toBe(true);
   });
 });

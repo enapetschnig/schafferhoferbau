@@ -21,6 +21,7 @@ import {
   validateChatFiles,
 } from "@/lib/chatAttachments";
 import { ReadReceipt, type Recipient } from "@/components/chat/ReadReceipt";
+import { ChatFormatHilfe } from "@/components/ChatFormatHilfe";
 
 type ChatMessage = {
   id: string;
@@ -846,6 +847,7 @@ export function ProjectChat({ projectId, projectName, isAdmin }: { projectId: st
           >
             <Paperclip className="h-5 w-5" />
           </Button>
+          <ChatFormatHilfe />
           <VoiceAIInput
             buttonsPosition="inline"
             context="notiz"

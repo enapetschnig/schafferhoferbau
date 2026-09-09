@@ -18,6 +18,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { sanitizeStorageFileName } from "@/lib/storageFileName";
 import { gruppiereNachPerson, zeigeTagesuebersicht } from "@/lib/dayEntriesOverview";
+import { pausenAbzugMinuten, blockStunden, pauseAusserhalbArbeitszeit } from "@/lib/timeUtils";
 import { toast as sonnerToast } from "sonner";
 import {
   getNormalWorkingHours,
@@ -716,24 +717,15 @@ const TimeTracking = ({ embedded }: TimeTrackingEmbeddedProps = {}) => {
     fetchExistingDayEntries(selectedDate);
   };
 
-  const calculateBlockPauseMinutes = (block: TimeBlock): number => {
-    if (!block.pauseStart || !block.pauseEnd) return 0;
-    const [sh, sm] = block.pauseStart.split(':').map(Number);
-    const [eh, em] = block.pauseEnd.split(':').map(Number);
-    return Math.max(0, (eh * 60 + em) - (sh * 60 + sm));
-  };
+  // Nur der Teil der Pause, der wirklich in die Arbeitszeit faellt.
+  // Frueher wurde die Pause isoliert gemessen - eine Pause 12:00-12:30 bei
+  // Arbeitszeit 07:00-12:00 zog dadurch 30 Minuten ab, obwohl sie danach lag.
+  const calculateBlockPauseMinutes = (block: TimeBlock): number =>
+    pausenAbzugMinuten(block.startTime, block.endTime, block.pauseStart, block.pauseEnd);
 
   // Calculate hours for a single block
-  const calculateBlockHours = (block: TimeBlock): number => {
-    if (!block.startTime || !block.endTime) return 0;
-
-    const [startH, startM] = block.startTime.split(':').map(Number);
-    const [endH, endM] = block.endTime.split(':').map(Number);
-    const pauseMinutes = calculateBlockPauseMinutes(block);
-
-    const totalMinutes = (endH * 60 + endM) - (startH * 60 + startM) - pauseMinutes;
-    return Math.max(0, totalMinutes / 60);
-  };
+  const calculateBlockHours = (block: TimeBlock): number =>
+    blockStunden(block.startTime, block.endTime, block.pauseStart, block.pauseEnd);
 
   // Calculate total hours across all blocks
   const calculateTotalHours = (): string => {
@@ -1787,8 +1779,19 @@ const TimeTracking = ({ embedded }: TimeTrackingEmbeddedProps = {}) => {
                             />
                           </div>
                         </div>
+                        {/* Ehrlicher Hinweis: was tatsaechlich abgezogen wird -
+                            und ein Wort dazu, wenn die Pause daneben liegt. */}
                         {calculateBlockPauseMinutes(block) > 0 && (
-                          <p className="text-xs text-muted-foreground">{calculateBlockPauseMinutes(block)} Min. Pause werden abgezogen</p>
+                          <p className="text-xs text-muted-foreground">
+                            {calculateBlockPauseMinutes(block)} Min. Pause werden abgezogen
+                          </p>
+                        )}
+                        {pauseAusserhalbArbeitszeit(block.startTime, block.endTime, block.pauseStart, block.pauseEnd) && (
+                          <p className="text-xs text-amber-700 dark:text-amber-400">
+                            {calculateBlockPauseMinutes(block) === 0
+                              ? "Die Pause liegt außerhalb von Beginn und Ende — es wird nichts abgezogen."
+                              : "Nur der Teil der Pause innerhalb der Arbeitszeit wird abgezogen."}
+                          </p>
                         )}
 
                           </>

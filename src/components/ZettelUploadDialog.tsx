@@ -9,6 +9,7 @@ import { Upload, Camera, Trash2, FileText, CheckCircle2, AlertTriangle, Pencil }
 import { SignaturePad } from "@/components/SignaturePad";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { sanitizeStorageFileName } from "@/lib/storageFileName";
 
 interface Props {
   open: boolean;
@@ -201,6 +202,26 @@ export function ZettelUploadDialog({ open, onOpenChange, onSuccess, defaultProje
             file_path: photoPath,
             file_name: file.name,
           });
+
+          // Auch hier im Projekt-Foto-Ordner spiegeln (Franz, 08.09.2026).
+          // Nur die Baustellenfotos - der abfotografierte Zettel selbst ist
+          // kein Baustellenfoto und bleibt beim Bericht.
+          if (file.type.startsWith("image/")) {
+            const spiegelPfad = `${projectId}/${Date.now()}_${sanitizeStorageFileName(file.name)}`;
+            const { error: spiegelErr } = await supabase.storage
+              .from("project-photos")
+              .upload(spiegelPfad, file, { upsert: false });
+            if (!spiegelErr) {
+              await supabase.from("documents").insert({
+                name: file.name,
+                project_id: projectId,
+                typ: "photos",
+                file_url: spiegelPfad,
+                user_id: user.id,
+                archived: false,
+              });
+            }
+          }
         }
       }
 
