@@ -763,7 +763,7 @@ export function ProjectChat({ projectId, projectName, isAdmin }: { projectId: st
 
                         {/* Text - bei PDF/Video ist der Dateiname keine echte Nachricht */}
                         {msg.message && !(hasAttachment && (isPdf || isVideo)) && (
-                          <p className="text-sm whitespace-pre-wrap break-words">{formatChatText(msg.message)}</p>
+                          <div className="text-sm whitespace-pre-wrap break-words">{formatChatText(msg.message)}</div>
                         )}
 
                         {/* Reaktions-Leiste nur am Textende anzeigen, wenn KEIN Anhang da ist */}

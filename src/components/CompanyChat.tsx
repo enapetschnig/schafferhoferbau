@@ -641,7 +641,7 @@ export function CompanyChat({
                   {/* Text - bei PDF/Video ist der Dateiname keine echte Nachricht */}
                   {msg.message &&
                     !(msg.image_url && attachmentKindFromUrl(msg.image_url) !== "image") && (
-                      <p className="text-sm whitespace-pre-wrap break-words">{formatChatText(msg.message)}</p>
+                      <div className="text-sm whitespace-pre-wrap break-words">{formatChatText(msg.message)}</div>
                     )}
 
                   {/* Timestamp + Lesebestaetigung (nur Absender und Admins) */}
