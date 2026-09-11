@@ -711,7 +711,7 @@ export function CompanyChat({
             multiline
             rows={1}
             inputClassName="min-h-[40px] max-h-32 resize-none"
-            onKeyDown={handleChatInputKeyDown(handleSend)}
+            onKeyDown={handleChatInputKeyDown(handleSend, setNewMessage)}
             onPasteImage={handlePasteImage}
           />
           <Button

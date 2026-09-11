@@ -2,6 +2,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import {
   Clock, FolderKanban, FileText, Calendar, Building2, Truck,
   Shield, FileCheck, BookOpen, Settings, BarChart3, Package, Wrench, Calculator,
+  Home,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -50,6 +51,22 @@ export function DesktopSidebar({ isAdmin, menuVisible }: Props) {
     <aside className="hidden lg:flex flex-col w-56 border-r bg-card h-screen sticky top-0 shrink-0">
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-4 px-2">
+        {/* Startseite ganz oben - von ueberall zurueck, ohne die Menuepunkte
+            durchsuchen zu muessen (Kundenwunsch Franz, 10.09.2026). */}
+        <button
+          onClick={() => navigate("/")}
+          className={cn(
+            "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors text-left mb-2",
+            location.pathname === "/"
+              ? "bg-primary/10 text-primary font-medium"
+              : "text-muted-foreground hover:bg-muted hover:text-foreground"
+          )}
+        >
+          <Home className="h-4 w-4" />
+          <span className="truncate">Startseite</span>
+        </button>
+        <div className="border-b mb-2" />
+
         {visibleItems.map((item) => {
           const isActive = item.path === "/" ? location.pathname === "/" : location.pathname.startsWith(item.path);
           return (

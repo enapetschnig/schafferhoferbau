@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { Zap, Calendar, Clock, User, Mail, Phone, MapPin, Edit, Trash2, Package, Plus, ArrowLeft, PenLine, Users, Download } from "lucide-react";
+import { Zap, Calendar, Clock, User, Mail, Phone, MapPin, Edit, Trash2, Package, Plus, ArrowLeft, PenLine, Users, Download, Home } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -280,6 +280,16 @@ const DisturbanceDetail = () => {
               <Button variant="ghost" size="icon" onClick={() => navigate("/disturbances")}>
                 <ArrowLeft className="h-5 w-5" />
               </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => navigate("/")}
+                title="Zur Startseite"
+                aria-label="Zur Startseite"
+                data-bildschirmfoto="aus"
+              >
+                <Home className="h-5 w-5" />
+              </Button>
               <h1 className="text-lg font-semibold">Regiebericht nicht gefunden</h1>
             </div>
           </div>
@@ -301,6 +311,16 @@ const DisturbanceDetail = () => {
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="icon" onClick={() => navigate("/disturbances")}>
               <ArrowLeft className="h-5 w-5" />
+            </Button>
+            <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => navigate("/")}
+            title="Zur Startseite"
+            aria-label="Zur Startseite"
+            data-bildschirmfoto="aus"
+            >
+            <Home className="h-5 w-5" />
             </Button>
             <h1 className="text-lg font-semibold">Regiebericht Details</h1>
           </div>

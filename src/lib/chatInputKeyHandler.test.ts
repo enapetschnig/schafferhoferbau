@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from "vitest";
 import { handleChatInputKeyDown } from "./chatInputKeyHandler";
 
 type MockKeyEvent = {
@@ -34,7 +34,7 @@ const setTouchPrimary = (isTouch: boolean) => {
 };
 
 describe("handleChatInputKeyDown", () => {
-  let send: ReturnType<typeof vi.fn>;
+  let send: Mock<() => void>;
   beforeEach(() => { send = vi.fn(); });
   afterEach(() => {
     // @ts-expect-error cleanup
@@ -100,5 +100,89 @@ describe("handleChatInputKeyDown", () => {
       handleChatInputKeyDown(send)(e as any);
       expect(send).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("Zeilenumbruch bei Strg/Alt/Cmd + Enter", () => {
+  let send: Mock<() => void>;
+
+  const machFeld = (wert: string, cursor: number) => ({
+    tagName: "TEXTAREA",
+    value: wert,
+    selectionStart: cursor,
+    selectionEnd: cursor,
+  });
+
+  beforeEach(() => {
+    send = vi.fn();
+    setTouchPrimary(false);
+    // requestAnimationFrame in jsdom bereitstellen
+    // @ts-expect-error Testumgebung
+    globalThis.requestAnimationFrame = (cb: () => void) => { cb(); return 0; };
+  });
+
+  it("Strg+Enter fuegt eine Zeile an der Cursorposition ein", () => {
+    const setzeText = vi.fn();
+    const feld = machFeld("Hallo Welt", 5);
+    const e = { ...makeEvent({ ctrlKey: true }), currentTarget: feld };
+    handleChatInputKeyDown(send, setzeText)(e as any);
+    expect(e.preventDefault).toHaveBeenCalled();
+    expect(setzeText).toHaveBeenCalledWith("Hallo\n Welt");
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("Alt+Enter genauso", () => {
+    const setzeText = vi.fn();
+    const e = { ...makeEvent({ altKey: true }), currentTarget: machFeld("AB", 2) };
+    handleChatInputKeyDown(send, setzeText)(e as any);
+    expect(setzeText).toHaveBeenCalledWith("AB\n");
+  });
+
+  it("Cmd+Enter genauso", () => {
+    const setzeText = vi.fn();
+    const e = { ...makeEvent({ metaKey: true }), currentTarget: machFeld("AB", 0) };
+    handleChatInputKeyDown(send, setzeText)(e as any);
+    expect(setzeText).toHaveBeenCalledWith("\nAB");
+  });
+
+  it("ersetzt eine markierte Auswahl", () => {
+    const setzeText = vi.fn();
+    const feld = { tagName: "TEXTAREA", value: "Hallo Welt", selectionStart: 0, selectionEnd: 5 };
+    const e = { ...makeEvent({ ctrlKey: true }), currentTarget: feld };
+    handleChatInputKeyDown(send, setzeText)(e as any);
+    expect(setzeText).toHaveBeenCalledWith("\n Welt");
+  });
+
+  it("Umschalt+Enter bleibt dem Browser ueberlassen", () => {
+    const setzeText = vi.fn();
+    const e = { ...makeEvent({ shiftKey: true }), currentTarget: machFeld("AB", 1) };
+    handleChatInputKeyDown(send, setzeText)(e as any);
+    expect(e.preventDefault).not.toHaveBeenCalled();
+    expect(setzeText).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("einzeiliges Feld bricht nicht um", () => {
+    const setzeText = vi.fn();
+    const feld = { tagName: "INPUT", value: "AB", selectionStart: 1, selectionEnd: 1 };
+    const e = { ...makeEvent({ ctrlKey: true }), currentTarget: feld };
+    handleChatInputKeyDown(send, setzeText)(e as any);
+    expect(setzeText).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("ohne Setter bleibt es beim alten Verhalten", () => {
+    const e = { ...makeEvent({ ctrlKey: true }), currentTarget: machFeld("AB", 1) };
+    handleChatInputKeyDown(send)(e as any);
+    expect(e.preventDefault).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("Enter ohne Zusatztaste sendet weiterhin", () => {
+    const setzeText = vi.fn();
+    const e = { ...makeEvent({}), currentTarget: machFeld("AB", 1) };
+    handleChatInputKeyDown(send, setzeText)(e as any);
+    expect(send).toHaveBeenCalled();
+    expect(setzeText).not.toHaveBeenCalled();
   });
 });

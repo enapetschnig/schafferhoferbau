@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { Clock, Plus, AlertTriangle, CheckCircle2, Calendar, Sun, Trash2, Pencil, ChevronDown, CloudRain, Car } from "lucide-react";
+import { Clock, Plus, AlertTriangle, CheckCircle2, Calendar, Sun, Trash2, Pencil, ChevronDown, CloudRain, Car, Users } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { PageHeader } from "@/components/PageHeader";
 import { format, startOfWeek } from "date-fns";
@@ -35,6 +36,14 @@ import {
 } from "@/lib/workingHours";
 import { FillRemainingHoursDialog } from "@/components/FillRemainingHoursDialog";
 import { MultiEmployeeSelect } from "@/components/MultiEmployeeSelect";
+import { useAvailableEmployees } from "@/hooks/useAvailableEmployees";
+import {
+  arbeiterDesBlocks,
+  bloeckeJeArbeiter,
+  arbeiterOhneBlock,
+  findeBlockUeberschneidung,
+  findeBestandsUeberschneidung,
+} from "@/lib/blockArbeiter";
 import { VoiceAIInput } from "@/components/VoiceAIInput";
 import { useAppSettings } from "@/hooks/useAppSettings";
 import { useEmployeeSchedule } from "@/hooks/useEmployeeSchedule";
@@ -89,6 +98,13 @@ interface TimeBlock {
   kilometer: string;
   kmBeschreibung: string;
   zeitTyp: "normal" | "lenkzeit" | "reisezeit" | "fahrt_100km";
+  /**
+   * Wer in DIESEM Block gearbeitet hat. Leer = alle oben ausgewaehlten
+   * Arbeiter (so verhaelt sich der Einzel-Modus und alles Bestehende).
+   * Damit lassen sich unterschiedliche Arbeitszeiten pro Person erfassen:
+   * A 07:00-17:00 in Block 1, B 13:00-17:00 in Block 2.
+   */
+  workerIds: string[];
 }
 
 const ALL_ABSENCE_LABELS = ["Urlaub", "Krankenstand", "Weiterbildung", "Feiertag", "Zeitausgleich", "Arzttermin", "Begraebnis", "Pflegeurlaub", "Sonstige"];
@@ -106,6 +122,7 @@ const createDefaultBlock = (startTime = "", endTime = ""): TimeBlock => ({
   kilometer: "",
   kmBeschreibung: "",
   zeitTyp: "normal",
+  workerIds: [],
 });
 
 const TimeTracking = ({ embedded }: TimeTrackingEmbeddedProps = {}) => {
@@ -229,6 +246,19 @@ const TimeTracking = ({ embedded }: TimeTrackingEmbeddedProps = {}) => {
   // abgeleiteter Wert fuer den Auto-Init-Effect (siehe naechsten useEffect).
   const showMultiSelect =
     (isAdmin || isVorarbeiter) && !editMode && !targetUserId && !isExternalUser;
+
+  // isMultiMode: es wird fuer mehrere Leute auf einmal gebucht. Frueher nur
+  // lokal in handleSubmit — jetzt auch im JSX, fuer die Arbeiterauswahl je
+  // Zeitblock.
+  const isMultiMode = showMultiSelect && !editMode;
+
+  // Namen fuer die Auswahl je Zeitblock. false = der Erfasser bleibt in der
+  // Liste, er kann ja selbst in einem Block stehen.
+  const { employees: alleProfile } = useAvailableEmployees(false);
+  const nameVonId = (uid: string) => {
+    const p = alleProfile.find((e) => e.id === uid);
+    return p ? `${p.vorname} ${p.nachname}`.trim() : "Unbekannt";
+  };
 
   // Auto-Initial-Select: sobald der Multi-Select sichtbar wird, ist der
   // Erfasser vorausgewaehlt. Ref-Flag verhindert Wieder-Einfuegen, wenn er
@@ -704,6 +734,9 @@ const TimeTracking = ({ embedded }: TimeTrackingEmbeddedProps = {}) => {
         kilometer: entry.kilometer ? String(entry.kilometer) : "",
         kmBeschreibung: entry.km_beschreibung || "",
         zeitTyp: (entry.zeit_typ as TimeBlock["zeitTyp"]) || "normal",
+        // Im Bearbeiten-Modus wird immer nur eine Person bearbeitet, die
+        // Multi-Auswahl ist dort gar nicht sichtbar.
+        workerIds: [],
       }));
     if (blocks.length === 0) blocks.push(createDefaultBlock());
     setTimeBlocks(blocks);
@@ -968,42 +1001,11 @@ const TimeTracking = ({ embedded }: TimeTrackingEmbeddedProps = {}) => {
       // Tätigkeit and Projekt are now optional - no validation needed
     }
 
-    // Check for overlaps between blocks (skip for external — they use manual hours)
-    const timeToMinutes = (time: string): number => {
-      const [hours, minutes] = time.split(':').map(Number);
-      return hours * 60 + minutes;
-    };
-
-    if (!isExternalUser) {
-      for (let i = 0; i < timeBlocks.length; i++) {
-        for (let j = i + 1; j < timeBlocks.length; j++) {
-          const blockA = timeBlocks[i];
-          const blockB = timeBlocks[j];
-
-          const aStart = timeToMinutes(blockA.startTime);
-          const aEnd = timeToMinutes(blockA.endTime);
-          const bStart = timeToMinutes(blockB.startTime);
-          const bEnd = timeToMinutes(blockB.endTime);
-
-          if (aStart < bEnd && aEnd > bStart) {
-            toast({
-              variant: "destructive",
-              title: "Zeitüberschneidung",
-              description: `Block ${i + 1} und Block ${j + 1} überschneiden sich`
-            });
-            setSaving(false);
-            return;
-          }
-        }
-      }
-    }
-
     // Ziel-User-Liste vorziehen: die Ueberschneidungspruefung muss gegen
     // GENAU die Mitarbeiter laufen, fuer die gebucht wird.
     // Frueher wurde hier immer nur (targetUserId || user.id) geprueft - beim
     // Erfassen fuer Kollegen schlug damit die eigene Buchung des Erfassers an
     // ("Zeitueberschneidung", obwohl er selbst gar nicht ausgewaehlt war).
-    const isMultiMode = showMultiSelect && !editMode;
     const targetUserIds: string[] = isMultiMode
       ? selectedAdditionalEmployees
       : [targetUserId || user.id];
@@ -1016,6 +1018,36 @@ const TimeTracking = ({ embedded }: TimeTrackingEmbeddedProps = {}) => {
       });
       setSaving(false);
       return;
+    }
+
+    // Ueberschneidung der Bloecke untereinander — aber nur PRO PERSON.
+    // Frueher wurden stumpf alle Bloecke verglichen; damit war Franz' Fall
+    // (A 07:00-17:00, B 13:00-17:00) gar nicht erfassbar.
+    if (!isExternalUser) {
+      const treffer = findeBlockUeberschneidung(timeBlocks, targetUserIds);
+      if (treffer) {
+        const wer = isMultiMode ? `${nameVonId(treffer.userId)}: ` : "";
+        toast({
+          variant: "destructive",
+          title: "Zeitüberschneidung",
+          description: `${wer}Block ${treffer.a + 1} und Block ${treffer.b + 1} überschneiden sich`,
+        });
+        setSaving(false);
+        return;
+      }
+
+      // Jemand oben ausgewaehlt, aber in keinem Block angehakt — dafuer
+      // entstuende gar kein Eintrag. Lieber nachfragen als still schlucken.
+      const vergessen = arbeiterOhneBlock(timeBlocks, targetUserIds);
+      if (vergessen.length > 0) {
+        toast({
+          variant: "destructive",
+          title: "Arbeiter ohne Zeitblock",
+          description: `${vergessen.map(nameVonId).join(", ")} ${vergessen.length === 1 ? "ist" : "sind"} oben ausgewählt, aber in keinem Zeitblock angehakt.`,
+        });
+        setSaving(false);
+        return;
+      }
     }
 
     // Check for overlaps with existing entries (skip entries being edited, skip for external)
@@ -1051,23 +1083,23 @@ const TimeTracking = ({ embedded }: TimeTrackingEmbeddedProps = {}) => {
             return;
           }
 
-          const existingStart = timeToMinutes(entry.start_time);
-          const existingEnd = timeToMinutes(entry.end_time);
-
-          for (let i = 0; i < timeBlocks.length; i++) {
-            const block = timeBlocks[i];
-            const blockStart = timeToMinutes(block.startTime);
-            const blockEnd = timeToMinutes(block.endTime);
-
-            if (blockStart < existingEnd && blockEnd > existingStart) {
-              toast({
-                variant: "destructive",
-                title: "Zeitüberschneidung",
-                description: `${nameVon(entry.user_id)}Block ${i + 1} überschneidet mit bestehendem Eintrag (${entry.start_time.substring(0, 5)} - ${entry.end_time.substring(0, 5)})`
-              });
-              setSaving(false);
-              return;
-            }
+          // Nur die Bloecke pruefen, in denen diese Person ueberhaupt steht —
+          // sonst blockiert der Nachmittagsblock eines Kollegen die Buchung.
+          const index = findeBestandsUeberschneidung(
+            timeBlocks,
+            targetUserIds,
+            entry.user_id,
+            entry.start_time,
+            entry.end_time
+          );
+          if (index !== null) {
+            toast({
+              variant: "destructive",
+              title: "Zeitüberschneidung",
+              description: `${nameVon(entry.user_id)}Block ${index + 1} überschneidet mit bestehendem Eintrag (${entry.start_time.substring(0, 5)} - ${entry.end_time.substring(0, 5)})`
+            });
+            setSaving(false);
+            return;
           }
         }
       }
@@ -1090,21 +1122,29 @@ const TimeTracking = ({ embedded }: TimeTrackingEmbeddedProps = {}) => {
     let totalEntriesCreated = 0;
     let hasError = false;
 
-    // Calculate total hours for the day (all blocks) for Schwellenwert splitting
     const allBlockHours = timeBlocks.map((b) =>
       isExternalUser ? parseFloat(b.manualHours) || 0 : calculateBlockHours(b)
     );
-    const dayTotalHours = allBlockHours.reduce((sum, h) => sum + h, 0);
     const dateObj = new Date(selectedDate);
-    const daySplit = splitHours(dayTotalHours, dateObj, employeeSchedule, employeeSchwellenwert);
 
     // isMultiMode und targetUserIds stehen bereits oben fest (vor der
     // Ueberschneidungspruefung) - dieselbe Liste wird hier geschrieben.
+    // Jeder bekommt nur die Bloecke, in denen er angehakt ist.
+    const blockIndizesJeArbeiter = bloeckeJeArbeiter(timeBlocks, targetUserIds);
 
-    // Ein Block-Insert-Loop pro User in der Ziel-Liste. Identisch fuer alle.
+    // Ein Block-Insert-Loop pro User in der Ziel-Liste.
     for (const targetUid of targetUserIds) {
+      const meineBloecke = blockIndizesJeArbeiter.get(targetUid) ?? [];
+
+      // Tagessumme, Schwellenwert-Aufteilung und Diaeten muessen sich auf die
+      // Stunden DIESER Person beziehen. Wer nur den Nachmittag da war, hat
+      // keine 10-Stunden-Ueberschreitung und keine ganztaegige Diaete.
+      const dayTotalHours = meineBloecke.reduce((sum, bi) => sum + allBlockHours[bi], 0);
+      const daySplit = splitHours(dayTotalHours, dateObj, employeeSchedule, employeeSchwellenwert);
+
       let remainingLohn = daySplit.lohnstunden;
-      for (let bi = 0; bi < timeBlocks.length; bi++) {
+      for (const bi of meineBloecke) {
+        const istErsterBlock = bi === meineBloecke[0];
         const block = timeBlocks[bi];
         const blockHours = allBlockHours[bi];
         const pauseMinutes = isExternalUser ? 0 : calculateBlockPauseMinutes(block);
@@ -1133,7 +1173,7 @@ const TimeTracking = ({ embedded }: TimeTrackingEmbeddedProps = {}) => {
           kilometer: km,
           km_beschreibung: block.kmBeschreibung || null,
           zeit_typ: isExternalUser ? "normal" : block.zeitTyp,
-          diaeten_typ: isExternalUser ? null : (bi === 0 ? calculateDiaeten(dayTotalHours, false).typ : null),
+          diaeten_typ: isExternalUser ? null : (istErsterBlock ? calculateDiaeten(dayTotalHours, false).typ : null),
           diaeten_betrag: null,
         };
         // Neue Spalten nur senden wenn sie vorhanden sein koennten (nach Migration)
@@ -1395,6 +1435,11 @@ const TimeTracking = ({ embedded }: TimeTrackingEmbeddedProps = {}) => {
                   startTime={timeBlocks[0].startTime || "06:30"}
                   endTime={timeBlocks[timeBlocks.length - 1].endTime || "17:00"}
                   label="Arbeiter auswählen"
+                  hinweis={
+                    timeBlocks.length > 1 && selectedAdditionalEmployees.length > 1
+                      ? "Bei jedem Zeitblock unten kannst du festlegen, wer davon dabei war."
+                      : undefined
+                  }
                   restrictToAssigned={!isAdmin}
                   projectIds={Array.from(new Set(
                     timeBlocks.map((b) => b.projectId).filter((id): id is string => !!id)
@@ -1659,6 +1704,54 @@ const TimeTracking = ({ embedded }: TimeTrackingEmbeddedProps = {}) => {
                             </Button>
                           )}
                         </div>
+
+                        {/* Wer war in DIESEM Block dabei? Erst ab zwei
+                            ausgewaehlten Arbeitern sinnvoll — bei einem
+                            einzigen gibt es nichts zu verteilen. Leere
+                            Auswahl heisst "alle", deshalb sind anfangs alle
+                            angehakt. */}
+                        {isMultiMode && selectedAdditionalEmployees.length > 1 && (
+                          <div className="space-y-2 rounded-md border bg-muted/40 p-3">
+                            <Label className="flex items-center gap-2 text-xs">
+                              <Users className="w-3.5 h-3.5" />
+                              Wer war in diesem Zeitblock dabei?
+                            </Label>
+                            <div className="flex flex-wrap gap-x-4 gap-y-2">
+                              {selectedAdditionalEmployees.map((uid) => {
+                                const dabei = arbeiterDesBlocks(block, selectedAdditionalEmployees).includes(uid);
+                                return (
+                                  <label
+                                    key={uid}
+                                    className="flex items-center gap-2 text-sm cursor-pointer"
+                                  >
+                                    <Checkbox
+                                      checked={dabei}
+                                      onCheckedChange={() => {
+                                        const aktuell = arbeiterDesBlocks(block, selectedAdditionalEmployees);
+                                        const neu = dabei
+                                          ? aktuell.filter((x) => x !== uid)
+                                          : [...aktuell, uid];
+                                        // Letzten abgehakt? Das hiesse "leer =
+                                        // alle" — das waere das Gegenteil des
+                                        // Gemeinten. Darum mindestens einer.
+                                        if (neu.length === 0) {
+                                          toast({
+                                            variant: "destructive",
+                                            title: "Mindestens ein Arbeiter",
+                                            description: "Ein Zeitblock ohne Arbeiter ergibt keinen Eintrag. Lösche stattdessen den Block.",
+                                          });
+                                          return;
+                                        }
+                                        updateBlock(block.id, { workerIds: neu });
+                                      }}
+                                    />
+                                    {nameVonId(uid)}
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
 
                         {/* Location selection — not for external */}
                         {!isExternalUser && (

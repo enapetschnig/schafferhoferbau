@@ -25,6 +25,8 @@ type MultiEmployeeSelectProps = {
   restrictToAssigned?: boolean;
   /** Projekt-IDs der aktuellen Zeitbloecke — fuer den Baustellen-Pool. */
   projectIds?: string[];
+  /** Erklaerender Satz unter der Ueberschrift. */
+  hinweis?: string;
 };
 
 export const MultiEmployeeSelect = ({
@@ -36,6 +38,7 @@ export const MultiEmployeeSelect = ({
   label = "Weitere Mitarbeiter (optional)",
   restrictToAssigned = false,
   projectIds = [],
+  hinweis,
 }: MultiEmployeeSelectProps) => {
   // false = der eingeloggte Erfasser bleibt im Pool (er soll sich selbst
   // ein- oder abwaehlen koennen — der Aufrufer entscheidet via Auto-Initial-
@@ -296,6 +299,8 @@ export const MultiEmployeeSelect = ({
           </Badge>
         )}
       </div>
+
+      {hinweis && <p className="text-xs text-muted-foreground">{hinweis}</p>}
 
       <div className="border rounded-lg p-3 space-y-2 max-h-48 overflow-y-auto bg-muted/30">
         {employees.map((employee) => {

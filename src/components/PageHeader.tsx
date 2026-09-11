@@ -1,4 +1,4 @@
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Home } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { AenderungswunschKnopf } from "@/components/aenderungswunsch";
@@ -32,6 +32,19 @@ export function PageHeader({ title, showBackButton = true, backPath }: PageHeade
               <span className="hidden sm:inline">Zurück</span>
             </Button>
           )}
+          {/* Ausdruecklicher Weg zur Startseite. Das Logo fuehrt zwar auch
+              dorthin, sieht aber nicht nach einem Knopf aus - besonders am
+              Handy (Kundenwunsch Franz, 10.09.2026). */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => navigate("/")}
+            title="Zur Startseite"
+            aria-label="Zur Startseite"
+            data-bildschirmfoto="aus"
+          >
+            <Home className="h-4 w-4" />
+          </Button>
           <img
             src="/schafferhofer-logo.png"
             alt="Schafferhofer Bau"
