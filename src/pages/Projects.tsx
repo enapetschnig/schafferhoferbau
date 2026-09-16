@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from "react";
-import { ArrowLeft, FolderOpen, Plus, FileText, Image, Lock, Search, Upload, Camera, Trash2, ChevronDown, ChevronUp, ChevronRight, Eye, EyeOff, Home, MapPin, Star, X, Download, MessageCircle, Package, Shield, Truck, Receipt } from "lucide-react";
-import { visibleSortedProjects, isProjectVisible, moveItem } from "@/lib/projectOrdering";
+import { ArrowLeft, FolderOpen, Plus, FileText, Image, Lock, Search, Upload, Camera, Trash2, ChevronDown, ChevronUp, ChevronsUp, ChevronRight, ArrowUpDown, Eye, EyeOff, Home, MapPin, Star, X, Download, MessageCircle, Package, Shield, Truck, Receipt } from "lucide-react";
+import { visibleSortedProjects, isProjectVisible, moveItem, moveItemToEdge, topSortOrder } from "@/lib/projectOrdering";
+import { ProjektReihenfolgeDialog } from "@/components/ProjektReihenfolgeDialog";
 import * as XLSX from "xlsx-js-style";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -91,6 +92,7 @@ const Projects = () => {
   });
   // Admin: ausgeblendete Projekte zur Kontrolle mit anzeigen
   const [showHiddenProjects, setShowHiddenProjects] = useState(false);
+  const [showReihenfolge, setShowReihenfolge] = useState(false);
 
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [accessEmployeeIds, setAccessEmployeeIds] = useState<string[]>([]);
@@ -215,14 +217,11 @@ const Projects = () => {
     });
   };
 
-  /** Prioritaet um eine Position verschieben; nummeriert die Liste neu durch. */
-  const moveProjectPriority = async (
-    liste: Project[],
-    projectId: string,
-    direction: "up" | "down"
-  ) => {
-    const updates = moveItem(liste, projectId, direction);
-    // Optimistisch anzeigen, danach speichern
+  /**
+   * Neue Reihenfolge uebernehmen: optimistisch anzeigen, dann speichern.
+   * Gemeinsamer Weg fuer Pfeile, "ganz nach oben" und den Reihenfolge-Dialog.
+   */
+  const speichereReihenfolge = async (updates: { id: string; sort_order: number }[]) => {
     const byId = new Map(updates.map((u) => [u.id, u.sort_order]));
     setProjects((prev) =>
       prev.map((p) => (byId.has(p.id) ? { ...p, sort_order: byId.get(p.id)! } : p))
@@ -239,6 +238,29 @@ const Projects = () => {
       toast({ variant: "destructive", title: "Reihenfolge nicht gespeichert", description: (fehler as any).error.message });
       fetchProjects();
     }
+  };
+
+  /** Prioritaet um eine Position verschieben; nummeriert die Liste neu durch. */
+  const moveProjectPriority = (liste: Project[], projectId: string, direction: "up" | "down") =>
+    speichereReihenfolge(moveItem(liste, projectId, direction));
+
+  /** Mit einem Klick ganz nach oben - statt bis zu neunzehn Einzelschritten. */
+  const moveProjectToTop = (liste: Project[], projectId: string) =>
+    speichereReihenfolge(moveItemToEdge(liste, projectId, "top"));
+
+  /**
+   * Liste fuer den Reihenfolge-Dialog: alle aktiven Projekte OHNE Suchfilter,
+   * sonst in derselben Ordnung wie die Karten (Favoriten oben angepinnt).
+   */
+  const reihenfolgeListe = () => {
+    const sortiert = visibleSortedProjects(
+      projects.filter((p) => p.status === "aktiv"),
+      isAdmin && showHiddenProjects
+    );
+    return [
+      ...sortiert.filter((p) => favoriteIds.has(p.id)),
+      ...sortiert.filter((p) => !favoriteIds.has(p.id)),
+    ];
   };
 
   const fetchProjects = async () => {
@@ -357,6 +379,14 @@ const Projects = () => {
         description: "Projekt konnte nicht erstellt werden",
       });
     } else {
+      // Neues Projekt nach ganz oben. Ohne Prioritaet stuende es zuunterst
+      // bei den Unpriorisierten - Franz will es direkt unter den Favoriten
+      // (die sind persoenlich und bleiben ohnehin angepinnt).
+      // Cast: generierte Types kennen projects.sort_order nicht.
+      await (supabase.from("projects") as any)
+        .update({ sort_order: topSortOrder(projects) })
+        .eq("id", inserted.id);
+
       // Save contacts if any
       const validContacts = newContacts.filter(c => c.name.trim() || c.rolle.trim());
       if (validContacts.length > 0) {
@@ -952,6 +982,18 @@ const Projects = () => {
               )}
               {isAdmin && (
                 <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs"
+                  onClick={() => setShowReihenfolge(true)}
+                  title="Alle Projekte in einer kompakten Liste umsortieren"
+                >
+                  <ArrowUpDown className="h-3.5 w-3.5 mr-1" />
+                  Reihenfolge
+                </Button>
+              )}
+              {isAdmin && (
+                <Button
                   variant={showHiddenProjects ? "secondary" : "ghost"}
                   size="sm"
                   className="text-xs"
@@ -1072,6 +1114,14 @@ const Projects = () => {
                     {isAdmin && (
                       <>
                         {/* Prioritaet verschieben - gilt fuer alle */}
+                        <button
+                          onClick={() => moveProjectToTop(liste, project.id)}
+                          disabled={index === 0}
+                          className="p-1 text-muted-foreground hover:text-primary disabled:opacity-30"
+                          title="Ganz nach oben"
+                        >
+                          <ChevronsUp className="h-4 w-4" />
+                        </button>
                         <button
                           onClick={() => moveProjectPriority(liste, project.id, "up")}
                           disabled={index === 0}
@@ -1336,6 +1386,21 @@ const Projects = () => {
       />
 
       {/* AlertDialog für Projekt schließen */}
+      {isAdmin && (
+        <ProjektReihenfolgeDialog
+          open={showReihenfolge}
+          onOpenChange={setShowReihenfolge}
+          eintraege={reihenfolgeListe().map((p) => ({
+            id: p.id,
+            name: p.name,
+            adresse: p.adresse,
+            favorit: favoriteIds.has(p.id),
+            versteckt: !isProjectVisible(p),
+          }))}
+          onReihenfolge={speichereReihenfolge}
+        />
+      )}
+
       <AlertDialog open={!!projectToClose} onOpenChange={(open) => !open && setProjectToClose(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>

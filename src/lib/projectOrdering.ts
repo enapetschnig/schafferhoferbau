@@ -118,3 +118,58 @@ export function moveItem<T extends { id: string }>(
   [neu[index], neu[ziel]] = [neu[ziel], neu[index]];
   return neu.map((i, idx) => ({ id: i.id, sort_order: idx }));
 }
+
+/**
+ * Ganz nach oben oder ganz nach unten - mit einem Klick.
+ *
+ * Bei zwanzig Projekten waren fuer "ganz nach oben" bis zu neunzehn
+ * Einzelschritte noetig (Kundenwunsch Franz, 15.09.2026). Liefert wie
+ * moveItem die komplette, lueckenlos durchnummerierte Reihenfolge.
+ */
+export function moveItemToEdge<T extends { id: string }>(
+  items: T[],
+  id: string,
+  edge: "top" | "bottom"
+): { id: string; sort_order: number }[] {
+  const index = items.findIndex((i) => i.id === id);
+  if (index === -1) return items.map((i, idx) => ({ id: i.id, sort_order: idx }));
+  const ziel = edge === "top" ? 0 : items.length - 1;
+  return reorderItems(items, index, ziel);
+}
+
+/**
+ * Element von einer Position an eine andere ziehen (Drag & Drop).
+ * Alles dazwischen rueckt um eins nach; Ergebnis wie bei moveItem.
+ */
+export function reorderItems<T extends { id: string }>(
+  items: T[],
+  fromIndex: number,
+  toIndex: number
+): { id: string; sort_order: number }[] {
+  const neu = [...items];
+  const gueltig =
+    fromIndex >= 0 && fromIndex < neu.length && toIndex >= 0 && toIndex < neu.length;
+  if (gueltig && fromIndex !== toIndex) {
+    const [element] = neu.splice(fromIndex, 1);
+    neu.splice(toIndex, 0, element);
+  }
+  return neu.map((i, idx) => ({ id: i.id, sort_order: idx }));
+}
+
+/**
+ * Prioritaet fuer ein NEUES Projekt: vor allen bestehenden.
+ *
+ * Ohne Wert landete ein neues Projekt ganz unten bei den Unpriorisierten -
+ * dabei ist das neue meist gerade das aktuelle. Favoriten sind persoenlich
+ * und bleiben ohnehin angepinnt, das neue Projekt erscheint also direkt
+ * darunter (Kundenwunsch Franz, 15.09.2026).
+ */
+export function topSortOrder(items: PrioritizedItem[]): number {
+  let kleinste: number | null = null;
+  for (const item of items) {
+    const p = item.sort_order;
+    if (p === null || p === undefined) continue;
+    if (kleinste === null || p < kleinste) kleinste = p;
+  }
+  return kleinste === null ? 0 : kleinste - 1;
+}

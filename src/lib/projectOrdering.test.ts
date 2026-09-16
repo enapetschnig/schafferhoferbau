@@ -6,6 +6,9 @@ import {
   visibleSortedProfiles,
   profileSortName,
   moveItem,
+  moveItemToEdge,
+  reorderItems,
+  topSortOrder,
 } from "./projectOrdering";
 
 describe("sortByPriority", () => {
@@ -180,5 +183,87 @@ describe("moveItem", () => {
   it("vergibt immer lueckenlose Werte", () => {
     const result = moveItem(items, "b", "up");
     expect(result.map((r) => r.sort_order)).toEqual([0, 1, 2]);
+  });
+});
+
+describe("moveItemToEdge", () => {
+  const items = [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }];
+
+  it("setzt ein Projekt mit einem Schritt ganz nach oben", () => {
+    expect(moveItemToEdge(items, "d", "top").map((r) => r.id)).toEqual(["d", "a", "b", "c"]);
+  });
+
+  it("setzt ein Projekt ganz nach unten", () => {
+    expect(moveItemToEdge(items, "a", "bottom").map((r) => r.id)).toEqual(["b", "c", "d", "a"]);
+  });
+
+  it("aus der Mitte heraus rueckt alles dazwischen nach", () => {
+    expect(moveItemToEdge(items, "c", "top")).toEqual([
+      { id: "c", sort_order: 0 },
+      { id: "a", sort_order: 1 },
+      { id: "b", sort_order: 2 },
+      { id: "d", sort_order: 3 },
+    ]);
+  });
+
+  it("schon oben: nur durchnummerieren", () => {
+    expect(moveItemToEdge(items, "a", "top").map((r) => r.id)).toEqual(["a", "b", "c", "d"]);
+  });
+
+  it("kommt mit unbekannter id zurecht", () => {
+    expect(moveItemToEdge(items, "x", "top").map((r) => r.id)).toEqual(["a", "b", "c", "d"]);
+  });
+
+  it("vergibt lueckenlose Werte", () => {
+    expect(moveItemToEdge(items, "c", "bottom").map((r) => r.sort_order)).toEqual([0, 1, 2, 3]);
+  });
+});
+
+describe("reorderItems", () => {
+  const items = [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }];
+
+  it("zieht nach unten", () => {
+    expect(reorderItems(items, 0, 2).map((r) => r.id)).toEqual(["b", "c", "a", "d"]);
+  });
+
+  it("zieht nach oben", () => {
+    expect(reorderItems(items, 3, 1).map((r) => r.id)).toEqual(["a", "d", "b", "c"]);
+  });
+
+  it("gleiche Position aendert nichts", () => {
+    expect(reorderItems(items, 2, 2).map((r) => r.id)).toEqual(["a", "b", "c", "d"]);
+  });
+
+  it("ignoriert Positionen ausserhalb der Liste", () => {
+    expect(reorderItems(items, -1, 2).map((r) => r.id)).toEqual(["a", "b", "c", "d"]);
+    expect(reorderItems(items, 1, 9).map((r) => r.id)).toEqual(["a", "b", "c", "d"]);
+  });
+
+  it("laesst die Eingabe unveraendert", () => {
+    const kopie = items.map((i) => ({ ...i }));
+    reorderItems(items, 0, 3);
+    expect(items).toEqual(kopie);
+  });
+});
+
+describe("topSortOrder", () => {
+  it("liegt vor der bisher kleinsten Prioritaet", () => {
+    expect(topSortOrder([{ sort_order: 0 }, { sort_order: 1 }, { sort_order: 2 }])).toBe(-1);
+    expect(topSortOrder([{ sort_order: 5 }, { sort_order: 9 }])).toBe(4);
+  });
+
+  it("ignoriert Unpriorisierte", () => {
+    expect(topSortOrder([{ sort_order: null }, { sort_order: 3 }, {}])).toBe(2);
+  });
+
+  it("ohne priorisierte Projekte faengt es bei 0 an", () => {
+    expect(topSortOrder([])).toBe(0);
+    expect(topSortOrder([{ sort_order: null }, {}])).toBe(0);
+  });
+
+  it("darf auch ins Negative gehen - die Sortierung kommt damit zurecht", () => {
+    const neu = { id: "neu", name: "Neu", sort_order: topSortOrder([{ sort_order: 0 }]) };
+    const sortiert = sortByPriority([{ id: "alt", name: "Alt", sort_order: 0 }, neu]);
+    expect(sortiert[0].id).toBe("neu");
   });
 });
