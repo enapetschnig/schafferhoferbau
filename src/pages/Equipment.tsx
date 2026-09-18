@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Plus, Wrench, Search, AlertTriangle, Camera, Receipt, X, Download, Upload, Sparkles, Loader2, CheckCircle2, FileText, ExternalLink } from "lucide-react";
+import { Plus, Wrench, Search, AlertTriangle, Camera, Receipt, X, Download, Upload, Sparkles, Loader2, CheckCircle2, FileText, ExternalLink, ChevronUp, ChevronDown, ChevronsUp, ArrowUpDown, Archive, ArchiveRestore } from "lucide-react";
 import * as XLSX from "xlsx-js-style";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -15,6 +15,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { sanitizeStorageFileName } from "@/lib/storageFileName";
 import { PageHeader } from "@/components/PageHeader";
 import { VoiceAIInput } from "@/components/VoiceAIInput";
+import { moveItem, moveItemToEdge } from "@/lib/projectOrdering";
+import { aktiveGeraete, archivierteGeraete } from "@/lib/geraete";
+import { ReihenfolgeDialog } from "@/components/ReihenfolgeDialog";
 
 type Project = { id: string; name: string };
 
@@ -33,6 +36,10 @@ type Equipment = {
   foto_url: string | null;
   rechnung_foto_url: string | null;
   created_at: string;
+  /** Reihung, gilt fuer alle. NULL = nicht eingeordnet (hinten, alphabetisch). */
+  sort_order?: number | null;
+  /** Gesetzt = im Archiv. Bleibt samt Dokumenten und Verlauf erhalten. */
+  archiviert_am?: string | null;
 };
 
 const KATEGORIE_LABELS: Record<string, string> = {
@@ -57,6 +64,10 @@ export default function EquipmentPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [canManage, setCanManage] = useState(false);
+  // Reihung ist wie bei den Projekten Admin-Sache: sie gilt fuer alle.
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [showReihenfolge, setShowReihenfolge] = useState(false);
+  const [archivOffen, setArchivOffen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterKategorie, setFilterKategorie] = useState("alle");
   const [filterStandort, setFilterStandort] = useState("alle");
@@ -110,9 +121,12 @@ export default function EquipmentPage() {
 
     const { data: roleData } = await supabase.from("user_roles").select("role").eq("user_id", user.id).maybeSingle();
     const isAdmin = roleData?.role === "administrator";
+    setIsAdmin(isAdmin);
     const { data: empData } = await supabase.from("employees").select("kategorie").eq("user_id", user.id).maybeSingle();
     setCanManage(isAdmin || ['vorarbeiter','facharbeiter'].includes(empData?.kategorie ?? ''));
 
+    // Reihung und Archiv-Trennung passieren im Client (aktiveGeraete /
+    // archivierteGeraete) - die Sortierung hier ist nur der Fallback.
     const { data } = await supabase.from("equipment").select("*").order("name");
     if (data) {
       setItems(data as any);
@@ -329,7 +343,52 @@ export default function EquipmentPage() {
     return new Date(date) < new Date();
   };
 
-  const filtered = items.filter((item) => {
+  /**
+   * Neue Reihenfolge uebernehmen: optimistisch anzeigen, dann speichern.
+   * Gemeinsamer Weg fuer Pfeile, "ganz nach oben" und den Reihenfolge-Dialog
+   * - dasselbe Muster wie bei den Projekten.
+   */
+  const speichereReihenfolge = async (updates: { id: string; sort_order: number }[]) => {
+    const byId = new Map(updates.map((u) => [u.id, u.sort_order]));
+    setItems((prev) => prev.map((g) => (byId.has(g.id) ? { ...g, sort_order: byId.get(g.id)! } : g)));
+    // Cast: generierte Types kennen equipment.sort_order noch nicht.
+    const results = await Promise.all(
+      updates.map((u) => (supabase.from("equipment") as any).update({ sort_order: u.sort_order }).eq("id", u.id))
+    );
+    const fehler = results.find((r: any) => r.error);
+    if (fehler) {
+      toast({ variant: "destructive", title: "Reihenfolge nicht gespeichert", description: (fehler as any).error.message });
+      fetchData();
+    }
+  };
+
+  /** Archivieren bzw. zurueckholen - nichts wird geloescht. */
+  const setzeArchiviert = async (item: Equipment, archivieren: boolean) => {
+    const archiviert_am = archivieren ? new Date().toISOString() : null;
+    const { error } = await (supabase.from("equipment") as any).update({ archiviert_am }).eq("id", item.id);
+    if (error) {
+      toast({ variant: "destructive", title: "Fehler", description: error.message });
+      return;
+    }
+    setItems((prev) => prev.map((g) => (g.id === item.id ? { ...g, archiviert_am } : g)));
+    toast({
+      title: archivieren ? "Gerät archiviert" : "Gerät wiederhergestellt",
+      description: archivieren
+        ? `„${item.name}" liegt jetzt unten im Archiv. Dokumente und Verlauf bleiben erhalten.`
+        : `„${item.name}" ist wieder in der Geräteliste.`,
+    });
+  };
+
+  // Aktive Geraete in Anzeigereihenfolge (Prioritaet, dann Name) - die
+  // Pfeile und der Dialog arbeiten immer auf DIESER vollen Liste, nicht auf
+  // der gefilterten. Sonst wuerden bei aktivem Filter nur die Treffer neu
+  // nummeriert und die Gesamtreihung verrutschen.
+  const aktive = aktiveGeraete(items);
+  const archivierte = archivierteGeraete(items);
+  const filterAktiv =
+    !!searchQuery || filterKategorie !== "alle" || filterStandort !== "alle" || filterZustand !== "alle";
+
+  const filtered = aktive.filter((item) => {
     const q = searchQuery.toLowerCase();
     const matchSearch = !q || item.name.toLowerCase().includes(q) || item.seriennummer?.toLowerCase().includes(q);
     const matchKat = filterKategorie === "alle" || item.kategorie === filterKategorie;
@@ -487,9 +546,14 @@ export default function EquipmentPage() {
 
       <div className="flex justify-between items-center mb-4">
         <p className="text-sm text-muted-foreground">
-          {items.length} Geräte gesamt
+          {aktive.length} Geräte{archivierte.length > 0 && ` · ${archivierte.length} archiviert`}
         </p>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap justify-end">
+          {isAdmin && aktive.length > 1 && (
+            <Button size="sm" variant="outline" onClick={() => setShowReihenfolge(true)} title="Alle Geräte in einer kompakten Liste umsortieren">
+              <ArrowUpDown className="w-4 h-4 mr-1" /> Reihenfolge
+            </Button>
+          )}
           {items.length > 0 && (
             <Button size="sm" variant="outline" onClick={exportToExcel}>
               <Download className="w-4 h-4 mr-1" /> Export
@@ -603,11 +667,141 @@ export default function EquipmentPage() {
                       </Badge>
                     )}
                   </div>
+
+                  {/* Reihung (Admin) und Archiv (Berechtigte). stopPropagation,
+                      weil die Karte selbst zur Detailseite fuehrt. */}
+                  {(isAdmin || canManage) && (
+                    <div className="flex items-center shrink-0 -mr-2" onClick={(e) => e.stopPropagation()}>
+                      {isAdmin && (() => {
+                        const index = aktive.findIndex((g) => g.id === item.id);
+                        return (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => speichereReihenfolge(moveItemToEdge(aktive, item.id, "top"))}
+                              disabled={index === 0}
+                              className="p-1 text-muted-foreground hover:text-primary disabled:opacity-30"
+                              title="Ganz nach oben"
+                            >
+                              <ChevronsUp className="h-4 w-4" />
+                            </button>
+                            {/* Einzelschritte nur ohne Filter: mit Filter waere der
+                                Nachbar oft unsichtbar und der Klick scheinbar wirkungslos. */}
+                            {!filterAktiv && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => speichereReihenfolge(moveItem(aktive, item.id, "up"))}
+                                  disabled={index === 0}
+                                  className="p-1 text-muted-foreground hover:text-primary disabled:opacity-30"
+                                  title="Höher"
+                                >
+                                  <ChevronUp className="h-4 w-4" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => speichereReihenfolge(moveItem(aktive, item.id, "down"))}
+                                  disabled={index === aktive.length - 1}
+                                  className="p-1 text-muted-foreground hover:text-primary disabled:opacity-30"
+                                  title="Tiefer"
+                                >
+                                  <ChevronDown className="h-4 w-4" />
+                                </button>
+                              </>
+                            )}
+                          </>
+                        );
+                      })()}
+                      {canManage && (
+                        <button
+                          type="button"
+                          onClick={() => setzeArchiviert(item, true)}
+                          className="p-1 ml-1 text-muted-foreground hover:text-primary"
+                          title="Archivieren – Gerät bleibt samt Dokumenten erhalten"
+                        >
+                          <Archive className="h-4 w-4" />
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
           ))}
         </div>
+      )}
+
+      {/* Archiv - wie "Abgeschlossene Projekte": eingeklappt, unten. */}
+      {!loading && archivierte.length > 0 && (
+        <div className="mt-8">
+          <button
+            type="button"
+            onClick={() => setArchivOffen((v) => !v)}
+            className="flex items-center gap-2 w-full text-left py-2"
+          >
+            <Archive className="h-4 w-4 text-muted-foreground" />
+            <span className="font-semibold">Archivierte Geräte</span>
+            <Badge variant="secondary">{archivierte.length}</Badge>
+            <ChevronDown className={`h-4 w-4 ml-auto text-muted-foreground transition-transform ${archivOffen ? "rotate-180" : ""}`} />
+          </button>
+          {archivOffen && (
+            <div className="space-y-2 mt-2">
+              {archivierte.map((item) => (
+                <Card
+                  key={item.id}
+                  className="cursor-pointer hover:shadow-md transition-shadow opacity-70 hover:opacity-100"
+                  onClick={() => navigate(`/equipment/${item.id}`)}
+                >
+                  <CardContent className="p-3 flex items-center gap-3">
+                    {item.foto_url ? (
+                      <img src={item.foto_url} alt={item.name} className="w-10 h-10 rounded-md object-cover shrink-0 border grayscale" />
+                    ) : (
+                      <div className="w-10 h-10 rounded-md bg-muted flex items-center justify-center shrink-0 border">
+                        <Wrench className="w-4 h-4 text-muted-foreground" />
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-medium truncate">{item.name}</span>
+                        <Badge variant="outline" className="text-xs">{KATEGORIE_LABELS[item.kategorie] || item.kategorie}</Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Archiviert am {new Date(item.archiviert_am as string).toLocaleDateString("de-AT")}
+                        {item.seriennummer && ` · SN: ${item.seriennummer}`}
+                      </p>
+                    </div>
+                    {canManage && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="shrink-0"
+                        onClick={(e) => { e.stopPropagation(); setzeArchiviert(item, false); }}
+                      >
+                        <ArchiveRestore className="w-4 h-4 mr-1" /> Wiederherstellen
+                      </Button>
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {isAdmin && (
+        <ReihenfolgeDialog
+          open={showReihenfolge}
+          onOpenChange={setShowReihenfolge}
+          titel="Reihenfolge der Geräte"
+          beschreibung="Ziehen am Griff oder mit den Doppelpfeilen ganz nach oben bzw. unten. Die Reihenfolge gilt für alle."
+          leerText="Keine aktiven Geräte."
+          eintraege={aktive.map((g) => ({
+            id: g.id,
+            name: g.name,
+            adresse: [KATEGORIE_LABELS[g.kategorie] || g.kategorie, g.standort_typ === "lager" ? "Lager" : projectMap[g.standort_project_id!] || "Baustelle"].join(" · "),
+          }))}
+          onReihenfolge={speichereReihenfolge}
+        />
       )}
 
       {/* Create/Edit Dialog */}

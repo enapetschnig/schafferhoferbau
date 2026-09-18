@@ -22,18 +22,30 @@ type Props = {
   eintraege: ReihenfolgeEintrag[];
   /** Bekommt die komplette neue Reihenfolge, lueckenlos durchnummeriert. */
   onReihenfolge: (updates: { id: string; sort_order: number }[]) => void;
+  titel?: string;
+  beschreibung?: string;
+  /** Text, wenn die Liste leer ist. */
+  leerText?: string;
 };
 
 /**
- * Kompakte Liste zum Umsortieren vieler Projekte auf einmal.
+ * Kompakte Liste zum Umsortieren vieler Eintraege auf einmal - Projekte
+ * (Franz, 15.09.2026) und Geraete (Franz, 16.09.2026).
  *
- * Die Projektkarten selbst sind zu hoch, um zwanzig davon bequem zu ziehen -
- * hier steht jedes Projekt in einer Zeile: Griff zum Ziehen, dazu
- * "ganz nach oben"/"ganz nach unten" fuer den haeufigsten Fall.
- * Jede Aenderung wird sofort gespeichert, wie die Pfeile an den Karten.
- * (Kundenwunsch Franz, 15.09.2026)
+ * Die Karten selbst sind zu hoch, um zwanzig davon bequem zu ziehen - hier
+ * steht jeder Eintrag in einer Zeile: Griff zum Ziehen, dazu "ganz nach
+ * oben"/"ganz nach unten" fuer den haeufigsten Fall. Jede Aenderung wird
+ * sofort gespeichert, wie die Pfeile an den Karten.
  */
-export function ProjektReihenfolgeDialog({ open, onOpenChange, eintraege, onReihenfolge }: Props) {
+export function ReihenfolgeDialog({
+  open,
+  onOpenChange,
+  eintraege,
+  onReihenfolge,
+  titel = "Reihenfolge der Projekte",
+  beschreibung = "Ziehen am Griff oder mit den Doppelpfeilen ganz nach oben bzw. unten. Die Reihenfolge gilt für alle – auch in der Plantafel und am Handy der Mitarbeiter.",
+  leerText = "Keine aktiven Projekte.",
+}: Props) {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
@@ -52,11 +64,8 @@ export function ProjektReihenfolgeDialog({ open, onOpenChange, eintraege, onReih
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg max-h-[85vh] flex flex-col">
         <DialogHeader>
-          <DialogTitle>Reihenfolge der Projekte</DialogTitle>
-          <DialogDescription>
-            Ziehen am Griff oder mit den Doppelpfeilen ganz nach oben bzw. unten.
-            Die Reihenfolge gilt für alle – auch in der Plantafel und am Handy der Mitarbeiter.
-          </DialogDescription>
+          <DialogTitle>{titel}</DialogTitle>
+          <DialogDescription>{beschreibung}</DialogDescription>
         </DialogHeader>
 
         <div className="overflow-y-auto -mx-1 px-1 flex-1 min-h-0">
@@ -78,7 +87,7 @@ export function ProjektReihenfolgeDialog({ open, onOpenChange, eintraege, onReih
             </SortableContext>
           </DndContext>
           {eintraege.length === 0 && (
-            <p className="text-sm text-muted-foreground py-6 text-center">Keine aktiven Projekte.</p>
+            <p className="text-sm text-muted-foreground py-6 text-center">{leerText}</p>
           )}
         </div>
       </DialogContent>

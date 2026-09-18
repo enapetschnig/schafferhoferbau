@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { ArrowLeft, FolderOpen, Plus, FileText, Image, Lock, Search, Upload, Camera, Trash2, ChevronDown, ChevronUp, ChevronsUp, ChevronRight, ArrowUpDown, Eye, EyeOff, Home, MapPin, Star, X, Download, MessageCircle, Package, Shield, Truck, Receipt } from "lucide-react";
 import { visibleSortedProjects, isProjectVisible, moveItem, moveItemToEdge, topSortOrder } from "@/lib/projectOrdering";
-import { ProjektReihenfolgeDialog } from "@/components/ProjektReihenfolgeDialog";
+import { ReihenfolgeDialog } from "@/components/ReihenfolgeDialog";
 import * as XLSX from "xlsx-js-style";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -1044,7 +1044,12 @@ const Projects = () => {
                 ...sortiert.filter((p) => favoriteIds.has(p.id)),
                 ...sortiert.filter((p) => !favoriteIds.has(p.id)),
               ];
-              return liste.map((project, index) => {
+              // Die Pfeile arbeiten auf der VOLLEN Liste (ohne Suchfilter).
+              // Sonst wuerden bei aktiver Suche nur die Treffer neu
+              // nummeriert und die Gesamtreihung verrutschen.
+              const volleListe = reihenfolgeListe();
+              return liste.map((project) => {
+                const index = volleListe.findIndex((p) => p.id === project.id);
                 const eingeklappt = collapsedProjects.has(project.id);
                 const versteckt = !isProjectVisible(project);
                 return (
@@ -1115,7 +1120,7 @@ const Projects = () => {
                       <>
                         {/* Prioritaet verschieben - gilt fuer alle */}
                         <button
-                          onClick={() => moveProjectToTop(liste, project.id)}
+                          onClick={() => moveProjectToTop(volleListe, project.id)}
                           disabled={index === 0}
                           className="p-1 text-muted-foreground hover:text-primary disabled:opacity-30"
                           title="Ganz nach oben"
@@ -1123,7 +1128,7 @@ const Projects = () => {
                           <ChevronsUp className="h-4 w-4" />
                         </button>
                         <button
-                          onClick={() => moveProjectPriority(liste, project.id, "up")}
+                          onClick={() => moveProjectPriority(volleListe, project.id, "up")}
                           disabled={index === 0}
                           className="p-1 text-muted-foreground hover:text-primary disabled:opacity-30"
                           title="Höhere Priorität"
@@ -1131,8 +1136,8 @@ const Projects = () => {
                           <ChevronUp className="h-4 w-4" />
                         </button>
                         <button
-                          onClick={() => moveProjectPriority(liste, project.id, "down")}
-                          disabled={index === liste.length - 1}
+                          onClick={() => moveProjectPriority(volleListe, project.id, "down")}
+                          disabled={index === volleListe.length - 1}
                           className="p-1 text-muted-foreground hover:text-primary disabled:opacity-30"
                           title="Niedrigere Priorität"
                         >
@@ -1387,7 +1392,7 @@ const Projects = () => {
 
       {/* AlertDialog für Projekt schließen */}
       {isAdmin && (
-        <ProjektReihenfolgeDialog
+        <ReihenfolgeDialog
           open={showReihenfolge}
           onOpenChange={setShowReihenfolge}
           eintraege={reihenfolgeListe().map((p) => ({

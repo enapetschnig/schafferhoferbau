@@ -116,7 +116,8 @@ export default function SafetyEvaluations() {
     const [{ data: evalData }, { data: projData }, { data: equipData }, { data: vorlData }] = await Promise.all([
       supabase.from("safety_evaluations").select("*").order("created_at", { ascending: false }),
       supabase.from("projects").select("id, name").order("name"),
-      supabase.from("equipment").select("id, name").order("name"),
+      // Archivierte Geraete gehoeren nicht mehr in die Auswahl
+      supabase.from("equipment").select("id, name").is("archiviert_am", null).order("name"),
       supabase.from("safety_evaluations").select("*").eq("ist_vorlage", true).order("titel"),
     ]);
     if (equipData) setEquipmentList(equipData);

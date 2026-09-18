@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Pencil, Trash2, ArrowRightLeft, AlertTriangle, Camera, Receipt, CheckCircle, FileText, ExternalLink } from "lucide-react";
+import { ArrowLeft, Pencil, Trash2, ArrowRightLeft, AlertTriangle, Camera, Receipt, CheckCircle, FileText, ExternalLink, Archive, ArchiveRestore } from "lucide-react";
+import { istArchiviert } from "@/lib/geraete";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -141,6 +142,23 @@ export default function EquipmentDetail() {
     setSavingWartung(false);
   };
 
+  /** Archivieren bzw. zurueckholen - im Gegensatz zum Loeschen bleibt alles erhalten. */
+  const setzeArchiviert = async (archivieren: boolean) => {
+    if (!id) return;
+    const archiviert_am = archivieren ? new Date().toISOString() : null;
+    // Cast: generierte Types kennen equipment.archiviert_am noch nicht.
+    const { error } = await (supabase.from("equipment") as any).update({ archiviert_am }).eq("id", id);
+    if (error) {
+      toast({ variant: "destructive", title: "Fehler", description: error.message });
+      return;
+    }
+    toast({
+      title: archivieren ? "Gerät archiviert" : "Gerät wiederhergestellt",
+      description: archivieren ? "Es liegt jetzt unten im Archiv der Geräteliste." : undefined,
+    });
+    fetchData();
+  };
+
   const handleDelete = async () => {
     if (!id) return;
     const name = item?.name || "Gerät";
@@ -172,6 +190,11 @@ export default function EquipmentDetail() {
         <h1 className="text-2xl font-bold flex-1">{item.name}</h1>
         <Badge variant="outline">{KATEGORIE_LABELS[item.kategorie]}</Badge>
         <Badge className={ZUSTAND_COLORS[item.zustand]}>{ZUSTAND_LABELS[item.zustand]}</Badge>
+        {istArchiviert(item) && (
+          <Badge variant="secondary" title={`Archiviert am ${new Date(item.archiviert_am).toLocaleDateString("de-AT")}`}>
+            <Archive className="w-3 h-3 mr-1" /> Archiviert
+          </Badge>
+        )}
       </div>
 
       <div className="space-y-4">
@@ -297,6 +320,15 @@ export default function EquipmentDetail() {
                 }}
               >
                 <CheckCircle className="w-4 h-4 mr-1" /> Wartung durchgeführt
+              </Button>
+            )}
+            {istArchiviert(item) ? (
+              <Button variant="outline" size="sm" onClick={() => setzeArchiviert(false)}>
+                <ArchiveRestore className="w-4 h-4 mr-1" /> Wiederherstellen
+              </Button>
+            ) : (
+              <Button variant="outline" size="sm" onClick={() => setzeArchiviert(true)} title="Gerät bleibt samt Dokumenten und Verlauf erhalten">
+                <Archive className="w-4 h-4 mr-1" /> Archivieren
               </Button>
             )}
             <Button variant="destructive" size="sm" onClick={handleDelete}>
